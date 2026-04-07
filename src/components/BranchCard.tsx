@@ -56,6 +56,7 @@ export function BranchCard({ branch, onRefresh, devCategory, onCategoryChange, o
 
   function onPointerDown(e: React.PointerEvent) {
     if (!hasWorktree || deleting) return;
+    if ((e.target as HTMLElement).closest("button")) return;
     startXRef.current = e.clientX; startYRef.current = e.clientY;
     lockedRef.current = null; currentXRef.current = swipeX;
     didSwipeRef.current = false; setSwiping(true);
