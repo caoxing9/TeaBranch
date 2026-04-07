@@ -47,11 +47,11 @@ fn detect_start_commands(worktree_path: &Path, backend_port: u16, socket_port: u
                 let pm = detect_package_manager(worktree_path);
 
                 // Check for separate backend/frontend scripts
-                let has_backend = scripts.contains_key("dev:backend");
+                let has_backend = scripts.contains_key("dev:backend:swc");
                 let has_frontend = scripts.contains_key("dev:frontend");
 
                 if has_backend && has_frontend {
-                    let backend_script = scripts["dev:backend"].as_str().unwrap_or("");
+                    let backend_script = scripts["dev:backend:swc"].as_str().unwrap_or("");
                     let frontend_script = scripts["dev:frontend"].as_str().unwrap_or("");
 
                     let backend_cmd = strip_env_prefix(backend_script);
