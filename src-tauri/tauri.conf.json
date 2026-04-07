@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/nickel-org/nickel.rs/master/examples/example.schema.json",
   "productName": "BranchPilot",
   "version": "0.1.0",
-  "identifier": "com.branchpilot.app",
+  "identifier": "com.branchpilot.dev",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
