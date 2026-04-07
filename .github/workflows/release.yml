@@ -77,15 +77,37 @@ jobs:
       - name: Build Tauri app
         run: pnpm tauri build --target ${{ matrix.target }}
 
-      - name: Re-sign app bundle to prevent "damaged" error
+      - name: Ad-hoc sign app bundle
         run: |
           APP_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app" -maxdepth 1 | head -1)
-          if [ -n "$APP_PATH" ]; then
-            echo "Re-signing: $APP_PATH"
-            codesign --force --deep --sign - "$APP_PATH"
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app found!" && exit 1
+          fi
+          echo "Signing: $APP_PATH"
+
+          # Sign all nested binaries/dylibs/frameworks first (inside-out)
+          find "$APP_PATH" -type f \( -name "*.dylib" -o -name "*.so" \) -exec codesign --force --sign - {} \;
+          find "$APP_PATH/Contents/Frameworks" -name "*.framework" -maxdepth 1 2>/dev/null | while read fw; do
+            codesign --force --sign - "$fw"
+          done
+
+          # Sign helper executables
+          find "$APP_PATH/Contents/MacOS" -type f -perm +111 ! -name "$(basename "$APP_PATH" .app)" -exec codesign --force --sign - {} \;
+
+          # Sign the main binary
+          MAIN_BIN="$APP_PATH/Contents/MacOS/$(basename "$APP_PATH" .app)"
+          if [ -f "$MAIN_BIN" ]; then
+            codesign --force --sign - "$MAIN_BIN"
           fi
 
-      - name: Re-package DMG after re-signing
+          # Sign the .app bundle itself
+          codesign --force --sign - "$APP_PATH"
+
+          # Verify
+          codesign --verify --verbose=2 "$APP_PATH"
+          echo "Signature valid!"
+
+      - name: Re-package DMG with signed app
         run: |
           DMG_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/dmg -name "*.dmg" | head -1)
           APP_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app" -maxdepth 1 | head -1)
@@ -95,13 +117,12 @@ jobs:
             DMG_DIR=$(dirname "$DMG_PATH")
             TEMP_DIR=$(mktemp -d)
 
-            # Remove old dmg and create new one with re-signed app
             rm -f "$DMG_PATH"
             cp -R "$APP_PATH" "$TEMP_DIR/$APP_NAME"
             ln -s /Applications "$TEMP_DIR/Applications"
             hdiutil create -volname "BranchPilot" -srcfolder "$TEMP_DIR" -ov -format UDZO "$DMG_DIR/$DMG_NAME"
             rm -rf "$TEMP_DIR"
-            echo "Re-packaged DMG: $DMG_DIR/$DMG_NAME"
+            echo "Re-packaged: $DMG_DIR/$DMG_NAME"
           fi
 
       - name: Upload DMG to release
