@@ -295,8 +295,8 @@ pub fn create_worktree_full(
 
     // Step 4: Install dependencies
     emit_progress(app, branch_name, "install", "Installing dependencies (pnpm install)...", false);
-    let output = Command::new("pnpm")
-        .args(["install"])
+    let output = Command::new("sh")
+        .args(["-c", "pnpm install"])
         .current_dir(&worktree_path)
         .output()
         .map_err(|e| format!("Failed to run pnpm install: {}", e))?;
@@ -337,8 +337,8 @@ pub fn create_worktree_full(
     // Step 6: Run migration (skip for clone/reuse since data already exists)
     emit_progress(app, branch_name, "migrate", "Running database migration (make postgres.mode)...", false);
     if !skip_migration {
-        let output = Command::new("make")
-            .args(["postgres.mode"])
+        let output = Command::new("sh")
+            .args(["-c", "make postgres.mode"])
             .current_dir(&worktree_path)
             .output()
             .map_err(|e| format!("Failed to run make postgres.mode: {}", e))?;

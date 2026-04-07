@@ -202,7 +202,7 @@ function CardBtn({
 
   return (
     <button
-      onClick={onClick}
+      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
       disabled={disabled}
       style={{
         padding: "4px 8px", background: bg, color, borderRadius: 5,

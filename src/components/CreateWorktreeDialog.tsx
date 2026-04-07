@@ -210,7 +210,7 @@ export function CreateWorktreeDialog({ onClose, onCreated }: CreateWorktreeDialo
 
             {/* DB Mode selection */}
             <div style={{ marginTop: 16, marginBottom: 8, fontSize: 12, color: "var(--text-secondary)" }}>
-              \u6570\u636E\u5E93\u6A21\u5F0F:
+              数据库模式:
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {DB_MODE_OPTIONS.map((opt) => (
