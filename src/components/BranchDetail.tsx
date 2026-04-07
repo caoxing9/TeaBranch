@@ -115,8 +115,23 @@ export function BranchDetail({
         >
           ← Back
         </button>
-        <span style={{ fontWeight: 700, fontSize: 14, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ fontWeight: 700, fontSize: 14, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
           {branch.name}
+          {branch.managed && (
+            <span
+              style={{
+                fontSize: 9,
+                color: "var(--accent)",
+                fontWeight: 500,
+                background: "var(--accent-dim)",
+                padding: "1px 5px",
+                borderRadius: 3,
+                flexShrink: 0,
+              }}
+            >
+              managed
+            </span>
+          )}
         </span>
         <button
           onClick={handleToggle}
@@ -203,11 +218,23 @@ export function BranchDetail({
           )}
         </div>
 
+        {/* Source */}
+        <div>
+          <div style={{ color: "var(--text-secondary)", fontSize: 10, marginBottom: 2 }}>Source</div>
+          <span style={{
+            fontSize: 11,
+            color: branch.managed ? "var(--accent)" : "var(--text-secondary)",
+            fontWeight: 500,
+          }}>
+            {branch.managed ? "BranchPilot" : "External"}
+          </span>
+        </div>
+
         {/* Worktree path */}
         <div style={{ gridColumn: "1 / -1" }}>
           <div style={{ color: "var(--text-secondary)", fontSize: 10, marginBottom: 2 }}>Worktree</div>
           <span style={{ color: "var(--text-primary)", fontFamily: "'SF Mono', monospace", fontSize: 11, wordBreak: "break-all" }}>
-            {worktreePath ?? "—"}
+            {worktreePath ?? branch.worktreePath ?? "—"}
           </span>
         </div>
       </div>

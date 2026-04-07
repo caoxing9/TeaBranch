@@ -23,6 +23,10 @@ export interface Branch {
   name: string;
   isCurrent: boolean;
   environment: BranchEnvironment | null;
+  /** Whether this worktree was created/managed by BranchPilot */
+  managed: boolean;
+  /** Filesystem path of the worktree */
+  worktreePath: string | null;
 }
 
 export interface AppSettings {

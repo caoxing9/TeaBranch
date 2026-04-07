@@ -75,6 +75,21 @@ export function BranchCard({ branch, onRefresh, devCategory, onCategoryChange, o
             }}
           >
             {branch.name}
+            {branch.managed && (
+              <span
+                style={{
+                  marginLeft: 6,
+                  fontSize: 9,
+                  color: "var(--accent)",
+                  fontWeight: 500,
+                  background: "var(--accent-dim)",
+                  padding: "1px 5px",
+                  borderRadius: 3,
+                }}
+              >
+                managed
+              </span>
+            )}
             {branch.isCurrent && (
               <span
                 style={{

@@ -291,5 +291,43 @@ pub fn remove_worktree(repo_path: &Path, branch_name: &str) -> Result<(), String
         }
     }
 
+    // Fallback: find worktree path from `git worktree list` for externally created worktrees
+    let output = Command::new("git")
+        .current_dir(repo_path)
+        .args(["worktree", "list", "--porcelain"])
+        .output()
+        .map_err(|e| format!("Failed to run git worktree list: {}", e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut current_path: Option<String> = None;
+
+        for line in stdout.lines() {
+            if let Some(path) = line.strip_prefix("worktree ") {
+                current_path = Some(path.to_string());
+            } else if let Some(branch_ref) = line.strip_prefix("branch ") {
+                let short_name = branch_ref.strip_prefix("refs/heads/").unwrap_or(branch_ref);
+                if short_name == branch_name {
+                    if let Some(path) = current_path.take() {
+                        let output = Command::new("git")
+                            .current_dir(repo_path)
+                            .args(["worktree", "remove", "--force", &path])
+                            .output()
+                            .map_err(|e| format!("Failed to run git worktree remove: {}", e))?;
+
+                        if !output.status.success() {
+                            let stderr = String::from_utf8_lossy(&output.stderr);
+                            return Err(format!("git worktree remove failed: {}", stderr));
+                        }
+                        return Ok(());
+                    }
+                }
+            }
+            if line.is_empty() {
+                current_path = None;
+            }
+        }
+    }
+
     Ok(())
 }
