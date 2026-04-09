@@ -100,7 +100,7 @@ pub fn start_branch(
         used_ports.insert(socket_port);
         frontend_port = env_frontend_port.unwrap_or_else(|| find_available_port(socket_port + 1, &used_ports));
     }
-    eprintln!("[BranchPilot] start_branch: branch={}, worktree={}, backend_port={}, socket_port={}, frontend_port={}",
+    eprintln!("[TeaBranch] start_branch: branch={}, worktree={}, backend_port={}, socket_port={}, frontend_port={}",
         branch_name, worktree_path.display(), backend_port, socket_port, frontend_port);
 
     // Read actual database name from env file for display
@@ -255,7 +255,7 @@ pub fn open_preview_window(
     // Create new preview window
     let url = WebviewUrl::App("preview.html".into());
     WebviewWindowBuilder::new(&app, "preview", url)
-        .title("BranchPilot - Compare")
+        .title("TeaBranch - Compare")
         .inner_size(1200.0, 800.0)
         .resizable(true)
         .build()

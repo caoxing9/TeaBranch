@@ -153,7 +153,7 @@ fn spawn_process(
     cmd: &StartCommand,
     worktree_path: &Path,
 ) -> Result<u32, String> {
-    eprintln!("[BranchPilot] spawn: branch={}, label={}, cmd='{}', dir={}, port={}",
+    eprintln!("[TeaBranch] spawn: branch={}, label={}, cmd='{}', dir={}, port={}",
         branch_name, cmd.label, cmd.command, worktree_path.display(), cmd.port);
 
     let mut command = shell::shell_command(&cmd.command);
@@ -241,7 +241,7 @@ fn spawn_process(
     let app_clone = app.clone();
     std::thread::spawn(move || {
         let status = child.wait();
-        eprintln!("[BranchPilot] process exited: branch={}, label={}, status={:?}",
+        eprintln!("[TeaBranch] process exited: branch={}, label={}, status={:?}",
             branch_name_s, label_s, status);
         if let Some(state) = app_clone.try_state::<SharedState>() {
             let mut s = state.lock().unwrap();
@@ -354,7 +354,7 @@ pub fn start_service(
         worktree_path.join(".next/dev/lock"),
     ] {
         if lock_path.exists() {
-            eprintln!("[BranchPilot] Removing stale Next.js lock: {}", lock_path.display());
+            eprintln!("[TeaBranch] Removing stale Next.js lock: {}", lock_path.display());
             let _ = std::fs::remove_file(lock_path);
         }
     }
@@ -366,16 +366,16 @@ pub fn start_service(
     let db_url = if let Some(env_url) = read_base_database_url(worktree_path) {
         match ensure_database_exists(&env_url) {
             Ok(url) => {
-                eprintln!("[BranchPilot] Using database URL: {}", url);
+                eprintln!("[TeaBranch] Using database URL: {}", url);
                 Some(url)
             }
             Err(e) => {
-                eprintln!("[BranchPilot] Warning: database check failed: {}. Using env URL.", e);
+                eprintln!("[TeaBranch] Warning: database check failed: {}. Using env URL.", e);
                 Some(env_url)
             }
         }
     } else {
-        eprintln!("[BranchPilot] No PRISMA_DATABASE_URL found, skipping database setup");
+        eprintln!("[TeaBranch] No PRISMA_DATABASE_URL found, skipping database setup");
         None
     };
 
@@ -390,7 +390,7 @@ pub fn start_service(
 
     // Redis: use the URI from the env file as-is (already configured during worktree creation)
     if let Some(redis_uri) = read_env_var(worktree_path, "BACKEND_CACHE_REDIS_URI") {
-        eprintln!("[BranchPilot] Using Redis URI: {}", redis_uri);
+        eprintln!("[TeaBranch] Using Redis URI: {}", redis_uri);
         for cmd in &mut commands {
             cmd.env_vars.push(("BACKEND_CACHE_REDIS_URI".to_string(), redis_uri.clone()));
         }
@@ -433,7 +433,7 @@ pub fn create_database_with_template(
     let exists = String::from_utf8_lossy(&check.stdout).trim() == "1";
 
     if !exists {
-        eprintln!("[BranchPilot] Creating database '{}' from template '{}'", new_db_name, template_db_name);
+        eprintln!("[TeaBranch] Creating database '{}' from template '{}'", new_db_name, template_db_name);
 
         let create = Command::new("psql")
             .env("PATH", shell::user_path())
@@ -445,7 +445,7 @@ pub fn create_database_with_template(
         if !create.status.success() {
             let stderr = String::from_utf8_lossy(&create.stderr);
             if stderr.contains("being accessed by other users") {
-                eprintln!("[BranchPilot] Template db '{}' in use, creating empty database '{}'", template_db_name, new_db_name);
+                eprintln!("[TeaBranch] Template db '{}' in use, creating empty database '{}'", template_db_name, new_db_name);
                 let create_empty = Command::new("psql")
                     .env("PATH", shell::user_path())
                     .args([admin_url_clean, "-c",
@@ -462,7 +462,7 @@ pub fn create_database_with_template(
             }
         }
     } else {
-        eprintln!("[BranchPilot] Database '{}' already exists", new_db_name);
+        eprintln!("[TeaBranch] Database '{}' already exists", new_db_name);
     }
 
     let new_url = replace_db_name(base_url, new_db_name);
@@ -486,7 +486,7 @@ pub fn ensure_database_exists(db_url: &str) -> Result<String, String> {
     let exists = String::from_utf8_lossy(&check.stdout).trim() == "1";
 
     if !exists {
-        eprintln!("[BranchPilot] Database '{}' does not exist, creating empty", db_name);
+        eprintln!("[TeaBranch] Database '{}' does not exist, creating empty", db_name);
         let create = Command::new("psql")
             .env("PATH", shell::user_path())
             .args([admin_url_clean, "-c",
@@ -566,7 +566,7 @@ pub fn list_worktree_db_info(repo_path: &std::path::Path) -> Vec<WorktreeDbInfo>
     result
 }
 
-/// The keys that BranchPilot overrides in the env file
+/// The keys that TeaBranch overrides in the env file
 pub const OVERRIDE_KEYS: &[&str] = &[
     "PORT",
     "SOCKET_PORT",
@@ -578,7 +578,7 @@ pub const OVERRIDE_KEYS: &[&str] = &[
     "BACKEND_CACHE_REDIS_URI",
 ];
 
-/// The BranchPilot override env vars for a worktree
+/// The TeaBranch override env vars for a worktree
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorktreeEnvOverrides {
@@ -592,7 +592,7 @@ pub struct WorktreeEnvOverrides {
     pub backend_cache_redis_uri: Option<String>,
 }
 
-/// Read the BranchPilot override env vars from a worktree's env file
+/// Read the TeaBranch override env vars from a worktree's env file
 pub fn read_worktree_env_overrides(worktree_path: &Path) -> WorktreeEnvOverrides {
     WorktreeEnvOverrides {
         port: read_env_var(worktree_path, "PORT"),
@@ -606,8 +606,8 @@ pub fn read_worktree_env_overrides(worktree_path: &Path) -> WorktreeEnvOverrides
     }
 }
 
-/// Update BranchPilot override env vars in a worktree's env file.
-/// Only updates the values in the "BranchPilot overrides" section.
+/// Update TeaBranch override env vars in a worktree's env file.
+/// Only updates the values in the "TeaBranch overrides" section.
 pub fn update_worktree_env_overrides(
     worktree_path: &Path,
     overrides: &WorktreeEnvOverrides,

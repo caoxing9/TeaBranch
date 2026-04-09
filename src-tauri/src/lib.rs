@@ -46,7 +46,13 @@ pub fn run() {
             commands::settings::set_project_path,
             commands::settings::update_settings,
         ])
-        .on_window_event(|_window, _event| {})
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Hide the window instead of closing it; quit via Cmd+Q or tray menu
+                window.hide().unwrap_or_default();
+                api.prevent_close();
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {

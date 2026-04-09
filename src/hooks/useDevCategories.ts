@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import type { DevCategory } from "../lib/types";
 
-const STORAGE_KEY = "branchpilot-dev-categories";
+const STORAGE_KEY = "teabranch-dev-categories";
 
 function load(): Record<string, DevCategory> {
   try {

@@ -323,15 +323,15 @@ pub fn create_worktree_full(
 
             match manager::create_database_with_template(&base_url, &new_db_name, &template_db) {
                 Ok(url) => {
-                    eprintln!("[BranchPilot] Created database '{}' from template '{}': {}", new_db_name, template_db, url);
+                    eprintln!("[TeaBranch] Created database '{}' from template '{}': {}", new_db_name, template_db, url);
                 }
                 Err(e) => {
-                    eprintln!("[BranchPilot] Warning: database creation failed: {}. Will try migration anyway.", e);
+                    eprintln!("[TeaBranch] Warning: database creation failed: {}. Will try migration anyway.", e);
                 }
             }
         }
     } else {
-        eprintln!("[BranchPilot] Skipping database creation (reuse mode)");
+        eprintln!("[TeaBranch] Skipping database creation (reuse mode)");
     }
 
     // Step 6: Run migration (skip for clone/reuse since data already exists)
@@ -343,10 +343,10 @@ pub fn create_worktree_full(
             .map_err(|e| format!("Failed to run make postgres.mode: {}", e))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!("[BranchPilot] Warning: migration may have failed: {}", stderr);
+            eprintln!("[TeaBranch] Warning: migration may have failed: {}", stderr);
         }
     } else {
-        eprintln!("[BranchPilot] Skipping migration (data from source)");
+        eprintln!("[TeaBranch] Skipping migration (data from source)");
     }
 
     emit_progress(app, branch_name, "done", "Worktree ready!", true);

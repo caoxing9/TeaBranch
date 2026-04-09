@@ -32,7 +32,7 @@ pub struct Branch {
     pub name: String,
     pub is_current: bool,
     pub environment: Option<BranchEnvironment>,
-    /// Whether this worktree was created/managed by BranchPilot
+    /// Whether this worktree was created/managed by TeaBranch
     pub managed: bool,
     /// Filesystem path of the worktree
     pub worktree_path: Option<String>,

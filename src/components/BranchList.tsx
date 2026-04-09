@@ -188,7 +188,7 @@ export function BranchList() {
               left: 8,
               top: "50%",
               transform: "translateY(-50%)",
-              fontSize: 11,
+              fontSize: 15,
               color: "var(--text-secondary)",
               pointerEvents: "none",
             }}

@@ -86,18 +86,18 @@ function App() {
           data-tauri-drag-region
           style={{ fontWeight: 700, fontSize: 14, letterSpacing: -0.3, flex: 1 }}
         >
-          BranchPilot
+          TeaBranch
         </span>
         <div style={{ display: "flex", gap: 3, alignItems: "center", flexShrink: 0 }}>
-          <TitleBtn accent onClick={() => setShowCreateDialog(true)}>+New</TitleBtn>
+          <TitleBtn accent onClick={() => setShowCreateDialog(true)}>New Branch</TitleBtn>
           <TitleBtn dim onClick={handleCompare}>Compare</TitleBtn>
           <TitleBtn onClick={handleSelectProject}>Open</TitleBtn>
           <div style={{ width: 1, height: 14, background: "var(--border-strong)", margin: "0 2px" }} />
           <TitleBtn onClick={cycleTheme} title={`Theme: ${theme}`}>
-            {themeIcon}
+            <span style={{ fontSize: 14 }}>{themeIcon}</span>
           </TitleBtn>
           <TitleBtn onClick={() => setShowSettings(true)} title="Settings">
-            &#9881;
+            <span style={{ fontSize: 14 }}>&#9881;</span>
           </TitleBtn>
         </div>
       </div>
@@ -150,7 +150,11 @@ function TitleBtn({
       onClick={onClick}
       title={title}
       style={{
-        padding: "3px 8px",
+        padding: "0 8px",
+        height: 24,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
         background: bg,
         color,
         borderRadius: 5,

@@ -23,7 +23,7 @@ export interface Branch {
   name: string;
   isCurrent: boolean;
   environment: BranchEnvironment | null;
-  /** Whether this worktree was created/managed by BranchPilot */
+  /** Whether this worktree was created/managed by TeaBranch */
   managed: boolean;
   /** Filesystem path of the worktree */
   worktreePath: string | null;

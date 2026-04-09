@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/nickel-org/nickel.rs/master/examples/example.schema.json",
-  "productName": "BranchPilot",
+  "productName": "TeaBranch",
   "version": "0.1.0",
-  "identifier": "com.branchpilot.dev",
+  "identifier": "com.teabranch.dev",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "BranchPilot",
+        "title": "TeaBranch",
         "width": 420,
         "height": 600,
         "resizable": true,

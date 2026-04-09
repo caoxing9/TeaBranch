@@ -50,7 +50,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             marginBottom: 8,
           }}
         >
-          BranchPilot
+          TeaBranch
         </div>
         <div
           style={{

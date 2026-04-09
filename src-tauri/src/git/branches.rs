@@ -4,7 +4,7 @@ use std::process::Command;
 
 use crate::state::{Branch, BranchEnvironment};
 
-/// Check if a worktree path is managed by BranchPilot.
+/// Check if a worktree path is managed by TeaBranch.
 /// Managed worktrees live under `<repo>-worktree/` sibling directory
 /// and/or have a `# WORKTREE_SLOT=` marker in their env files.
 fn is_managed_worktree(repo_path: &Path, worktree_path: &Path) -> bool {

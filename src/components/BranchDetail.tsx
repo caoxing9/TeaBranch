@@ -432,7 +432,7 @@ export function BranchDetail({
             color: branch.managed ? "var(--accent)" : "var(--text-secondary)",
             fontWeight: 500,
           }}>
-            {branch.managed ? "BranchPilot" : "External"}
+            {branch.managed ? "TeaBranch" : "External"}
           </span>
         </div>
 

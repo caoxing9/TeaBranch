@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 
 export type Theme = "light" | "dark" | "system";
 
-const STORAGE_KEY = "branchpilot-theme";
+const STORAGE_KEY = "teabranch-theme";
 
 function getStoredTheme(): Theme {
   const stored = localStorage.getItem(STORAGE_KEY);

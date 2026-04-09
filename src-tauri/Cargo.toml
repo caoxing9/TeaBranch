@@ -1,10 +1,10 @@
 [package]
-name = "branchpilot"
+name = "teabranch"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "branchpilot_lib"
+name = "teabranch_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

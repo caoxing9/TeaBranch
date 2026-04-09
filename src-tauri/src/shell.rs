@@ -18,7 +18,7 @@ fn resolve_user_path() -> String {
     {
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !path.is_empty() {
-            eprintln!("[BranchPilot] Resolved user PATH from {}", shell);
+            eprintln!("[TeaBranch] Resolved user PATH from {}", shell);
             return path;
         }
     }
@@ -33,14 +33,14 @@ fn resolve_user_path() -> String {
         {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !path.is_empty() {
-                eprintln!("[BranchPilot] Resolved user PATH from /bin/bash");
+                eprintln!("[TeaBranch] Resolved user PATH from /bin/bash");
                 return path;
             }
         }
     }
 
     // Last resort: return current PATH
-    eprintln!("[BranchPilot] Could not resolve user PATH, using current");
+    eprintln!("[TeaBranch] Could not resolve user PATH, using current");
     std::env::var("PATH").unwrap_or_default()
 }
 
