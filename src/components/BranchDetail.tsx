@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { open as openExternal } from "@tauri-apps/plugin-shell";
 import type { Branch, DevCategory, WorktreeEnvOverrides, WorktreeDbInfo } from "../lib/types";
 import { DEV_CATEGORIES } from "../lib/types";
 import { StatusBadge } from "./StatusBadge";
@@ -367,7 +368,9 @@ export function BranchDetail({
         )}
         {status === "running" && port && (
           <button
-            onClick={() => window.open(previewUrl(branch.name, port), "_blank")}
+            onClick={() => {
+              openExternal(previewUrl(branch.name, port)).catch((e) => setError(String(e)));
+            }}
             style={{
               padding: "4px 12px",
               background: "var(--accent-dim)",
