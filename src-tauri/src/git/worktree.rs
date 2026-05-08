@@ -306,7 +306,11 @@ pub fn create_worktree_full(
     }
 
     // Step 5: Database setup
-    emit_progress(app, branch_name, "database", "Setting up database...", false);
+    if skip_db_create {
+        emit_progress(app, branch_name, "database", "Reusing existing database (no creation needed)", false);
+    } else {
+        emit_progress(app, branch_name, "database", "Setting up database...", false);
+    }
     if !skip_db_create {
         if let Some(base_url) = manager::read_base_database_url(repo_path) {
             let template_db = match &db_mode {
@@ -335,8 +339,11 @@ pub fn create_worktree_full(
     }
 
     // Step 6: Run migration (skip for clone/reuse since data already exists)
-    emit_progress(app, branch_name, "migrate", "Running database migration (make postgres.mode)...", false);
-    if !skip_migration {
+    if skip_migration {
+        emit_progress(app, branch_name, "migrate", "Skipping migration (reusing existing data)", false);
+        eprintln!("[TeaBranch] Skipping migration (data from source)");
+    } else {
+        emit_progress(app, branch_name, "migrate", "Running database migration (make postgres.mode)...", false);
         let output = shell::shell_command("make postgres.mode")
             .current_dir(&worktree_path)
             .output()
@@ -345,8 +352,6 @@ pub fn create_worktree_full(
             let stderr = String::from_utf8_lossy(&output.stderr);
             eprintln!("[TeaBranch] Warning: migration may have failed: {}", stderr);
         }
-    } else {
-        eprintln!("[TeaBranch] Skipping migration (data from source)");
     }
 
     emit_progress(app, branch_name, "done", "Worktree ready!", true);

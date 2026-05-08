@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { open as openExternal } from "@tauri-apps/plugin-shell";
 import { previewUrl } from "../lib/commands";
 
 interface PreviewFrameProps {
@@ -72,7 +73,9 @@ export function PreviewFrame({ branchName, port }: PreviewFrameProps) {
             Reload
           </button>
           <button
-            onClick={() => window.open(url, "_blank")}
+            onClick={() => {
+              openExternal(url).catch(() => {});
+            }}
             style={{
               padding: "2px 6px",
               background: "var(--accent-dim)",
