@@ -41,7 +41,6 @@ pub fn run() {
             commands::service::open_preview_window,
             commands::service::get_worktree_env,
             commands::service::update_worktree_env,
-            commands::service::kill_branch_ports,
             commands::settings::get_settings,
             commands::settings::set_project_path,
             commands::settings::update_settings,

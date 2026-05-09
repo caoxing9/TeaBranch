@@ -1,7 +1,5 @@
 use tauri::{AppHandle, Manager, State, Emitter, WebviewUrl, WebviewWindowBuilder};
 
-extern crate libc;
-
 use crate::process::manager::{self, read_env_var, extract_db_name, WorktreeEnvOverrides};
 use crate::process::port::find_available_port;
 use crate::state::{BranchEnvironment, SharedState, Status};
@@ -156,86 +154,6 @@ pub fn stop_branch(
 
     let _ = app.emit("environment-updated", ());
     Ok(())
-}
-
-#[tauri::command]
-pub fn kill_branch_ports(
-    branch_name: String,
-    app: AppHandle,
-    state: State<'_, SharedState>,
-) -> Result<String, String> {
-    // Stop file watcher for this branch
-    file_watcher::stop_watching(&branch_name);
-
-    let mut s = state.lock().unwrap();
-    let repo_path = s.project_path().ok_or("No project path set")?;
-
-    // Collect ports from state (dynamically allocated runtime ports)
-    let mut ports_to_kill: Vec<(u16, String)> = Vec::new();
-    if let Some(env) = s.environments.get(&branch_name) {
-        if let Some(p) = env.backend_port { ports_to_kill.push((p, "backend".into())); }
-        if let Some(p) = env.socket_port { ports_to_kill.push((p, "socket".into())); }
-        if let Some(p) = env.port { ports_to_kill.push((p, "frontend".into())); }
-    }
-
-    // Reset state: mark as stopped, clear ports and PIDs
-    if let Some(env) = s.environments.get_mut(&branch_name) {
-        env.status = Status::Stopped;
-        env.port = None;
-        env.backend_port = None;
-        env.socket_port = None;
-    }
-    let prefix = format!("{}:", branch_name);
-    let pid_keys: Vec<String> = s.pids.keys()
-        .filter(|k| k.starts_with(&prefix))
-        .cloned()
-        .collect();
-    for key in &pid_keys {
-        if let Some(pid) = s.pids.remove(key) {
-            unsafe { libc::killpg(pid as i32, libc::SIGKILL); }
-        }
-    }
-    drop(s);
-
-    // Also collect ports from env files as fallback
-    let worktree_path = find_worktree_for_branch(&repo_path, &branch_name)?;
-    let env_port_keys = [("SERVER_PORT", "backend"), ("SOCKET_PORT", "socket"), ("PORT", "frontend")];
-    for (key, label) in &env_port_keys {
-        if let Some(val) = manager::read_env_var(&worktree_path, key) {
-            if let Ok(port) = val.parse::<u16>() {
-                if !ports_to_kill.iter().any(|(p, _)| *p == port) {
-                    ports_to_kill.push((port, label.to_string()));
-                }
-            }
-        }
-    }
-
-    let mut killed_ports = Vec::new();
-    for (port, label) in &ports_to_kill {
-        let output = std::process::Command::new("lsof")
-            .args(["-ti", &format!("tcp:{}", port)])
-            .output();
-        if let Ok(output) = output {
-            let pids_str = String::from_utf8_lossy(&output.stdout);
-            let pids: Vec<&str> = pids_str.split_whitespace().collect();
-            if !pids.is_empty() {
-                for pid_s in &pids {
-                    if let Ok(pid) = pid_s.trim().parse::<i32>() {
-                        unsafe { libc::kill(pid, libc::SIGKILL); }
-                    }
-                }
-                killed_ports.push(format!("{} :{}", label, port));
-            }
-        }
-    }
-
-    let _ = app.emit("environment-updated", ());
-
-    if killed_ports.is_empty() {
-        Ok("No processes found on any ports".to_string())
-    } else {
-        Ok(format!("Killed: {}", killed_ports.join(", ")))
-    }
 }
 
 #[tauri::command]

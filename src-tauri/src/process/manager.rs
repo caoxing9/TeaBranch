@@ -371,6 +371,11 @@ pub fn start_service(
         }
     }
 
+    // Kill any leftover process listening on our target ports (zombies from previous runs)
+    for port in [backend_port, socket_port, frontend_port] {
+        kill_port(port);
+    }
+
     // Install deps if needed
     ensure_dependencies(worktree_path)?;
 

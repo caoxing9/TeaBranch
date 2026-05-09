@@ -5,7 +5,7 @@ import type { Branch, DevCategory, WorktreeEnvOverrides, WorktreeDbInfo } from "
 import { DEV_CATEGORIES } from "../lib/types";
 import { StatusBadge } from "./StatusBadge";
 import { CategoryPicker } from "./CategoryPicker";
-import { startBranch, stopBranch, getBranchLogs, removeBranch, openInVscode, openInTerminal, killBranchPorts, getWorktreeEnv, updateWorktreeEnv, listWorktreeDbInfo, previewUrl } from "../lib/commands";
+import { startBranch, stopBranch, getBranchLogs, removeBranch, openInVscode, openInTerminal, getWorktreeEnv, updateWorktreeEnv, listWorktreeDbInfo, previewUrl } from "../lib/commands";
 import { LogList } from "./LogList";
 import { useListRef } from "react-window";
 
@@ -34,8 +34,6 @@ export function BranchDetail({
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [killing, setKilling] = useState(false);
-  const [killResult, setKillResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -381,34 +379,6 @@ export function BranchDetail({
             }}
           >
             Preview
-          </button>
-        )}
-        {hasWorktree && (
-          <button
-            onClick={async () => {
-              setKilling(true);
-              setKillResult(null);
-              try {
-                const result = await killBranchPorts(branch.name);
-                setKillResult(result);
-              } catch (e) {
-                setError(String(e));
-              } finally {
-                setKilling(false);
-              }
-            }}
-            disabled={killing}
-            style={{
-              padding: "4px 12px",
-              background: "rgba(251, 191, 36, 0.12)",
-              color: "var(--status-building)",
-              borderRadius: 6,
-              fontSize: 12,
-              opacity: killing ? 0.5 : 1,
-              transition: "all 0.15s",
-            }}
-          >
-            {killing ? "..." : "Kill Ports"}
           </button>
         )}
         {hasWorktree && (
@@ -764,12 +734,6 @@ export function BranchDetail({
           {error}
         </div>
       )}
-      {killResult && (
-        <div style={{ padding: "6px 12px", background: "rgba(251, 191, 36, 0.12)", color: "var(--status-building)", fontSize: 11, borderBottom: "1px solid rgba(251, 191, 36, 0.2)" }}>
-          {killResult}
-        </div>
-      )}
-
       {/* Logs header */}
       <div
         style={{
