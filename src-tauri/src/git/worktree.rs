@@ -257,20 +257,20 @@ pub fn create_worktree_full(
     // Determine DB name and overrides based on mode
     let new_db_name = manager::branch_to_db_name(branch_name);
 
-    let (db_url_override, redis_uri_override, skip_db_create, skip_migration) = match &db_mode {
+    let (db_url_override, redis_uri_override, skip_db_create) = match &db_mode {
         DbMode::New => {
             // New DB named after branch, no overrides
-            (None, None, false, false)
+            (None, None, false)
         }
         DbMode::Clone { .. } => {
             // New DB named after branch, will be cloned from source in step 5
-            (None, None, false, true) // skip migration since we clone data
+            (None, None, false)
         }
         DbMode::Reuse { source_branch } => {
             // Reuse source's DB URL and Redis URI directly
             let (_src_db_name, src_db_url, src_redis_uri) =
                 resolve_source_db_info(repo_path, source_branch)?;
-            (src_db_url, src_redis_uri, true, true)
+            (src_db_url, src_redis_uri, true)
         }
     };
 
@@ -338,20 +338,17 @@ pub fn create_worktree_full(
         eprintln!("[TeaBranch] Skipping database creation (reuse mode)");
     }
 
-    // Step 6: Run migration (skip for clone/reuse since data already exists)
-    if skip_migration {
-        emit_progress(app, branch_name, "migrate", "Skipping migration (reusing existing data)", false);
-        eprintln!("[TeaBranch] Skipping migration (data from source)");
-    } else {
-        emit_progress(app, branch_name, "migrate", "Running database migration (make postgres.mode)...", false);
-        let output = shell::shell_command("make postgres.mode")
-            .current_dir(&worktree_path)
-            .output()
-            .map_err(|e| format!("Failed to run make postgres.mode: {}", e))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!("[TeaBranch] Warning: migration may have failed: {}", stderr);
-        }
+    // Step 6: Generate Prisma client and apply migrations.
+    // Always run — prisma client is per-worktree (in node_modules), and migrate deploy
+    // is idempotent so it's safe to run even when reusing an existing database.
+    emit_progress(app, branch_name, "migrate", "Running database migration (make postgres.mode)...", false);
+    let output = shell::shell_command("make postgres.mode")
+        .current_dir(&worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to run make postgres.mode: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("[TeaBranch] Warning: migration may have failed: {}", stderr);
     }
 
     emit_progress(app, branch_name, "done", "Worktree ready!", true);
