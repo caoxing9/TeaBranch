@@ -371,9 +371,11 @@ pub fn start_service(
         }
     }
 
-    // Kill any leftover process listening on our target ports (zombies from previous runs)
+    // Kill any leftover process listening on our target ports (zombies from previous runs).
+    // SIGTERM first, then poll until each port is actually free — without this, the new
+    // backend can race the kernel and fail to bind (EADDRINUSE / TIME_WAIT).
     for port in [backend_port, socket_port, frontend_port] {
-        kill_port(port);
+        kill_port_graceful_and_wait(port);
     }
 
     // Install deps if needed
@@ -715,6 +717,51 @@ fn kill_port(port: u16) {
             }
         }
     }
+}
+
+fn listeners_on_port(port: u16) -> Vec<i32> {
+    let out = match std::process::Command::new("lsof")
+        .args(["-ti", &format!("tcp:{}", port), "-sTCP:LISTEN"])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return Vec::new(),
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .filter_map(|s| s.trim().parse::<i32>().ok())
+        .collect()
+}
+
+/// Graceful kill: SIGTERM → wait for exit → SIGKILL fallback → poll until the LISTEN
+/// socket is actually gone. Use this before binding the port ourselves.
+fn kill_port_graceful_and_wait(port: u16) {
+    let pids = listeners_on_port(port);
+    if pids.is_empty() {
+        return;
+    }
+    eprintln!("[TeaBranch] Port {} held by {:?}, sending SIGTERM", port, pids);
+    for pid in &pids {
+        unsafe { libc::kill(*pid, libc::SIGTERM); }
+    }
+    for _ in 0..10 {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        if listeners_on_port(port).is_empty() { break; }
+    }
+    let remaining = listeners_on_port(port);
+    if !remaining.is_empty() {
+        eprintln!("[TeaBranch] Port {} still held by {:?}, SIGKILL", port, remaining);
+        for pid in remaining {
+            unsafe { libc::kill(pid, libc::SIGKILL); }
+        }
+    }
+    for _ in 0..25 {
+        if listeners_on_port(port).is_empty() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    eprintln!("[TeaBranch] Warning: port {} still listening after 5s", port);
 }
 
 /// Stop a branch service by killing all process groups for this branch
