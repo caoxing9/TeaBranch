@@ -53,6 +53,13 @@ export interface WorktreeEnvOverrides {
   prismaDatabaseUrl: string | null;
   publicDatabaseProxy: string | null;
   backendCacheRedisUri: string | null;
+  sandboxTeableEndpoint: string | null;
+}
+
+export interface NgrokTunnel {
+  branchName: string;
+  port: number;
+  publicUrl: string;
 }
 
 export interface WorktreeDbInfo {

@@ -593,6 +593,7 @@ pub const OVERRIDE_KEYS: &[&str] = &[
     "PRISMA_DATABASE_URL",
     "PUBLIC_DATABASE_PROXY",
     "BACKEND_CACHE_REDIS_URI",
+    "SANDBOX_TEABLE_ENDPOINT",
 ];
 
 /// The TeaBranch override env vars for a worktree
@@ -607,6 +608,7 @@ pub struct WorktreeEnvOverrides {
     pub prisma_database_url: Option<String>,
     pub public_database_proxy: Option<String>,
     pub backend_cache_redis_uri: Option<String>,
+    pub sandbox_teable_endpoint: Option<String>,
 }
 
 /// Read the TeaBranch override env vars from a worktree's env file
@@ -620,6 +622,7 @@ pub fn read_worktree_env_overrides(worktree_path: &Path) -> WorktreeEnvOverrides
         prisma_database_url: read_env_var(worktree_path, "PRISMA_DATABASE_URL"),
         public_database_proxy: read_env_var(worktree_path, "PUBLIC_DATABASE_PROXY"),
         backend_cache_redis_uri: read_env_var(worktree_path, "BACKEND_CACHE_REDIS_URI"),
+        sandbox_teable_endpoint: read_env_var(worktree_path, "SANDBOX_TEABLE_ENDPOINT"),
     }
 }
 
@@ -651,6 +654,7 @@ pub fn update_worktree_env_overrides(
         ("PRISMA_DATABASE_URL", overrides.prisma_database_url.as_deref()),
         ("PUBLIC_DATABASE_PROXY", overrides.public_database_proxy.as_deref()),
         ("BACKEND_CACHE_REDIS_URI", overrides.backend_cache_redis_uri.as_deref()),
+        ("SANDBOX_TEABLE_ENDPOINT", overrides.sandbox_teable_endpoint.as_deref()),
     ]
     .into_iter()
     .filter_map(|(k, v)| v.map(|val| (k, val)))
@@ -774,6 +778,11 @@ pub fn cleanup_all(state: &SharedState) {
     for (_, pid) in s.pids.iter() {
         unsafe {
             libc::killpg(*pid as i32, libc::SIGKILL);
+        }
+    }
+    if let Some(pid) = s.ngrok_pid {
+        unsafe {
+            libc::killpg(pid as i32, libc::SIGKILL);
         }
     }
     // Also kill by port for any leaked child processes

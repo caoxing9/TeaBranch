@@ -59,11 +59,22 @@ impl Default for AppSettings {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NgrokTunnel {
+    pub branch_name: String,
+    pub port: u16,
+    pub public_url: String,
+}
+
 pub struct AppState {
     pub settings: AppSettings,
     pub environments: HashMap<String, BranchEnvironment>,
     pub pids: HashMap<String, u32>,
     pub logs: HashMap<String, VecDeque<String>>,
+    /// Currently active ngrok tunnel (free plan allows only one agent at a time).
+    pub ngrok_pid: Option<u32>,
+    pub ngrok_tunnel: Option<NgrokTunnel>,
 }
 
 impl AppState {
@@ -73,6 +84,8 @@ impl AppState {
             environments: HashMap::new(),
             pids: HashMap::new(),
             logs: HashMap::new(),
+            ngrok_pid: None,
+            ngrok_tunnel: None,
         }
     }
 

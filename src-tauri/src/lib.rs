@@ -44,6 +44,9 @@ pub fn run() {
             commands::settings::get_settings,
             commands::settings::set_project_path,
             commands::settings::update_settings,
+            commands::ngrok::start_ngrok,
+            commands::ngrok::stop_ngrok,
+            commands::ngrok::get_ngrok_status,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

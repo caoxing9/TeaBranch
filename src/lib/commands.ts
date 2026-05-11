@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Branch, BranchEnvironment, AppSettings, DbModeType, WorktreeDbInfo, WorktreeEnvOverrides } from "./types";
+import type { Branch, BranchEnvironment, AppSettings, DbModeType, WorktreeDbInfo, WorktreeEnvOverrides, NgrokTunnel } from "./types";
 
 export async function listBranches(): Promise<Branch[]> {
   return invoke("list_branches");
@@ -67,6 +67,18 @@ export async function openInVscode(path: string): Promise<void> {
 
 export async function openInTerminal(path: string): Promise<void> {
   return invoke("open_in_terminal", { path });
+}
+
+export async function startNgrok(branchName: string): Promise<NgrokTunnel> {
+  return invoke("start_ngrok", { branchName });
+}
+
+export async function stopNgrok(): Promise<void> {
+  return invoke("stop_ngrok");
+}
+
+export async function getNgrokStatus(): Promise<NgrokTunnel | null> {
+  return invoke("get_ngrok_status");
 }
 
 /** Generate a preview URL using *.localhost subdomain for cookie isolation. */

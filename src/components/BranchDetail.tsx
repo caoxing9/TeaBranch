@@ -5,7 +5,8 @@ import type { Branch, DevCategory, WorktreeEnvOverrides, WorktreeDbInfo } from "
 import { DEV_CATEGORIES } from "../lib/types";
 import { StatusBadge } from "./StatusBadge";
 import { CategoryPicker } from "./CategoryPicker";
-import { startBranch, stopBranch, getBranchLogs, removeBranch, openInVscode, openInTerminal, getWorktreeEnv, updateWorktreeEnv, listWorktreeDbInfo, previewUrl } from "../lib/commands";
+import { startBranch, stopBranch, getBranchLogs, removeBranch, openInVscode, openInTerminal, getWorktreeEnv, updateWorktreeEnv, listWorktreeDbInfo, previewUrl, startNgrok, stopNgrok, getNgrokStatus } from "../lib/commands";
+import type { NgrokTunnel } from "../lib/types";
 import { LogList } from "./LogList";
 import { useListRef } from "react-window";
 
@@ -60,6 +61,40 @@ export function BranchDetail({
   const [envError, setEnvError] = useState<string | null>(null);
   const [envDirty, setEnvDirty] = useState(false);
   const [dbInfos, setDbInfos] = useState<WorktreeDbInfo[]>([]);
+
+  const [ngrok, setNgrok] = useState<NgrokTunnel | null>(null);
+  const [ngrokLoading, setNgrokLoading] = useState(false);
+  const [ngrokError, setNgrokError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getNgrokStatus().then(setNgrok).catch(() => {});
+  }, []);
+
+  async function handleNgrokToggle() {
+    setNgrokError(null);
+    setNgrokLoading(true);
+    try {
+      if (ngrok && ngrok.branchName === branch.name) {
+        await stopNgrok();
+        setNgrok(null);
+      } else {
+        const tunnel = await startNgrok(branch.name);
+        setNgrok(tunnel);
+        // Refresh the env editor if it's open so the user sees the updated value.
+        if (envExpanded) {
+          getWorktreeEnv(branch.name).then((data) => {
+            setEnvOverrides(data);
+            setEnvDraft(data);
+            setEnvDirty(false);
+          }).catch(() => {});
+        }
+      }
+    } catch (e) {
+      setNgrokError(String(e));
+    } finally {
+      setNgrokLoading(false);
+    }
+  }
 
   // Load env overrides when expanded
   useEffect(() => {
@@ -381,6 +416,66 @@ export function BranchDetail({
             Preview
           </button>
         )}
+        {hasWorktree && (() => {
+          const isThisBranch = ngrok?.branchName === branch.name;
+          const activeOnOther = ngrok && !isThisBranch;
+          const label = ngrokLoading
+            ? "..."
+            : isThisBranch
+              ? "Stop Ngrok"
+              : activeOnOther
+                ? `Ngrok (on ${ngrok!.branchName})`
+                : "Ngrok";
+          return (
+            <button
+              onClick={handleNgrokToggle}
+              disabled={ngrokLoading}
+              title={isThisBranch ? ngrok!.publicUrl : "Start ngrok tunnel for SERVER_PORT and write SANDBOX_TEABLE_ENDPOINT"}
+              style={{
+                padding: "4px 12px",
+                background: isThisBranch ? "rgba(248, 113, 113, 0.12)" : "var(--accent-dim)",
+                color: isThisBranch ? "var(--status-error)" : "var(--accent)",
+                borderRadius: 6,
+                fontSize: 12,
+                opacity: ngrokLoading ? 0.5 : 1,
+                transition: "all 0.15s",
+              }}
+            >
+              {label}
+            </button>
+          );
+        })()}
+        {ngrok?.branchName === branch.name && (
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(ngrok.publicUrl).then(() => {
+                setCopyToast("Copied ngrok URL");
+                setTimeout(() => setCopyToast(null), 1200);
+              }).catch(() => {});
+            }}
+            title="Click to copy"
+            style={{
+              padding: "4px 10px",
+              background: "var(--bg-card)",
+              color: "var(--accent)",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              fontSize: 11,
+              fontFamily: "'SF Mono', monospace",
+              maxWidth: 280,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {ngrok.publicUrl}
+          </button>
+        )}
+        {ngrokError && (
+          <span style={{ fontSize: 11, color: "var(--status-error)" }}>
+            {ngrokError}
+          </span>
+        )}
         {hasWorktree && (
           confirmDelete ? (
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -675,6 +770,8 @@ export function BranchDetail({
                 }}
               />
             </div>
+
+            <EnvField label="SANDBOX_TEABLE_ENDPOINT" value={envDraft.sandboxTeableEndpoint} onChange={(v) => updateDraft("sandboxTeableEndpoint", v)} />
 
             {/* Save / Reset buttons */}
             {envError && (
