@@ -125,6 +125,7 @@ pub fn start_ngrok(
 
     let mut cmd = Command::new("ngrok");
     cmd.args(["http", &port.to_string(), "--log=stdout"])
+        .env("PATH", crate::shell::user_path())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .stdin(Stdio::null());
