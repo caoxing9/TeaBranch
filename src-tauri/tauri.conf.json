@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nickel-org/nickel.rs/master/examples/example.schema.json",
   "productName": "TeaBranch",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "identifier": "com.teabranch.dev",
   "build": {
     "frontendDist": "../dist",
