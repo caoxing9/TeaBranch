@@ -47,6 +47,7 @@ pub fn run() {
             commands::ngrok::start_ngrok,
             commands::ngrok::stop_ngrok,
             commands::ngrok::get_ngrok_status,
+            commands::ngrok::get_ngrok_logs,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

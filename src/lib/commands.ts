@@ -81,6 +81,10 @@ export async function getNgrokStatus(): Promise<NgrokTunnel | null> {
   return invoke("get_ngrok_status");
 }
 
+export async function getNgrokLogs(): Promise<string[]> {
+  return invoke("get_ngrok_logs");
+}
+
 /** Generate a preview URL using *.localhost subdomain for cookie isolation. */
 export function previewUrl(branchName: string, port: number): string {
   const slug = branchName

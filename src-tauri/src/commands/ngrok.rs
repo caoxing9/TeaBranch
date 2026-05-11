@@ -1,11 +1,14 @@
+use std::io::{BufRead, BufReader};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::process::manager::{read_env_var, update_worktree_env_overrides, WorktreeEnvOverrides};
 use crate::state::{NgrokTunnel, SharedState};
+
+const NGROK_LOG_MAX: usize = 2000;
 
 extern crate libc;
 
@@ -123,11 +126,17 @@ pub fn start_ngrok(
         "port": port,
     }));
 
+    // Clear any logs from the prior tunnel so the UI starts clean.
+    {
+        let mut s = state.lock().unwrap();
+        s.ngrok_logs.clear();
+    }
+
     let mut cmd = Command::new("ngrok");
     cmd.args(["http", &port.to_string(), "--log=stdout"])
         .env("PATH", crate::shell::user_path())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .stdin(Stdio::null());
     unsafe {
         cmd.pre_exec(|| {
@@ -135,10 +144,17 @@ pub fn start_ngrok(
             Ok(())
         });
     }
-    let child = cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn ngrok (is it installed?): {}", e))?;
     let pid = child.id();
+
+    if let Some(stdout) = child.stdout.take() {
+        spawn_log_reader(app.clone(), stdout, "stdout");
+    }
+    if let Some(stderr) = child.stderr.take() {
+        spawn_log_reader(app.clone(), stderr, "stderr");
+    }
 
     // Detach: we track only the PID. Reaping happens via killpg + wait on stop.
     std::mem::forget(child);
@@ -216,4 +232,32 @@ pub fn stop_ngrok(state: State<'_, SharedState>) -> Result<(), String> {
 pub fn get_ngrok_status(state: State<'_, SharedState>) -> Result<Option<NgrokTunnel>, String> {
     let s = state.lock().unwrap();
     Ok(s.ngrok_tunnel.clone())
+}
+
+#[tauri::command]
+pub fn get_ngrok_logs(state: State<'_, SharedState>) -> Result<Vec<String>, String> {
+    let s = state.lock().unwrap();
+    Ok(s.ngrok_logs.iter().cloned().collect())
+}
+
+fn spawn_log_reader<R: std::io::Read + Send + 'static>(app: AppHandle, reader: R, stream: &'static str) {
+    std::thread::spawn(move || {
+        let buf = BufReader::new(reader);
+        for line in buf.lines().map_while(Result::ok) {
+            let formatted = if stream == "stderr" {
+                format!("[stderr] {}", line)
+            } else {
+                line
+            };
+            {
+                let state = app.state::<SharedState>();
+                let mut s = state.lock().unwrap();
+                if s.ngrok_logs.len() >= NGROK_LOG_MAX {
+                    s.ngrok_logs.pop_front();
+                }
+                s.ngrok_logs.push_back(formatted.clone());
+            }
+            let _ = app.emit("ngrok:log", &formatted);
+        }
+    });
 }

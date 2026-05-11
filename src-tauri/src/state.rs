@@ -75,6 +75,7 @@ pub struct AppState {
     /// Currently active ngrok tunnel (free plan allows only one agent at a time).
     pub ngrok_pid: Option<u32>,
     pub ngrok_tunnel: Option<NgrokTunnel>,
+    pub ngrok_logs: VecDeque<String>,
 }
 
 impl AppState {
@@ -86,6 +87,7 @@ impl AppState {
             logs: HashMap::new(),
             ngrok_pid: None,
             ngrok_tunnel: None,
+            ngrok_logs: VecDeque::new(),
         }
     }
 

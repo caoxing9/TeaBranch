@@ -5,7 +5,7 @@ import type { Branch, DevCategory, WorktreeEnvOverrides, WorktreeDbInfo } from "
 import { DEV_CATEGORIES } from "../lib/types";
 import { StatusBadge } from "./StatusBadge";
 import { CategoryPicker } from "./CategoryPicker";
-import { startBranch, stopBranch, getBranchLogs, removeBranch, openInVscode, openInTerminal, getWorktreeEnv, updateWorktreeEnv, listWorktreeDbInfo, previewUrl, startNgrok, stopNgrok, getNgrokStatus } from "../lib/commands";
+import { startBranch, stopBranch, getBranchLogs, removeBranch, openInVscode, openInTerminal, getWorktreeEnv, updateWorktreeEnv, listWorktreeDbInfo, previewUrl, startNgrok, stopNgrok, getNgrokStatus, getNgrokLogs } from "../lib/commands";
 import type { NgrokTunnel } from "../lib/types";
 import { LogList } from "./LogList";
 import { useListRef } from "react-window";
@@ -65,10 +65,36 @@ export function BranchDetail({
   const [ngrok, setNgrok] = useState<NgrokTunnel | null>(null);
   const [ngrokLoading, setNgrokLoading] = useState(false);
   const [ngrokError, setNgrokError] = useState<string | null>(null);
+  const [ngrokLogs, setNgrokLogs] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<"logs" | "ngrok">("logs");
 
   useEffect(() => {
     getNgrokStatus().then(setNgrok).catch(() => {});
   }, []);
+
+  // Stream ngrok stdout/stderr and seed the buffer with whatever is already captured.
+  useEffect(() => {
+    let cancelled = false;
+    getNgrokLogs().then((lines) => { if (!cancelled) setNgrokLogs(lines); }).catch(() => {});
+    const unlisten = listen<string>("ngrok:log", (event) => {
+      setNgrokLogs((prev) => {
+        const next = [...prev, event.payload];
+        return next.length > 2000 ? next.slice(-2000) : next;
+      });
+    });
+    return () => {
+      cancelled = true;
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  // Auto-switch to the Ngrok tab when this branch's tunnel goes up; switch back on stop.
+  const ngrokForThisBranch = ngrok?.branchName === branch.name;
+  useEffect(() => {
+    if (!ngrokForThisBranch && activeTab === "ngrok") {
+      setActiveTab("logs");
+    }
+  }, [ngrokForThisBranch, activeTab]);
 
   async function handleNgrokToggle() {
     setNgrokError(null);
@@ -445,32 +471,6 @@ export function BranchDetail({
             </button>
           );
         })()}
-        {ngrok?.branchName === branch.name && (
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(ngrok.publicUrl).then(() => {
-                setCopyToast("Copied ngrok URL");
-                setTimeout(() => setCopyToast(null), 1200);
-              }).catch(() => {});
-            }}
-            title="Click to copy"
-            style={{
-              padding: "4px 10px",
-              background: "var(--bg-card)",
-              color: "var(--accent)",
-              border: "1px solid var(--border)",
-              borderRadius: 6,
-              fontSize: 11,
-              fontFamily: "'SF Mono', monospace",
-              maxWidth: 280,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {ngrok.publicUrl}
-          </button>
-        )}
         {ngrokError && (
           <span style={{ fontSize: 11, color: "var(--status-error)" }}>
             {ngrokError}
@@ -843,12 +843,46 @@ export function BranchDetail({
           gap: 8,
         }}
       >
-        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", flexShrink: 0 }}>
-          Logs
-          <span style={{ fontWeight: 400, marginLeft: 6, fontSize: 10, opacity: 0.7 }}>
-            ({logs.length})
-          </span>
-        </span>
+        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          <button
+            onClick={() => setActiveTab("logs")}
+            style={{
+              padding: "2px 8px",
+              fontSize: 11,
+              fontWeight: activeTab === "logs" ? 600 : 500,
+              borderRadius: 4,
+              background: activeTab === "logs" ? "var(--accent-dim)" : "transparent",
+              color: activeTab === "logs" ? "var(--accent)" : "var(--text-secondary)",
+              border: "1px solid " + (activeTab === "logs" ? "var(--accent-dim)" : "transparent"),
+              transition: "all 0.15s",
+            }}
+          >
+            Logs
+            <span style={{ fontWeight: 400, marginLeft: 5, fontSize: 10, opacity: 0.7 }}>
+              ({logs.length})
+            </span>
+          </button>
+          {ngrokForThisBranch && (
+            <button
+              onClick={() => setActiveTab("ngrok")}
+              style={{
+                padding: "2px 8px",
+                fontSize: 11,
+                fontWeight: activeTab === "ngrok" ? 600 : 500,
+                borderRadius: 4,
+                background: activeTab === "ngrok" ? "var(--accent-dim)" : "transparent",
+                color: activeTab === "ngrok" ? "var(--accent)" : "var(--text-secondary)",
+                border: "1px solid " + (activeTab === "ngrok" ? "var(--accent-dim)" : "transparent"),
+                transition: "all 0.15s",
+              }}
+            >
+              Ngrok
+              <span style={{ fontWeight: 400, marginLeft: 5, fontSize: 10, opacity: 0.7 }}>
+                ({ngrokLogs.length})
+              </span>
+            </button>
+          )}
+        </div>
         <div style={{ position: "relative", flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
           <input
             ref={searchInputRef}
@@ -1004,22 +1038,75 @@ export function BranchDetail({
 
       {/* Log output */}
       <div style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", minHeight: 0 }}>
-        {logs.length === 0 ? (
-          <div style={{ flex: 1, background: "var(--log-bg)", color: "var(--log-text-dim)", textAlign: "center", padding: 24, fontSize: 11 }}>
-            {status === "stopped" ? "Start the branch to see logs" : "Waiting for output..."}
+        {activeTab === "ngrok" && ngrok && (
+          <div
+            style={{
+              padding: "6px 12px",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              borderBottom: "1px solid var(--border)",
+              background: "var(--toolbar-bg)",
+              fontSize: 11,
+              fontFamily: "'SF Mono', monospace",
+            }}
+          >
+            <span style={{ color: "var(--text-secondary)", flexShrink: 0 }}>Tunnel</span>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(ngrok.publicUrl).then(() => {
+                  setCopyToast("Copied ngrok URL");
+                  setTimeout(() => setCopyToast(null), 1200);
+                }).catch(() => {});
+              }}
+              title="Click to copy"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding: "3px 8px",
+                background: "var(--bg-card)",
+                color: "var(--accent)",
+                border: "1px solid var(--border)",
+                borderRadius: 4,
+                fontSize: 11,
+                fontFamily: "'SF Mono', monospace",
+                textAlign: "left",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {ngrok.publicUrl}
+            </button>
+            <span style={{ color: "var(--text-secondary)", fontSize: 10, flexShrink: 0 }}>
+              → :{ngrok.port}
+            </span>
           </div>
-        ) : (
-          <LogList
-            logs={logs}
-            searchTerm={searchTerm.trim()}
-            activeMatchLine={activeMatch?.line ?? -1}
-            activeMatchLocal={activeMatch?.local ?? -1}
-            onCopy={handleCopyLine}
-            listRef={listRef}
-            onRowsRendered={handleRowsRendered}
-            cacheKey={`${branch.name}:${logsClearedAt}`}
-          />
         )}
+        {(() => {
+          const source = activeTab === "ngrok" ? ngrokLogs : logs;
+          if (source.length === 0) {
+            return (
+              <div style={{ flex: 1, background: "var(--log-bg)", color: "var(--log-text-dim)", textAlign: "center", padding: 24, fontSize: 11 }}>
+                {activeTab === "ngrok"
+                  ? (ngrokForThisBranch ? "Waiting for ngrok output..." : "No ngrok tunnel running")
+                  : (status === "stopped" ? "Start the branch to see logs" : "Waiting for output...")}
+              </div>
+            );
+          }
+          return (
+            <LogList
+              logs={source}
+              searchTerm={activeTab === "logs" ? searchTerm.trim() : ""}
+              activeMatchLine={activeTab === "logs" ? (activeMatch?.line ?? -1) : -1}
+              activeMatchLocal={activeTab === "logs" ? (activeMatch?.local ?? -1) : -1}
+              onCopy={handleCopyLine}
+              listRef={listRef}
+              onRowsRendered={handleRowsRendered}
+              cacheKey={`${branch.name}:${activeTab}:${logsClearedAt}`}
+            />
+          );
+        })()}
         {searchTerm.trim() && matches.length === 0 && logs.length > 0 && (
           <div
             style={{
