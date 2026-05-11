@@ -115,13 +115,8 @@ pub fn open_in_terminal(path: String, state: State<'_, SharedState>) -> Result<(
 
     match terminal_app.as_deref() {
         Some(app) => {
-            // Ghostty ignores the path passed via `open -a <app> <path>` and
-            // needs `--working-directory=<path>` forwarded as a launch arg.
             if app.eq_ignore_ascii_case("Ghostty") {
-                std::process::Command::new("open")
-                    .args(["-na", app, "--args", &format!("--working-directory={}", path)])
-                    .spawn()
-                    .map_err(|e| format!("Failed to open {}: {}", app, e))?;
+                open_in_ghostty(&path)?;
             } else {
                 std::process::Command::new("open")
                     .args(["-a", app, &path])
@@ -137,5 +132,48 @@ pub fn open_in_terminal(path: String, state: State<'_, SharedState>) -> Result<(
                 .map_err(|e| format!("Failed to open Terminal: {}", e))?;
         }
     }
+    Ok(())
+}
+
+/// Ghostty's macOS CLI doesn't expose IPC for opening new tabs, so we drive the running
+/// instance via AppleScript: activate → Cmd+T → type `cd <path> && clear` → Return.
+/// If Ghostty isn't running yet, fall back to `open` with `--working-directory`.
+/// The keystroke path requires Accessibility permission for TeaBranch (System Events).
+fn open_in_ghostty(path: &str) -> Result<(), String> {
+    let is_running = std::process::Command::new("pgrep")
+        .args(["-i", "-x", "Ghostty"])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if !is_running {
+        std::process::Command::new("open")
+            .args(["-na", "Ghostty", "--args", &format!("--working-directory={}", path)])
+            .spawn()
+            .map_err(|e| format!("Failed to open Ghostty: {}", e))?;
+        return Ok(());
+    }
+
+    // AppleScript-safe escape: wrap in single quotes, escape any single quotes in path.
+    let quoted = path.replace('\'', "'\\''");
+    let script = format!(
+        r#"tell application "Ghostty" to activate
+delay 0.15
+tell application "System Events"
+    keystroke "t" using {{command down}}
+    delay 0.12
+    keystroke "cd '{}' && clear"
+    keystroke return
+end tell"#,
+        quoted
+    );
+
+    std::process::Command::new("osascript")
+        .args(["-e", &script])
+        .spawn()
+        .map_err(|e| format!(
+            "Failed to drive Ghostty via AppleScript: {} (grant Accessibility permission to TeaBranch in System Settings → Privacy & Security)",
+            e
+        ))?;
     Ok(())
 }
