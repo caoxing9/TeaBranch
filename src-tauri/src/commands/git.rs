@@ -115,11 +115,19 @@ pub fn open_in_terminal(path: String, state: State<'_, SharedState>) -> Result<(
 
     match terminal_app.as_deref() {
         Some(app) => {
-            // Use `open -a <app> <path>` to open the configured terminal app
-            std::process::Command::new("open")
-                .args(["-a", app, &path])
-                .spawn()
-                .map_err(|e| format!("Failed to open {}: {}", app, e))?;
+            // Ghostty ignores the path passed via `open -a <app> <path>` and
+            // needs `--working-directory=<path>` forwarded as a launch arg.
+            if app.eq_ignore_ascii_case("Ghostty") {
+                std::process::Command::new("open")
+                    .args(["-na", app, "--args", &format!("--working-directory={}", path)])
+                    .spawn()
+                    .map_err(|e| format!("Failed to open {}: {}", app, e))?;
+            } else {
+                std::process::Command::new("open")
+                    .args(["-a", app, &path])
+                    .spawn()
+                    .map_err(|e| format!("Failed to open {}: {}", app, e))?;
+            }
         }
         None => {
             // Default: use macOS `open -a Terminal <path>`

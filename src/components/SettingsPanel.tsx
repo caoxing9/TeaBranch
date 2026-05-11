@@ -9,6 +9,7 @@ const TERMINAL_OPTIONS = [
   { label: "System Default (Terminal)", value: "" },
   { label: "Warp", value: "Warp" },
   { label: "iTerm", value: "iTerm" },
+  { label: "Ghostty", value: "Ghostty" },
   { label: "Alacritty", value: "Alacritty" },
   { label: "Kitty", value: "Kitty" },
   { label: "Hyper", value: "Hyper" },
