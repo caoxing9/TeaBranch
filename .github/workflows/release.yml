@@ -1,39 +1,46 @@
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version to release (e.g. 0.2.0)"
-        required: true
-        type: string
-      prerelease:
-        description: "Mark as pre-release"
-        required: false
-        type: boolean
-        default: false
+  push:
+    branches: [main]
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
-  tag:
+  release:
     runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.semantic.outputs.new_release_published }}
+      version: ${{ steps.semantic.outputs.new_release_version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: main
+          fetch-depth: 0
+          persist-credentials: true
 
-      - name: Create and push tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "v${{ inputs.version }}" -m "Release v${{ inputs.version }}"
-          git push origin "v${{ inputs.version }}"
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Semantic Release
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          extra_plugins: |
+            @semantic-release/changelog@6
+            @semantic-release/exec@6
+            @semantic-release/git@10
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build:
-    needs: tag
+    needs: release
+    if: needs.release.outputs.published == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -50,7 +57,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: v${{ inputs.version }}
+          ref: v${{ needs.release.outputs.version }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -128,29 +135,7 @@ jobs:
       - name: Upload DMG to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ inputs.version }}
-          name: BranchPilot v${{ inputs.version }}
-          body: |
-            ## BranchPilot v${{ inputs.version }}
-
-            ### Download
-
-            | Platform | File |
-            |----------|------|
-            | Apple Silicon (M1/M2/M3/M4) | `BranchPilot_*_aarch64.dmg` |
-            | Intel Mac | `BranchPilot_*_x64.dmg` |
-
-            ### First Launch
-
-            Since this app is not signed with an Apple Developer certificate, macOS may block it.
-            Right-click the app → **Open**, then click **Open** in the dialog. You only need to do this once.
-
-            If you see "damaged and can't be opened", run:
-            ```
-            xattr -cr /Applications/BranchPilot.app
-            ```
-          draft: false
-          prerelease: ${{ inputs.prerelease }}
+          tag_name: v${{ needs.release.outputs.version }}
           files: |
             src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
         env:
