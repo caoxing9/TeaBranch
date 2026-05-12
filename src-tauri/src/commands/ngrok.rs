@@ -1,4 +1,5 @@
 use std::io::{BufRead, BufReader};
+use std::net::TcpListener;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -49,11 +50,26 @@ fn find_worktree_for_branch(repo_path: &Path, branch_name: &str) -> Result<std::
     Err(format!("No worktree found for branch '{}'", branch_name))
 }
 
-/// Poll ngrok's local API at 127.0.0.1:4040 for the public URL of the tunnel.
-fn fetch_public_url(port: u16, max_seconds: u64) -> Result<String, String> {
+/// Pick a free localhost TCP port for ngrok's web (API) address.
+/// We never reuse the default 4040 because a stray ngrok on 4040 would
+/// shadow ours and `fetch_public_url` would return its tunnel URL.
+fn pick_free_port() -> Result<u16, String> {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("Failed to allocate web-addr port: {}", e))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("Failed to read local_addr: {}", e))?
+        .port();
+    drop(listener);
+    Ok(port)
+}
+
+/// Poll ngrok's local API for the public URL of the tunnel.
+fn fetch_public_url(web_addr_port: u16, tunnel_port: u16, max_seconds: u64) -> Result<String, String> {
+    let api_url = format!("http://127.0.0.1:{}/api/tunnels", web_addr_port);
     for _ in 0..max_seconds {
         let out = Command::new("curl")
-            .args(["-s", "--max-time", "2", "http://127.0.0.1:4040/api/tunnels"])
+            .args(["-s", "--max-time", "2", &api_url])
             .output();
         if let Ok(out) = out {
             if out.status.success() && !out.stdout.is_empty() {
@@ -64,9 +80,9 @@ fn fetch_public_url(port: u16, max_seconds: u64) -> Result<String, String> {
                                 .and_then(|c| c.get("addr"))
                                 .and_then(|a| a.as_str())
                                 .unwrap_or("");
-                            let matches_port = addr.ends_with(&format!(":{}", port))
-                                || addr == &port.to_string()
-                                || addr == &format!("http://localhost:{}", port);
+                            let matches_port = addr.ends_with(&format!(":{}", tunnel_port))
+                                || addr == &tunnel_port.to_string()
+                                || addr == &format!("http://localhost:{}", tunnel_port);
                             let public_url = t.get("public_url").and_then(|u| u.as_str());
                             if let Some(url) = public_url {
                                 if matches_port || tunnels.len() == 1 {
@@ -132,8 +148,17 @@ pub fn start_ngrok(
         s.ngrok_logs.clear();
     }
 
+    let web_addr_port = pick_free_port()?;
+    let web_addr = format!("127.0.0.1:{}", web_addr_port);
+
     let mut cmd = Command::new("ngrok");
-    cmd.args(["http", &port.to_string(), "--log=stdout"])
+    cmd.args([
+        "http",
+        &port.to_string(),
+        "--log=stdout",
+        "--web-addr",
+        &web_addr,
+    ])
         .env("PATH", crate::shell::user_path())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -159,7 +184,7 @@ pub fn start_ngrok(
     // Detach: we track only the PID. Reaping happens via killpg + wait on stop.
     std::mem::forget(child);
 
-    let public_url = match fetch_public_url(port, 25) {
+    let public_url = match fetch_public_url(web_addr_port, port, 25) {
         Ok(url) => url,
         Err(e) => {
             kill_pgid(pid);
