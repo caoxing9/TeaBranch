@@ -1,8 +1,8 @@
 use std::io::{BufRead, BufReader};
-use std::net::TcpListener;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -50,53 +50,24 @@ fn find_worktree_for_branch(repo_path: &Path, branch_name: &str) -> Result<std::
     Err(format!("No worktree found for branch '{}'", branch_name))
 }
 
-/// Pick a free localhost TCP port for ngrok's web (API) address.
-/// We never reuse the default 4040 because a stray ngrok on 4040 would
-/// shadow ours and `fetch_public_url` would return its tunnel URL.
-fn pick_free_port() -> Result<u16, String> {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .map_err(|e| format!("Failed to allocate web-addr port: {}", e))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| format!("Failed to read local_addr: {}", e))?
-        .port();
-    drop(listener);
-    Ok(port)
-}
-
-/// Poll ngrok's local API for the public URL of the tunnel.
-fn fetch_public_url(web_addr_port: u16, tunnel_port: u16, max_seconds: u64) -> Result<String, String> {
-    let api_url = format!("http://127.0.0.1:{}/api/tunnels", web_addr_port);
-    for _ in 0..max_seconds {
-        let out = Command::new("curl")
-            .args(["-s", "--max-time", "2", &api_url])
-            .output();
-        if let Ok(out) = out {
-            if out.status.success() && !out.stdout.is_empty() {
-                if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&out.stdout) {
-                    if let Some(tunnels) = json.get("tunnels").and_then(|t| t.as_array()) {
-                        for t in tunnels {
-                            let addr = t.get("config")
-                                .and_then(|c| c.get("addr"))
-                                .and_then(|a| a.as_str())
-                                .unwrap_or("");
-                            let matches_port = addr.ends_with(&format!(":{}", tunnel_port))
-                                || addr == &tunnel_port.to_string()
-                                || addr == &format!("http://localhost:{}", tunnel_port);
-                            let public_url = t.get("public_url").and_then(|u| u.as_str());
-                            if let Some(url) = public_url {
-                                if matches_port || tunnels.len() == 1 {
-                                    return Ok(url.to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        std::thread::sleep(Duration::from_secs(1));
+/// Parse ngrok's `started tunnel` log line and return the public URL.
+/// Example line:
+///   t=... lvl=info msg="started tunnel" obj=tunnels name=command_line addr=http://localhost:5103 url=https://abc.ngrok-free.app
+fn extract_public_url(line: &str) -> Option<String> {
+    if !line.contains("started tunnel") {
+        return None;
     }
-    Err("Timed out waiting for ngrok tunnel".to_string())
+    let idx = line.find(" url=")?;
+    let rest = &line[idx + 5..];
+    let end = rest
+        .find(|c: char| c.is_whitespace())
+        .unwrap_or(rest.len());
+    let url = &rest[..end];
+    if url.starts_with("http://") || url.starts_with("https://") {
+        Some(url.to_string())
+    } else {
+        None
+    }
 }
 
 fn kill_pgid(pid: u32) {
@@ -148,17 +119,8 @@ pub fn start_ngrok(
         s.ngrok_logs.clear();
     }
 
-    let web_addr_port = pick_free_port()?;
-    let web_addr = format!("127.0.0.1:{}", web_addr_port);
-
     let mut cmd = Command::new("ngrok");
-    cmd.args([
-        "http",
-        &port.to_string(),
-        "--log=stdout",
-        "--web-addr",
-        &web_addr,
-    ])
+    cmd.args(["http", &port.to_string(), "--log=stdout"])
         .env("PATH", crate::shell::user_path())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -174,26 +136,29 @@ pub fn start_ngrok(
         .map_err(|e| format!("Failed to spawn ngrok (is it installed?): {}", e))?;
     let pid = child.id();
 
+    let (url_tx, url_rx) = mpsc::channel::<String>();
+
     if let Some(stdout) = child.stdout.take() {
-        spawn_log_reader(app.clone(), stdout, "stdout");
+        spawn_log_reader(app.clone(), stdout, "stdout", Some(url_tx));
     }
     if let Some(stderr) = child.stderr.take() {
-        spawn_log_reader(app.clone(), stderr, "stderr");
+        spawn_log_reader(app.clone(), stderr, "stderr", None);
     }
 
     // Detach: we track only the PID. Reaping happens via killpg + wait on stop.
     std::mem::forget(child);
 
-    let public_url = match fetch_public_url(web_addr_port, port, 25) {
+    let public_url = match url_rx.recv_timeout(Duration::from_secs(25)) {
         Ok(url) => url,
-        Err(e) => {
+        Err(_) => {
             kill_pgid(pid);
+            let err = "Timed out waiting for ngrok tunnel".to_string();
             let _ = app.emit("ngrok:status", serde_json::json!({
                 "branchName": branch_name,
                 "phase": "error",
-                "error": e.clone(),
+                "error": err.clone(),
             }));
-            return Err(e);
+            return Err(err);
         }
     };
 
@@ -265,10 +230,24 @@ pub fn get_ngrok_logs(state: State<'_, SharedState>) -> Result<Vec<String>, Stri
     Ok(s.ngrok_logs.iter().cloned().collect())
 }
 
-fn spawn_log_reader<R: std::io::Read + Send + 'static>(app: AppHandle, reader: R, stream: &'static str) {
+fn spawn_log_reader<R: std::io::Read + Send + 'static>(
+    app: AppHandle,
+    reader: R,
+    stream: &'static str,
+    url_tx: Option<mpsc::Sender<String>>,
+) {
     std::thread::spawn(move || {
         let buf = BufReader::new(reader);
+        let mut url_sent = false;
         for line in buf.lines().map_while(Result::ok) {
+            if !url_sent {
+                if let Some(tx) = url_tx.as_ref() {
+                    if let Some(url) = extract_public_url(&line) {
+                        let _ = tx.send(url);
+                        url_sent = true;
+                    }
+                }
+            }
             let formatted = if stream == "stderr" {
                 format!("[stderr] {}", line)
             } else {
@@ -285,4 +264,30 @@ fn spawn_log_reader<R: std::io::Read + Send + 'static>(app: AppHandle, reader: R
             let _ = app.emit("ngrok:log", &formatted);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_public_url;
+
+    #[test]
+    fn parses_started_tunnel_line() {
+        let line = "t=2026-05-12T11:05:24+0800 lvl=info msg=\"started tunnel\" obj=tunnels name=command_line addr=http://localhost:5103 url=https://a988-156-0-200-137.ngrok-free.app";
+        assert_eq!(
+            extract_public_url(line).as_deref(),
+            Some("https://a988-156-0-200-137.ngrok-free.app")
+        );
+    }
+
+    #[test]
+    fn ignores_unrelated_lines() {
+        assert_eq!(extract_public_url("lvl=info msg=\"client session established\""), None);
+        assert_eq!(extract_public_url("update available"), None);
+    }
+
+    #[test]
+    fn ignores_lines_without_url_field() {
+        let line = "msg=\"started tunnel\" obj=tunnels name=foo";
+        assert_eq!(extract_public_url(line), None);
+    }
 }
