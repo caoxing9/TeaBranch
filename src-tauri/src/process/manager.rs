@@ -182,6 +182,20 @@ fn spawn_process(
         command
             .pre_exec(|| {
                 libc::setpgid(0, 0);
+                // GUI apps on macOS inherit `launchctl limit maxfiles` (default 256),
+                // which is far too low for webpack/swc/chokidar dev servers and causes
+                // silent hangs on first compile. Raise the soft limit toward the hard
+                // limit (capped at 65536) so spawned dev processes behave like a normal
+                // shell. Failures are ignored — the process can still start, just risks
+                // EMFILE later.
+                let mut rl = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+                if libc::getrlimit(libc::RLIMIT_NOFILE, &mut rl) == 0 {
+                    let target = std::cmp::min(rl.rlim_max, 65536);
+                    if rl.rlim_cur < target {
+                        rl.rlim_cur = target;
+                        libc::setrlimit(libc::RLIMIT_NOFILE, &rl);
+                    }
+                }
                 Ok(())
             })
             .spawn()
