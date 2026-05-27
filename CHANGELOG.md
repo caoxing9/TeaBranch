@@ -1,3 +1,10 @@
+## [0.3.2](https://github.com/caoxing9/TeaBranch/compare/v0.3.1...v0.3.2) (2026-05-27)
+
+
+### Bug Fixes
+
+* **process:** raise RLIMIT_NOFILE for spawned dev processes ([d9bf85c](https://github.com/caoxing9/TeaBranch/commit/d9bf85c38fb3ab777574344e746de1fd6497488b))
+
 ## [0.3.1](https://github.com/caoxing9/TeaBranch/compare/v0.3.0...v0.3.1) (2026-05-12)
 
 
