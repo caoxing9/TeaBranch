@@ -179,7 +179,22 @@ export function BranchDetail({
     const unlisten = listen<string>(`branch-log:${branch.name}`, (event) => {
       setLogs((prev) => {
         const next = [...prev, event.payload];
-        return limitLogsRef.current && next.length > 2000 ? next.slice(-2000) : next;
+        if (!limitLogsRef.current) return next;
+        // Cap PER SOURCE rather than globally, so a chatty backend can't push the frontend's
+        // (much sparser) lines out of the buffer. Drop only the oldest line of this source
+        // once it exceeds the per-source limit.
+        const src = logSource(event.payload);
+        let seen = 0;
+        for (let i = next.length - 1; i >= 0; i--) {
+          if (logSource(next[i]) === src) {
+            seen++;
+            if (seen > 2000) {
+              next.splice(i, 1);
+              break;
+            }
+          }
+        }
+        return next;
       });
     });
 

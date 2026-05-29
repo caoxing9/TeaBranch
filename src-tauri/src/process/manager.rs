@@ -145,6 +145,25 @@ fn ensure_dependencies(worktree_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Append a formatted (already `[label] `-prefixed) log line to a branch's buffer, then evict
+/// the OLDEST line of the SAME source if that source exceeds `per_source_cap`. Capping per
+/// source instead of globally keeps each process's logs independent, so a chatty backend can't
+/// push the frontend's (much sparser) lines out of the shared buffer. `tag` is the source
+/// prefix, e.g. "[frontend] ".
+fn push_branch_log(
+    buf: &mut std::collections::VecDeque<String>,
+    tag: &str,
+    line: String,
+    per_source_cap: usize,
+) {
+    buf.push_back(line);
+    if buf.iter().filter(|l| l.starts_with(tag)).count() > per_source_cap {
+        if let Some(pos) = buf.iter().position(|l| l.starts_with(tag)) {
+            buf.remove(pos);
+        }
+    }
+}
+
 /// Spawn a single process and wire up logging + exit monitoring
 fn spawn_process(
     app: &AppHandle,
@@ -219,10 +238,7 @@ fn spawn_process(
                     if let Some(state) = app_clone.try_state::<SharedState>() {
                         let mut s = state.lock().unwrap();
                         let buf = s.logs.entry(branch_name_s.clone()).or_insert_with(|| std::collections::VecDeque::with_capacity(2000));
-                        if buf.len() >= 2000 {
-                            buf.pop_front();
-                        }
-                        buf.push_back(formatted.clone());
+                        push_branch_log(buf, &prefix, formatted.clone(), 2000);
                     }
                     let _ = app_clone.emit(
                         &format!("branch-log:{}", branch_name_s),
@@ -247,10 +263,7 @@ fn spawn_process(
                     if let Some(state) = app_clone.try_state::<SharedState>() {
                         let mut s = state.lock().unwrap();
                         let buf = s.logs.entry(branch_name_s.clone()).or_insert_with(|| std::collections::VecDeque::with_capacity(2000));
-                        if buf.len() >= 2000 {
-                            buf.pop_front();
-                        }
-                        buf.push_back(formatted.clone());
+                        push_branch_log(buf, &prefix, formatted.clone(), 2000);
                     }
                     let _ = app_clone.emit(
                         &format!("branch-log:{}", branch_name_s),
@@ -288,10 +301,7 @@ fn spawn_process(
             {
                 let buf = s.logs.entry(branch_name_s.clone())
                     .or_insert_with(|| std::collections::VecDeque::with_capacity(2000));
-                if buf.len() >= 2000 {
-                    buf.pop_front();
-                }
-                buf.push_back(notice.clone());
+                push_branch_log(buf, &format!("[{}] ", label_s), notice.clone(), 2000);
             }
             s.pids.remove(&format!("{}:{}", branch_name_s, label_s));
             // If no more PIDs for this branch, mark as error
