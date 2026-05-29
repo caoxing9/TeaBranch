@@ -36,6 +36,12 @@ fn assign_slot(repo_path: &Path) -> u32 {
         .unwrap_or_default();
 
     let mut max_slot: u32 = 0;
+    // Actual base ports already in use by sibling worktrees. The slot marker alone is not
+    // enough: a worktree's `# WORKTREE_SLOT` and its real `PORT` can drift apart (e.g. when a
+    // derived port like 7000 is taken by another app such as macOS AirPlay and gets bumped),
+    // and a marker-only `max+1` scheme then hands the same PORT to two worktrees — they end up
+    // killing each other's dev servers on shared ports. So we also collect real PORT values.
+    let mut used_base_ports: std::collections::HashSet<u16> = std::collections::HashSet::new();
 
     // Also scan the main repo env
     let scan_dirs: Vec<PathBuf> = {
@@ -56,18 +62,38 @@ fn assign_slot(repo_path: &Path) -> u32 {
         let env_path = dir.join("enterprise/app-ee/.env.development.local");
         if let Ok(content) = std::fs::read_to_string(&env_path) {
             for line in content.lines() {
+                let line = line.trim();
                 if let Some(slot_str) = line.strip_prefix("# WORKTREE_SLOT=") {
                     if let Ok(s) = slot_str.trim().parse::<u32>() {
                         if s > max_slot {
                             max_slot = s;
                         }
                     }
+                } else if let Some(port_str) = line.strip_prefix("PORT=") {
+                    if let Ok(p) = port_str.trim().parse::<u16>() {
+                        used_base_ports.insert(p);
+                    }
                 }
             }
         }
     }
 
-    max_slot + 1
+    // Start past the highest known slot, then skip any slot whose derived ports (base + base+3)
+    // are already claimed by a sibling worktree or are currently bound on the machine. This
+    // guarantees the new worktree's ports don't collide with an existing one.
+    let mut slot = max_slot + 1;
+    loop {
+        let base = 3000u32 + slot * 100;
+        let port = base as u16;
+        let companion = (base + 3) as u16;
+        let collides = used_base_ports.contains(&port)
+            || !crate::process::port::is_port_available(port)
+            || !crate::process::port::is_port_available(companion);
+        if !collides {
+            return slot;
+        }
+        slot += 1;
+    }
 }
 
 /// Read the base .env.development.local (or .env.development) from the main repo,
