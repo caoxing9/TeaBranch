@@ -1,3 +1,10 @@
+## [0.5.1](https://github.com/caoxing9/TeaBranch/compare/v0.5.0...v0.5.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* cap dev logs per source so a chatty backend can't evict frontend logs ([cc2620b](https://github.com/caoxing9/TeaBranch/commit/cc2620bacb70c487d6df9bd2d7e7c7e4536dc36c))
+
 # [0.5.0](https://github.com/caoxing9/TeaBranch/compare/v0.4.0...v0.5.0) (2026-05-29)
 
 
