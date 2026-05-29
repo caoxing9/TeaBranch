@@ -1,3 +1,10 @@
+# [0.4.0](https://github.com/caoxing9/TeaBranch/compare/v0.3.2...v0.4.0) (2026-05-29)
+
+
+### Features
+
+* split dev logs into per-source tabs and surface process crashes ([63a1ff6](https://github.com/caoxing9/TeaBranch/commit/63a1ff6b0d2c9f27b87ab968f3aa11eec046d1db))
+
 ## [0.3.2](https://github.com/caoxing9/TeaBranch/compare/v0.3.1...v0.3.2) (2026-05-27)
 
 
