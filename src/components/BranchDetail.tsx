@@ -15,6 +15,20 @@ function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, "");
 }
 
+// Known dev process labels. Each spawned process prefixes every log line with "[<label>] "
+// (see src-tauri process manager), so we can split the merged stream into per-source tabs.
+const KNOWN_SOURCES = ["backend", "frontend", "dev"] as const;
+type LogSource = (typeof KNOWN_SOURCES)[number];
+type LogTab = "all" | LogSource | "ngrok";
+
+function logSource(line: string): LogSource | null {
+  const m = /^\[(\w+)\]/.exec(line);
+  if (m && (KNOWN_SOURCES as readonly string[]).includes(m[1])) {
+    return m[1] as LogSource;
+  }
+  return null;
+}
+
 interface BranchDetailProps {
   branch: Branch;
   devCategory: DevCategory;
@@ -66,7 +80,7 @@ export function BranchDetail({
   const [ngrokLoading, setNgrokLoading] = useState(false);
   const [ngrokError, setNgrokError] = useState<string | null>(null);
   const [ngrokLogs, setNgrokLogs] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<"logs" | "ngrok">("logs");
+  const [activeTab, setActiveTab] = useState<LogTab>("all");
 
   useEffect(() => {
     getNgrokStatus().then(setNgrok).catch(() => {});
@@ -92,7 +106,7 @@ export function BranchDetail({
   const ngrokForThisBranch = ngrok?.branchName === branch.name;
   useEffect(() => {
     if (!ngrokForThisBranch && activeTab === "ngrok") {
-      setActiveTab("logs");
+      setActiveTab("all");
     }
   }, [ngrokForThisBranch, activeTab]);
 
@@ -174,14 +188,33 @@ export function BranchDetail({
     };
   }, [branch.name]);
 
-  // Compute search matches across all log lines.
+  // Which process sources are present in the current logs (e.g. backend, frontend) — drives
+  // the per-source tabs.
+  const logSources = useMemo(() => {
+    const seen = new Set<LogSource>();
+    for (const l of logs) {
+      const s = logSource(l);
+      if (s) seen.add(s);
+    }
+    return KNOWN_SOURCES.filter((s) => seen.has(s));
+  }, [logs]);
+
+  // The lines shown in the active tab. "all" = everything (unchanged behavior); a source tab
+  // filters to that process; "ngrok" shows the tunnel log. Search/scroll all operate on this.
+  const visibleLogs = useMemo(() => {
+    if (activeTab === "ngrok") return ngrokLogs;
+    if (activeTab === "all") return logs;
+    return logs.filter((l) => logSource(l) === activeTab);
+  }, [logs, ngrokLogs, activeTab]);
+
+  // Compute search matches across the visible log lines.
   const matches = useMemo(() => {
     const term = searchTerm.trim();
     if (!term) return [] as Array<{ line: number; local: number }>;
     const needle = term.toLowerCase();
     const out: Array<{ line: number; local: number }> = [];
-    for (let i = 0; i < logs.length; i++) {
-      const visible = stripAnsi(logs[i]).toLowerCase();
+    for (let i = 0; i < visibleLogs.length; i++) {
+      const visible = stripAnsi(visibleLogs[i]).toLowerCase();
       let pos = 0;
       let local = 0;
       while (true) {
@@ -193,7 +226,7 @@ export function BranchDetail({
       }
     }
     return out;
-  }, [logs, searchTerm]);
+  }, [visibleLogs, searchTerm]);
 
   // Reset active match when search results shrink past it.
   useEffect(() => {
@@ -215,23 +248,23 @@ export function BranchDetail({
   // Auto-scroll to bottom when new logs arrive (only if at bottom).
   const lastLogCountRef = useRef(0);
   useEffect(() => {
-    if (logs.length === 0) {
+    if (visibleLogs.length === 0) {
       lastLogCountRef.current = 0;
       return;
     }
-    if (autoScroll && logs.length > lastLogCountRef.current) {
-      listRef.current?.scrollToRow({ index: logs.length - 1, align: "end", behavior: "auto" });
+    if (autoScroll && visibleLogs.length > lastLogCountRef.current) {
+      listRef.current?.scrollToRow({ index: visibleLogs.length - 1, align: "end", behavior: "auto" });
     }
-    lastLogCountRef.current = logs.length;
-  }, [logs.length, autoScroll]);
+    lastLogCountRef.current = visibleLogs.length;
+  }, [visibleLogs.length, autoScroll]);
 
   // Update autoScroll based on what's visible.
   const handleRowsRendered = useCallback(
     (vis: { startIndex: number; stopIndex: number }) => {
-      if (logs.length === 0) return;
-      setAutoScroll(vis.stopIndex >= logs.length - 2);
+      if (visibleLogs.length === 0) return;
+      setAutoScroll(vis.stopIndex >= visibleLogs.length - 2);
     },
-    [logs.length]
+    [visibleLogs.length]
   );
 
   const goToMatch = useCallback(
@@ -255,14 +288,14 @@ export function BranchDetail({
   const handleCopyAll = useCallback(() => {
     const term = searchTerm.trim().toLowerCase();
     const lines = term
-      ? logs.filter((l) => stripAnsi(l).toLowerCase().includes(term))
-      : logs;
+      ? visibleLogs.filter((l) => stripAnsi(l).toLowerCase().includes(term))
+      : visibleLogs;
     const text = lines.map(stripAnsi).join("\n");
     navigator.clipboard.writeText(text).then(() => {
       setCopyToast(term ? `Copied ${lines.length} matching lines` : `Copied ${lines.length} lines`);
       setTimeout(() => setCopyToast(null), 1500);
     }).catch(() => {});
-  }, [logs, searchTerm]);
+  }, [visibleLogs, searchTerm]);
 
   // Cmd/Ctrl+F focuses search.
   useEffect(() => {
@@ -844,24 +877,33 @@ export function BranchDetail({
         }}
       >
         <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-          <button
-            onClick={() => setActiveTab("logs")}
-            style={{
-              padding: "2px 8px",
-              fontSize: 11,
-              fontWeight: activeTab === "logs" ? 600 : 500,
-              borderRadius: 4,
-              background: activeTab === "logs" ? "var(--accent-dim)" : "transparent",
-              color: activeTab === "logs" ? "var(--accent)" : "var(--text-secondary)",
-              border: "1px solid " + (activeTab === "logs" ? "var(--accent-dim)" : "transparent"),
-              transition: "all 0.15s",
-            }}
-          >
-            Logs
-            <span style={{ fontWeight: 400, marginLeft: 5, fontSize: 10, opacity: 0.7 }}>
-              ({logs.length})
-            </span>
-          </button>
+          {(["all", ...logSources] as LogTab[]).map((tab) => {
+            const isActive = activeTab === tab;
+            const count =
+              tab === "all" ? logs.length : logs.filter((l) => logSource(l) === tab).length;
+            const label = tab === "all" ? "All" : tab.charAt(0).toUpperCase() + tab.slice(1);
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  padding: "2px 8px",
+                  fontSize: 11,
+                  fontWeight: isActive ? 600 : 500,
+                  borderRadius: 4,
+                  background: isActive ? "var(--accent-dim)" : "transparent",
+                  color: isActive ? "var(--accent)" : "var(--text-secondary)",
+                  border: "1px solid " + (isActive ? "var(--accent-dim)" : "transparent"),
+                  transition: "all 0.15s",
+                }}
+              >
+                {label}
+                <span style={{ fontWeight: 400, marginLeft: 5, fontSize: 10, opacity: 0.7 }}>
+                  ({count})
+                </span>
+              </button>
+            );
+          })}
           {ngrokForThisBranch && (
             <button
               onClick={() => setActiveTab("ngrok")}
@@ -968,7 +1010,7 @@ export function BranchDetail({
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
           <button
             onClick={handleCopyAll}
-            disabled={logs.length === 0}
+            disabled={visibleLogs.length === 0}
             title={searchTerm.trim() ? "Copy matching lines" : "Copy all lines"}
             style={{
               padding: "2px 6px",
@@ -977,8 +1019,8 @@ export function BranchDetail({
               background: "var(--bg-card)",
               color: "var(--text-secondary)",
               border: "1px solid var(--border)",
-              opacity: logs.length === 0 ? 0.4 : 1,
-              cursor: logs.length === 0 ? "default" : "pointer",
+              opacity: visibleLogs.length === 0 ? 0.4 : 1,
+              cursor: visibleLogs.length === 0 ? "default" : "pointer",
               transition: "all 0.15s",
             }}
           >
@@ -1084,7 +1126,7 @@ export function BranchDetail({
           </div>
         )}
         {(() => {
-          const source = activeTab === "ngrok" ? ngrokLogs : logs;
+          const source = visibleLogs;
           if (source.length === 0) {
             return (
               <div style={{ flex: 1, background: "var(--log-bg)", color: "var(--log-text-dim)", textAlign: "center", padding: 24, fontSize: 11 }}>
@@ -1097,9 +1139,9 @@ export function BranchDetail({
           return (
             <LogList
               logs={source}
-              searchTerm={activeTab === "logs" ? searchTerm.trim() : ""}
-              activeMatchLine={activeTab === "logs" ? (activeMatch?.line ?? -1) : -1}
-              activeMatchLocal={activeTab === "logs" ? (activeMatch?.local ?? -1) : -1}
+              searchTerm={activeTab !== "ngrok" ? searchTerm.trim() : ""}
+              activeMatchLine={activeTab !== "ngrok" ? (activeMatch?.line ?? -1) : -1}
+              activeMatchLocal={activeTab !== "ngrok" ? (activeMatch?.local ?? -1) : -1}
               onCopy={handleCopyLine}
               listRef={listRef}
               onRowsRendered={handleRowsRendered}
@@ -1107,7 +1149,7 @@ export function BranchDetail({
             />
           );
         })()}
-        {searchTerm.trim() && matches.length === 0 && logs.length > 0 && (
+        {searchTerm.trim() && matches.length === 0 && visibleLogs.length > 0 && (
           <div
             style={{
               position: "absolute",

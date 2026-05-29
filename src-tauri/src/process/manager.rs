@@ -269,8 +269,30 @@ fn spawn_process(
         let status = child.wait();
         eprintln!("[TeaBranch] process exited: branch={}, label={}, status={:?}",
             branch_name_s, label_s, status);
+
+        // Surface the exit in the branch log stream, prefixed with the label so it lands in
+        // the right per-source tab. Without this, a single process crashing (e.g. the frontend
+        // while the backend keeps running) is invisible in the UI — the log just goes quiet.
+        let exit_desc = match &status {
+            Ok(es) if es.success() => "exited cleanly".to_string(),
+            Ok(es) => match es.code() {
+                Some(code) => format!("exited with code {}", code),
+                None => "terminated by signal".to_string(),
+            },
+            Err(e) => format!("could not be waited on: {}", e),
+        };
+        let notice = format!("[{}] ⚠️  process {}", label_s, exit_desc);
+
         if let Some(state) = app_clone.try_state::<SharedState>() {
             let mut s = state.lock().unwrap();
+            {
+                let buf = s.logs.entry(branch_name_s.clone())
+                    .or_insert_with(|| std::collections::VecDeque::with_capacity(2000));
+                if buf.len() >= 2000 {
+                    buf.pop_front();
+                }
+                buf.push_back(notice.clone());
+            }
             s.pids.remove(&format!("{}:{}", branch_name_s, label_s));
             // If no more PIDs for this branch, mark as error
             let has_remaining = s.pids.keys().any(|k| k.starts_with(&format!("{}:", branch_name_s)));
@@ -282,6 +304,7 @@ fn spawn_process(
                 }
             }
         }
+        let _ = app_clone.emit(&format!("branch-log:{}", branch_name_s), notice);
         let _ = app_clone.emit("environment-updated", ());
     });
 
