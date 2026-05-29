@@ -1,3 +1,15 @@
+# [0.5.0](https://github.com/caoxing9/TeaBranch/compare/v0.4.0...v0.5.0) (2026-05-29)
+
+
+### Bug Fixes
+
+* prevent duplicate port assignment across worktrees ([bb3e2b8](https://github.com/caoxing9/TeaBranch/commit/bb3e2b887e03d29ffbdb550d5a90b3ee3b2dd615))
+
+
+### Features
+
+* recover running dev servers / ngrok on startup by probing ports ([f514348](https://github.com/caoxing9/TeaBranch/commit/f514348b0f566ea691b505b6399c132c9afb8c3e))
+
 # [0.4.0](https://github.com/caoxing9/TeaBranch/compare/v0.3.2...v0.4.0) (2026-05-29)
 
 
