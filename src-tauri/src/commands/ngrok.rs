@@ -266,6 +266,148 @@ fn spawn_log_reader<R: std::io::Read + Send + 'static>(
     });
 }
 
+/// First PID of a process matching `name` (exact match), via `pgrep -x`.
+fn pgrep_first(name: &str) -> Option<u32> {
+    let out = Command::new("pgrep")
+        .args(["-x", name])
+        .env("PATH", crate::shell::user_path())
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .next()
+        .and_then(|s| s.trim().parse::<u32>().ok())
+}
+
+/// Map a forwarded local port back to a branch via its SERVER_PORT env value.
+fn find_branch_by_server_port(repo_path: &Path, port: u16) -> Option<String> {
+    if port == 0 {
+        return None;
+    }
+    for (branch, path) in crate::process::manager::list_worktrees(repo_path) {
+        if read_env_var(&path, "SERVER_PORT")
+            .and_then(|sp| sp.trim().parse::<u16>().ok())
+            == Some(port)
+        {
+            return Some(branch);
+        }
+    }
+    None
+}
+
+/// Best-effort recovery/sync of an ngrok tunnel that may still be running (e.g. after a
+/// force-quit). Queries the local ngrok agent API (127.0.0.1:4040); if a tunnel is up it
+/// restores the tracked tunnel + PID and emits a running status; if the agent is gone it
+/// clears a stale tunnel. Safe to call repeatedly.
+pub fn reconcile_ngrok(app: &AppHandle) {
+    let state = app.state::<SharedState>();
+
+    let output = Command::new("curl")
+        .args(["-s", "--max-time", "2", "http://127.0.0.1:4040/api/tunnels"])
+        .env("PATH", crate::shell::user_path())
+        .output();
+
+    let body = match output {
+        Ok(o) if o.status.success() && !o.stdout.is_empty() => o.stdout,
+        _ => {
+            clear_stale_tunnel(app, &state);
+            return;
+        }
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    let tunnel = parsed
+        .get("tunnels")
+        .and_then(|t| t.as_array())
+        .and_then(|arr| {
+            arr.iter()
+                .find(|t| {
+                    t.get("public_url")
+                        .and_then(|u| u.as_str())
+                        .map(|u| u.starts_with("https"))
+                        .unwrap_or(false)
+                })
+                .or_else(|| arr.first())
+        });
+
+    let tunnel = match tunnel {
+        Some(t) => t,
+        None => {
+            clear_stale_tunnel(app, &state);
+            return;
+        }
+    };
+
+    let public_url = tunnel
+        .get("public_url")
+        .and_then(|u| u.as_str())
+        .unwrap_or("")
+        .to_string();
+    if public_url.is_empty() {
+        return;
+    }
+
+    // Already tracking this exact tunnel — nothing to update.
+    {
+        let s = state.lock().unwrap();
+        if s.ngrok_tunnel.as_ref().map(|t| t.public_url == public_url).unwrap_or(false) {
+            return;
+        }
+    }
+
+    let local_port: u16 = tunnel
+        .get("config")
+        .and_then(|c| c.get("addr"))
+        .and_then(|a| a.as_str())
+        .and_then(|addr| addr.rsplit(':').next())
+        .and_then(|p| p.trim().parse().ok())
+        .unwrap_or(0);
+
+    let project_path = { state.lock().unwrap().settings.project_path.clone() };
+    let branch_name = project_path
+        .as_deref()
+        .map(Path::new)
+        .and_then(|repo| find_branch_by_server_port(repo, local_port))
+        .unwrap_or_default();
+
+    let pid = pgrep_first("ngrok");
+
+    {
+        let mut s = state.lock().unwrap();
+        s.ngrok_pid = pid;
+        s.ngrok_tunnel = Some(NgrokTunnel {
+            branch_name: branch_name.clone(),
+            port: local_port,
+            public_url: public_url.clone(),
+        });
+    }
+
+    let _ = app.emit(
+        "ngrok:status",
+        serde_json::json!({
+            "branchName": branch_name,
+            "phase": "running",
+            "publicUrl": public_url,
+            "port": local_port,
+        }),
+    );
+}
+
+/// Drop a tunnel we were tracking once the agent is no longer reachable.
+fn clear_stale_tunnel(app: &AppHandle, state: &State<'_, SharedState>) {
+    let had = {
+        let mut s = state.lock().unwrap();
+        s.ngrok_pid = None;
+        s.ngrok_tunnel.take().is_some()
+    };
+    if had {
+        let _ = app.emit("ngrok:status", serde_json::json!({ "phase": "stopped" }));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::extract_public_url;

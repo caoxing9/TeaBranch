@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::shell;
-use crate::state::{SharedState, Status};
+use crate::state::{BranchEnvironment, SharedState, Status};
 
 extern crate libc;
 
@@ -768,6 +768,115 @@ fn listeners_on_port(port: u16) -> Vec<i32> {
         .split_whitespace()
         .filter_map(|s| s.trim().parse::<i32>().ok())
         .collect()
+}
+
+/// Whether anything is currently LISTENing on the given port.
+pub fn is_port_listening(port: u16) -> bool {
+    !listeners_on_port(port).is_empty()
+}
+
+/// List all worktrees as (branch_name, path) pairs.
+pub fn list_worktrees(repo_path: &Path) -> Vec<(String, std::path::PathBuf)> {
+    let mut result = Vec::new();
+    let output = Command::new("git")
+        .current_dir(repo_path)
+        .args(["worktree", "list", "--porcelain"])
+        .output();
+    let output = match output {
+        Ok(o) if o.status.success() => o,
+        _ => return result,
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut current_path: Option<String> = None;
+    for line in stdout.lines() {
+        if let Some(path) = line.strip_prefix("worktree ") {
+            current_path = Some(path.to_string());
+        } else if let Some(branch_ref) = line.strip_prefix("branch ") {
+            let short = branch_ref.strip_prefix("refs/heads/").unwrap_or(branch_ref);
+            if let Some(p) = current_path.clone() {
+                result.push((short.to_string(), std::path::PathBuf::from(p)));
+            }
+        }
+        if line.is_empty() {
+            current_path = None;
+        }
+    }
+    result
+}
+
+/// Detect dev servers already running on a worktree's configured ports — e.g. orphans left
+/// behind after TeaBranch was force-quit (a clean quit kills them via cleanup_all, but a crash
+/// does not). For each worktree we are NOT actively managing (no live PIDs), mark it Running
+/// if its frontend/backend port is listening, or downgrade a previously-recovered env to
+/// Stopped once its ports go away. Managed envs (with live PIDs) are left to their own exit
+/// monitor. Recovered envs have no captured stdout, so their logs don't backfill — but status
+/// and Stop (port-level kill) work. Safe to call repeatedly.
+pub fn reconcile_environments(app: &AppHandle) {
+    let state = app.state::<SharedState>();
+    let project_path = {
+        let s = state.lock().unwrap();
+        s.project_path()
+    };
+    let project_path = match project_path {
+        Some(p) => p,
+        None => return,
+    };
+
+    let mut changed = false;
+    for (branch, path) in list_worktrees(&project_path) {
+        // Don't touch environments we actively manage; their exit monitor owns their status.
+        let managed = {
+            let s = state.lock().unwrap();
+            s.pids.keys().any(|k| k.starts_with(&format!("{}:", branch)))
+        };
+        if managed {
+            continue;
+        }
+
+        let overrides = read_worktree_env_overrides(&path);
+        let frontend_port = overrides.port.as_deref().and_then(|p| p.trim().parse::<u16>().ok());
+        let backend_port = overrides.server_port.as_deref().and_then(|p| p.trim().parse::<u16>().ok());
+        let socket_port = overrides.socket_port.as_deref().and_then(|p| p.trim().parse::<u16>().ok());
+
+        // Port probes (lsof) are done without holding the state lock.
+        let live = frontend_port.map(is_port_listening).unwrap_or(false)
+            || backend_port.map(is_port_listening).unwrap_or(false);
+
+        let mut s = state.lock().unwrap();
+        let prev_status = s.environments.get(&branch).map(|e| e.status.clone());
+        if live {
+            if prev_status.as_ref() != Some(&Status::Running) {
+                changed = true;
+            }
+            let db_name = overrides.prisma_database_url.as_deref().and_then(extract_db_name);
+            s.environments.insert(
+                branch.clone(),
+                BranchEnvironment {
+                    branch_name: branch.clone(),
+                    worktree_path: Some(path.to_string_lossy().to_string()),
+                    port: frontend_port,
+                    backend_port,
+                    socket_port,
+                    status: Status::Running,
+                    start_command: None,
+                    database_name: db_name,
+                },
+            );
+        } else if prev_status == Some(Status::Running) {
+            // A previously-recovered env whose ports vanished — the orphan exited.
+            if let Some(env) = s.environments.get_mut(&branch) {
+                env.status = Status::Stopped;
+                env.port = None;
+                env.backend_port = None;
+                env.socket_port = None;
+            }
+            changed = true;
+        }
+    }
+
+    if changed {
+        let _ = app.emit("environment-updated", ());
+    }
 }
 
 /// Graceful kill: SIGTERM → wait for exit → SIGKILL fallback → poll until the LISTEN

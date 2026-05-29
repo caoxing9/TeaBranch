@@ -22,8 +22,23 @@ pub fn run() {
             // Load persisted settings
             let saved = SettingsStore::load(app.handle());
             let state = app.state::<SharedState>();
-            let mut s = state.lock().unwrap();
-            s.settings = saved;
+            {
+                let mut s = state.lock().unwrap();
+                s.settings = saved;
+            }
+
+            // Reconcile running state by probing ports: detect dev servers / ngrok tunnels that
+            // are still alive (e.g. orphans left after a force-quit, which cleanup_all never ran
+            // for) and keep each branch's status in sync as those ports come and go.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(800));
+                loop {
+                    process::manager::reconcile_environments(&handle);
+                    commands::ngrok::reconcile_ngrok(&handle);
+                    std::thread::sleep(std::time::Duration::from_secs(6));
+                }
+            });
 
             Ok(())
         })
