@@ -1,3 +1,11 @@
+# [0.6.0](https://github.com/caoxing9/TeaBranch/compare/v0.5.2...v0.6.0) (2026-06-11)
+
+
+### Features
+
+* frosted-glass UI with native macOS vibrancy ([f78fd29](https://github.com/caoxing9/TeaBranch/commit/f78fd2983d365539b03384309e49634a1f596f0d))
+* port-health watchdog auto-restarts dev servers whose port dies ([85788f1](https://github.com/caoxing9/TeaBranch/commit/85788f1184fba4356311b93650a7adaba8639fbd))
+
 ## [0.5.2](https://github.com/caoxing9/TeaBranch/compare/v0.5.1...v0.5.2) (2026-06-11)
 
 
