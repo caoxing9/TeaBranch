@@ -1,6 +1,6 @@
 {
   "name": "teabranch",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Parallel branch development environment manager",
   "scripts": {
     "dev": "vite",

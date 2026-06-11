@@ -1,3 +1,10 @@
+## [0.5.2](https://github.com/caoxing9/TeaBranch/compare/v0.5.1...v0.5.2) (2026-06-11)
+
+
+### Bug Fixes
+
+* detach child stdin so next dev doesn't exit on stdin EOF ([5b803dd](https://github.com/caoxing9/TeaBranch/commit/5b803ddf4d475ccff35e4332f7cfd19fc406649f))
+
 ## [0.5.1](https://github.com/caoxing9/TeaBranch/compare/v0.5.0...v0.5.1) (2026-05-29)
 
 
