@@ -1,3 +1,10 @@
+## [0.6.1](https://github.com/caoxing9/TeaBranch/compare/v0.6.0...v0.6.1) (2026-06-11)
+
+
+### Bug Fixes
+
+* enable macos-private-api so the transparent window actually renders ([45d2cde](https://github.com/caoxing9/TeaBranch/commit/45d2cdec5d2b45c0f0f03bd747a8b4eff01e4b6f))
+
 # [0.6.0](https://github.com/caoxing9/TeaBranch/compare/v0.5.2...v0.6.0) (2026-06-11)
 
 
