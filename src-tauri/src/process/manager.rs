@@ -177,6 +177,12 @@ fn spawn_process(
 
     let mut command = shell::shell_command(&cmd.command);
     command.current_dir(worktree_path)
+        // Detach stdin: without this the child inherits the GUI app's stdin. `next dev`
+        // enables interactive keypress handling when stdin looks like a TTY and quits
+        // (exit 0, "process exited cleanly") the moment that stdin hits EOF — which is why
+        // the frontend died right after "Ready" while the backend (ignores stdin) survived.
+        // Mirrors the same guard in commands/ngrok.rs.
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
