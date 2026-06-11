@@ -164,15 +164,14 @@ export function CreateWorktreeDialog({ onClose, onCreated }: CreateWorktreeDialo
       }}
     >
       <div
+        className="glass-float"
         style={{
-          background: "var(--bg-secondary)",
-          borderRadius: 14,
-          border: "1px solid var(--border-strong)",
+          background: "var(--bg-primary)",
+          borderRadius: 20,
           padding: 24,
           width: 420,
           maxHeight: "80vh",
           overflow: "auto",
-          boxShadow: "0 8px 40px rgba(0, 0, 0, 0.3)",
           animation: "wt-fade-in 0.2s ease",
         }}
       >

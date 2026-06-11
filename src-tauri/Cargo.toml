@@ -22,3 +22,4 @@ notify-debouncer-mini = "0.5"
 tokio = { version = "1", features = ["full"] }
 libc = "0.2.184"
 openssl = { version = "0.10", features = ["vendored"] }
+window-vibrancy = "0.6"

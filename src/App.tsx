@@ -64,6 +64,7 @@ function App() {
       {/* Title bar */}
       <div
         data-tauri-drag-region
+        className="glass"
         style={{
           display: "flex",
           alignItems: "center",
@@ -140,14 +141,14 @@ function TitleBtn({
       onClick={onClick}
       title={title}
       style={{
-        padding: "0 8px",
+        padding: "0 10px",
         height: 24,
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
         background: bg,
         color,
-        borderRadius: 5,
+        borderRadius: 12,
         fontSize: 11,
         fontWeight: accent ? 600 : 400,
         whiteSpace: "nowrap",

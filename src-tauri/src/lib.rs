@@ -18,6 +18,21 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Mutex::new(AppState::new()) as SharedState)
         .setup(|app| {
+            // Frosted glass: blur the desktop behind the (transparent) main window so the
+            // translucent palette in global.css reads as material instead of a hole.
+            #[cfg(target_os = "macos")]
+            {
+                use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = apply_vibrancy(
+                        &window,
+                        NSVisualEffectMaterial::UnderWindowBackground,
+                        None,
+                        None,
+                    );
+                }
+            }
+
             tray::setup_tray(app)?;
             // Load persisted settings
             let saved = SettingsStore::load(app.handle());

@@ -62,7 +62,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.5)",
+        background: "var(--overlay-bg)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -71,10 +71,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="glass-float"
         style={{
           background: "var(--bg-primary)",
-          border: "1px solid var(--border)",
-          borderRadius: 10,
+          borderRadius: 20,
           padding: 20,
           width: 360,
           maxWidth: "90vw",
