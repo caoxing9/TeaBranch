@@ -1,3 +1,10 @@
+## [0.6.2](https://github.com/caoxing9/TeaBranch/compare/v0.6.1...v0.6.2) (2026-06-11)
+
+
+### Bug Fixes
+
+* raise glass material opacity for readable contrast ([c324c05](https://github.com/caoxing9/TeaBranch/commit/c324c05ccc0c1576051c610a165f6bdfcb84b52b))
+
 ## [0.6.1](https://github.com/caoxing9/TeaBranch/compare/v0.6.0...v0.6.1) (2026-06-11)
 
 
