@@ -10,6 +10,7 @@ use crate::state::{BranchEnvironment, SharedState, Status};
 extern crate libc;
 
 /// A command to start, with its label and whether it's the preview target
+#[derive(Clone)]
 struct StartCommand {
     label: String,
     command: String,
@@ -472,16 +473,213 @@ pub fn start_service(
         spawn_process(&app, &state, branch_name, cmd, worktree_path)?;
     }
 
-    // Update status to running
-    {
+    // Update status to running and retire any previous watchdog for this branch
+    let gen = {
         let mut s = state.lock().unwrap();
         if let Some(env) = s.environments.get_mut(branch_name) {
             env.status = Status::Running;
         }
-    }
+        let gen = s.watchdog_gen.entry(branch_name.to_string()).or_insert(0);
+        *gen += 1;
+        *gen
+    };
+
+    spawn_health_watchdog(
+        app.clone(),
+        branch_name.to_string(),
+        worktree_path.to_path_buf(),
+        commands,
+        gen,
+    );
 
     let _ = app.emit("environment-updated", ());
     Ok(())
+}
+
+/// How long a process gets to bring its port up after (re)spawn before it's unhealthy.
+/// First compiles of the backend can take minutes, so this is generous.
+const WATCHDOG_BOOT_GRACE: std::time::Duration = std::time::Duration::from_secs(300);
+/// Poll interval for port health.
+const WATCHDOG_TICK: std::time::Duration = std::time::Duration::from_secs(10);
+/// Consecutive failed probes (port down, process alive) tolerated once the port has been
+/// seen up. Generous because watch-mode rebuilds drop the port for a while.
+const WATCHDOG_MISS_LIMIT: u32 = 9;
+/// Max automatic restarts per process until the port stays up for a minute again.
+const WATCHDOG_MAX_RESTARTS: u32 = 3;
+
+/// Per-command bookkeeping for the health watchdog.
+struct WatchedProc {
+    cmd: StartCommand,
+    spawned_at: std::time::Instant,
+    ever_up: bool,
+    miss: u32,
+    up_streak: u32,
+    restarts: u32,
+    gave_up: bool,
+}
+
+/// Watch a branch's processes by PORT, not just by PID. A dev-server wrapper (e.g. `nest
+/// start -w`) can outlive its crashed inner app, leaving a live process with a dead port —
+/// invisible to the exit monitor. If a port never comes up within the boot grace, or drops
+/// long enough while the process is alive, or the process itself dies, restart that one
+/// command (bounded), surfacing every decision in the branch log.
+fn spawn_health_watchdog(
+    app: AppHandle,
+    branch: String,
+    worktree: std::path::PathBuf,
+    commands: Vec<StartCommand>,
+    gen: u64,
+) {
+    std::thread::spawn(move || {
+        let mut watched: Vec<WatchedProc> = commands
+            .into_iter()
+            .map(|cmd| WatchedProc {
+                cmd,
+                spawned_at: std::time::Instant::now(),
+                ever_up: false,
+                miss: 0,
+                up_streak: 0,
+                restarts: 0,
+                gave_up: false,
+            })
+            .collect();
+
+        loop {
+            std::thread::sleep(WATCHDOG_TICK);
+
+            // Retire when superseded (restart/stop bumped the generation) or branch stopped.
+            {
+                let state = app.state::<SharedState>();
+                let s = state.lock().unwrap();
+                if s.watchdog_gen.get(&branch).copied() != Some(gen) {
+                    return;
+                }
+                match s.environments.get(&branch).map(|e| &e.status) {
+                    Some(Status::Stopped) | None => return,
+                    _ => {}
+                }
+            }
+
+            for w in watched.iter_mut() {
+                if w.gave_up {
+                    continue;
+                }
+                // Port probe without holding the state lock (lsof can be slow).
+                let listening = is_port_listening(w.cmd.port);
+                let pid_alive = {
+                    let state = app.state::<SharedState>();
+                    let s = state.lock().unwrap();
+                    s.pids.contains_key(&format!("{}:{}", branch, w.cmd.label))
+                };
+
+                if listening {
+                    w.ever_up = true;
+                    w.miss = 0;
+                    w.up_streak += 1;
+                    // Healthy for a minute — forgive past restarts.
+                    if w.up_streak >= 6 {
+                        w.restarts = 0;
+                    }
+                    continue;
+                }
+                w.up_streak = 0;
+
+                let unhealthy = if !pid_alive {
+                    // Process is gone entirely; the exit monitor already logged it.
+                    true
+                } else if !w.ever_up {
+                    w.spawned_at.elapsed() > WATCHDOG_BOOT_GRACE
+                } else {
+                    w.miss += 1;
+                    w.miss >= WATCHDOG_MISS_LIMIT
+                };
+                if !unhealthy {
+                    continue;
+                }
+
+                if w.restarts >= WATCHDOG_MAX_RESTARTS {
+                    w.gave_up = true;
+                    watchdog_log(
+                        &app,
+                        &branch,
+                        &w.cmd.label,
+                        format!(
+                            "port {} still dead after {} restarts — giving up, check the logs above",
+                            w.cmd.port, w.restarts
+                        ),
+                    );
+                    let state = app.state::<SharedState>();
+                    let mut s = state.lock().unwrap();
+                    if let Some(env) = s.environments.get_mut(&branch) {
+                        env.status = Status::Error;
+                    }
+                    drop(s);
+                    let _ = app.emit("environment-updated", ());
+                    continue;
+                }
+
+                w.restarts += 1;
+                let reason = if !pid_alive {
+                    "process exited".to_string()
+                } else if !w.ever_up {
+                    format!("port {} never came up (process alive but not serving)", w.cmd.port)
+                } else {
+                    format!("port {} went dark while the process kept running", w.cmd.port)
+                };
+                watchdog_log(
+                    &app,
+                    &branch,
+                    &w.cmd.label,
+                    format!("{} — auto-restarting ({}/{})", reason, w.restarts, WATCHDOG_MAX_RESTARTS),
+                );
+
+                // Tear down the old process group (if any), free the port, respawn.
+                {
+                    let state = app.state::<SharedState>();
+                    let mut s = state.lock().unwrap();
+                    if let Some(pid) = s.pids.remove(&format!("{}:{}", branch, w.cmd.label)) {
+                        unsafe { libc::killpg(pid as i32, libc::SIGTERM); }
+                    }
+                }
+                kill_port_graceful_and_wait(w.cmd.port);
+
+                let state = app.state::<SharedState>();
+                match spawn_process(&app, &state, &branch, &w.cmd, &worktree) {
+                    Ok(_) => {
+                        w.spawned_at = std::time::Instant::now();
+                        w.ever_up = false;
+                        w.miss = 0;
+                        let mut s = state.lock().unwrap();
+                        if let Some(env) = s.environments.get_mut(&branch) {
+                            env.status = Status::Running;
+                        }
+                        drop(s);
+                        let _ = app.emit("environment-updated", ());
+                    }
+                    Err(e) => {
+                        watchdog_log(&app, &branch, &w.cmd.label, format!("restart failed: {}", e));
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// Put a watchdog decision into the branch's log stream (tagged with the process label so it
+/// lands in the right per-source tab) and mirror it to stderr.
+fn watchdog_log(app: &AppHandle, branch: &str, label: &str, msg: String) {
+    let tag = format!("[{}] ", label);
+    let line = format!("{}🩺 TeaBranch watchdog: {}", tag, msg);
+    eprintln!("[TeaBranch] watchdog: branch={}, label={}: {}", branch, label, msg);
+    if let Some(state) = app.try_state::<SharedState>() {
+        let mut s = state.lock().unwrap();
+        let buf = s
+            .logs
+            .entry(branch.to_string())
+            .or_insert_with(|| std::collections::VecDeque::with_capacity(2000));
+        push_branch_log(buf, &tag, line.clone(), 2000);
+    }
+    let _ = app.emit(&format!("branch-log:{}", branch), line);
 }
 
 /// Create a database with a specific name from a specific template.
@@ -929,6 +1127,10 @@ fn kill_port_graceful_and_wait(port: u16) {
 /// Stop a branch service by killing all process groups for this branch
 pub fn stop_service(state: &SharedState, branch_name: &str) -> Result<(), String> {
     let mut s = state.lock().unwrap();
+
+    // Retire this branch's health watchdog before tearing processes down, so it can't
+    // misread the intentional stop as a crash and respawn what we're killing.
+    *s.watchdog_gen.entry(branch_name.to_string()).or_insert(0) += 1;
 
     // Collect ports before clearing, so we can do port-level cleanup
     let ports_to_kill: Vec<u16> = s.environments.get(branch_name)

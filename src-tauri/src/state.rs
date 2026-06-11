@@ -76,6 +76,9 @@ pub struct AppState {
     pub ngrok_pid: Option<u32>,
     pub ngrok_tunnel: Option<NgrokTunnel>,
     pub ngrok_logs: VecDeque<String>,
+    /// Monotonic generation per branch. Bumped on every start/stop; a health watchdog
+    /// thread exits as soon as the stored generation no longer matches its own.
+    pub watchdog_gen: HashMap<String, u64>,
 }
 
 impl AppState {
@@ -88,6 +91,7 @@ impl AppState {
             ngrok_pid: None,
             ngrok_tunnel: None,
             ngrok_logs: VecDeque::new(),
+            watchdog_gen: HashMap::new(),
         }
     }
 
