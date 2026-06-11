@@ -10,31 +10,31 @@
    color. Opacity, not hue, defines elevation. */
 :root,
 [data-theme="dark"] {
-  --bg-primary: rgba(16, 16, 28, 0.52);
-  --bg-secondary: rgba(255, 255, 255, 0.045);
-  --bg-card: rgba(255, 255, 255, 0.075);
-  --bg-card-hover: rgba(255, 255, 255, 0.12);
+  --bg-primary: rgba(15, 15, 26, 0.82);
+  --bg-secondary: rgba(255, 255, 255, 0.05);
+  --bg-card: rgba(255, 255, 255, 0.09);
+  --bg-card-hover: rgba(255, 255, 255, 0.14);
   --text-primary: #eceef6;
-  --text-secondary: #9094b8;
+  --text-secondary: #a8acce;
   --accent: #6ee7b7;
   --accent-dim: rgba(110, 231, 183, 0.16);
   --accent-on: #0f0f1a;
   --status-running: #6ee7b7;
-  --status-stopped: #6b7280;
+  --status-stopped: #9aa0b4;
   --status-building: #fbbf24;
   --status-error: #f87171;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.17);
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.18);
   --radius: 14px;
-  --toolbar-bg: rgba(20, 20, 34, 0.38);
-  --log-bg: rgba(6, 6, 14, 0.55);
+  --toolbar-bg: rgba(19, 19, 32, 0.6);
+  --log-bg: rgba(6, 6, 14, 0.72);
   --log-text: #c9d1d9;
   --log-text-dim: #484f58;
   --log-text-muted: #8b949e;
   --log-backend: #f0883e;
   --log-frontend: #58a6ff;
   --log-error: #f85149;
-  --overlay-bg: rgba(8, 8, 16, 0.42);
+  --overlay-bg: rgba(8, 8, 16, 0.5);
   --glass-blur: blur(28px) saturate(170%);
   --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.09);
   --shadow-float: 0 18px 48px rgba(0, 0, 0, 0.45), 0 2px 10px rgba(0, 0, 0, 0.3);
@@ -43,10 +43,10 @@
 
 /* ── Light theme ── */
 [data-theme="light"] {
-  --bg-primary: rgba(243, 244, 250, 0.5);
-  --bg-secondary: rgba(255, 255, 255, 0.35);
-  --bg-card: rgba(255, 255, 255, 0.55);
-  --bg-card-hover: rgba(255, 255, 255, 0.78);
+  --bg-primary: rgba(243, 244, 250, 0.82);
+  --bg-secondary: rgba(255, 255, 255, 0.45);
+  --bg-card: rgba(255, 255, 255, 0.66);
+  --bg-card-hover: rgba(255, 255, 255, 0.88);
   --text-primary: #1a1a2e;
   --text-secondary: #6b7084;
   --accent: #059669;
@@ -59,15 +59,15 @@
   --border: rgba(0, 0, 0, 0.07);
   --border-strong: rgba(0, 0, 0, 0.14);
   --radius: 14px;
-  --toolbar-bg: rgba(248, 249, 252, 0.42);
-  --log-bg: rgba(252, 253, 255, 0.6);
+  --toolbar-bg: rgba(248, 249, 252, 0.62);
+  --log-bg: rgba(252, 253, 255, 0.75);
   --log-text: #24292f;
   --log-text-dim: #b0b8c1;
   --log-text-muted: #57606a;
   --log-backend: #bf5a15;
   --log-frontend: #0550ae;
   --log-error: #cf222e;
-  --overlay-bg: rgba(120, 125, 145, 0.28);
+  --overlay-bg: rgba(120, 125, 145, 0.32);
   --glass-blur: blur(28px) saturate(170%);
   --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.65);
   --shadow-float: 0 18px 48px rgba(40, 45, 70, 0.22), 0 2px 10px rgba(40, 45, 70, 0.12);
@@ -77,10 +77,10 @@
 /* ── System theme ── */
 @media (prefers-color-scheme: light) {
   [data-theme="system"] {
-    --bg-primary: rgba(243, 244, 250, 0.5);
-    --bg-secondary: rgba(255, 255, 255, 0.35);
-    --bg-card: rgba(255, 255, 255, 0.55);
-    --bg-card-hover: rgba(255, 255, 255, 0.78);
+    --bg-primary: rgba(243, 244, 250, 0.82);
+    --bg-secondary: rgba(255, 255, 255, 0.45);
+    --bg-card: rgba(255, 255, 255, 0.66);
+    --bg-card-hover: rgba(255, 255, 255, 0.88);
     --text-primary: #1a1a2e;
     --text-secondary: #6b7084;
     --accent: #059669;
@@ -93,15 +93,15 @@
     --border: rgba(0, 0, 0, 0.07);
     --border-strong: rgba(0, 0, 0, 0.14);
     --radius: 14px;
-    --toolbar-bg: rgba(248, 249, 252, 0.42);
-    --log-bg: rgba(252, 253, 255, 0.6);
+    --toolbar-bg: rgba(248, 249, 252, 0.62);
+    --log-bg: rgba(252, 253, 255, 0.75);
     --log-text: #24292f;
     --log-text-dim: #b0b8c1;
     --log-text-muted: #57606a;
     --log-backend: #bf5a15;
     --log-frontend: #0550ae;
     --log-error: #cf222e;
-    --overlay-bg: rgba(120, 125, 145, 0.28);
+    --overlay-bg: rgba(120, 125, 145, 0.32);
     --glass-blur: blur(28px) saturate(170%);
     --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.65);
     --shadow-float: 0 18px 48px rgba(40, 45, 70, 0.22), 0 2px 10px rgba(40, 45, 70, 0.12);
