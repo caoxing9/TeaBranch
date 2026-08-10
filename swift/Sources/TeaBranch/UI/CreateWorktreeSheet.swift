@@ -124,7 +124,7 @@ struct CreateWorktreeSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("New Worktree")
-                .font(.system(size: 15, weight: .bold))
+                .font(.system(size: Typography.title, weight: .bold))
                 .padding(.bottom, 16)
 
             if model.isCreating || model.isDone {
@@ -135,7 +135,7 @@ struct CreateWorktreeSheet: View {
 
             if let error = model.error {
                 Text(error)
-                    .font(.system(size: 11))
+                    .font(.system(size: Typography.body))
                     .foregroundStyle(Palette.statusError)
                     .textSelection(.enabled)
                     .padding(10)
@@ -165,13 +165,13 @@ struct CreateWorktreeSheet: View {
     private var form: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Branch name (from origin/develop):")
-                .font(.system(size: 12))
+                .font(.system(size: Typography.callout))
                 .foregroundStyle(Palette.textSecondary)
                 .padding(.bottom, 8)
 
             TextField("feat/my-feature", text: $model.branchName)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(.system(size: Typography.headline))
                 .focused($nameFocused)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
@@ -183,7 +183,7 @@ struct CreateWorktreeSheet: View {
                 .onSubmit { if model.canCreate { create() } }
 
             Text("数据库模式:")
-                .font(.system(size: 12))
+                .font(.system(size: Typography.callout))
                 .foregroundStyle(Palette.textSecondary)
                 .padding(.top, 16)
                 .padding(.bottom, 8)
@@ -196,14 +196,14 @@ struct CreateWorktreeSheet: View {
 
             if model.mode != .new {
                 Text(model.mode == .clone ? "克隆来源:" : "复用来源:")
-                    .font(.system(size: 12))
+                    .font(.system(size: Typography.callout))
                     .foregroundStyle(Palette.textSecondary)
                     .padding(.top, 12)
                     .padding(.bottom, 6)
 
                 if model.availableSources.isEmpty {
                     Text("没有找到已配置数据库的 worktree")
-                        .font(.system(size: 11))
+                        .font(.system(size: Typography.body))
                         .foregroundStyle(Palette.statusError)
                 } else {
                     Picker("", selection: $model.sourceBranch) {
@@ -213,20 +213,20 @@ struct CreateWorktreeSheet: View {
                         }
                     }
                     .labelsHidden()
-                    .font(.system(size: 12))
+                    .font(.system(size: Typography.callout))
                 }
             }
 
             if let dbName = model.previewDatabaseName {
                 HStack(spacing: 6) {
-                    Text("DB:").font(.system(size: 11)).opacity(0.6)
+                    Text("DB:").font(.system(size: Typography.body)).opacity(0.6)
                     Text(dbName)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: Typography.body, design: .monospaced))
                         .foregroundStyle(Palette.accent)
                     if model.mode == .reuse {
                         Spacer()
                         Text("shared")
-                            .font(.system(size: 10))
+                            .font(.system(size: Typography.caption))
                             .foregroundStyle(Palette.statusBuilding)
                     }
                 }
@@ -265,12 +265,12 @@ struct CreateWorktreeSheet: View {
         } label: {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 12))
+                    .font(.system(size: Typography.callout))
                     .foregroundStyle(isSelected ? Palette.accent : Palette.textSecondary)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(mode.label).font(.system(size: 12, weight: .semibold))
+                    Text(mode.label).font(.system(size: Typography.callout, weight: .semibold))
                     Text(mode.detail)
-                        .font(.system(size: 11))
+                        .font(.system(size: Typography.body))
                         .foregroundStyle(Palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -305,14 +305,14 @@ struct CreateWorktreeSheet: View {
                         if isActive {
                             ProgressView().controlSize(.small).scaleEffect(0.6)
                         } else if isPast || isDone {
-                            Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
+                            Image(systemName: "checkmark").font(.system(size: Typography.caption, weight: .bold))
                         } else {
                             Text("·")
                         }
                     }
                     .frame(width: 14, height: 14)
 
-                    Text(step.label).font(.system(size: 12))
+                    Text(step.label).font(.system(size: Typography.callout))
                 }
                 .foregroundStyle(
                     isPast || isDone ? Palette.accent : (isActive ? Palette.statusBuilding : Palette.textSecondary)
@@ -325,7 +325,7 @@ struct CreateWorktreeSheet: View {
 
             if model.isDone {
                 Text("Closing...")
-                    .font(.system(size: 11))
+                    .font(.system(size: Typography.body))
                     .foregroundStyle(Palette.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.top, 8)

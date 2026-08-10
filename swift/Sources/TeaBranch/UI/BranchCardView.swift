@@ -58,7 +58,7 @@ struct BranchCardView: View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 5) {
                 Text(branch.name)
-                    .font(.system(size: compact ? 11 : 12, weight: .semibold))
+                    .font(.system(size: compact ? Typography.body : Typography.callout, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
 
@@ -88,16 +88,16 @@ struct BranchCardView: View {
                     Text("managed").foregroundStyle(Palette.textSecondary)
                 }
             }
-            .font(.system(size: 10))
+            .font(.system(size: Typography.caption))
             .lineLimit(1)
         }
     }
 
     private func chip(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(.system(size: 9, weight: .medium))
+            .font(.system(size: Typography.micro, weight: .medium))
             // Small type needs a touch of positive tracking to stay legible.
-            .opticalTracking(9)
+            .opticalTracking(Typography.micro)
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
             .foregroundStyle(color)
@@ -125,7 +125,7 @@ struct BranchCardView: View {
                     menuItems
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: Typography.caption, weight: .semibold))
                         .foregroundStyle(Palette.textSecondary)
                         .frame(width: 18, height: 18)
                         .background(Palette.fillSubtle, in: Circle())

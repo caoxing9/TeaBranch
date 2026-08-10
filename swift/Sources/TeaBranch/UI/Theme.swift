@@ -31,6 +31,9 @@ enum Palette {
     // `Color.primary` is near-black in light and near-white in dark, so a single opacity reads
     // correctly in both appearances and over the window's vibrancy.
 
+    /// Tints the window material under a toolbar or header, rather than layering a second material.
+    static let chromeFill = Color.primary.opacity(0.04)
+
     static let fillSubtle = Color.primary.opacity(0.05)
     static let fillHover = Color.primary.opacity(0.09)
     static let fillPressed = Color.primary.opacity(0.14)
@@ -190,9 +193,28 @@ extension AnyTransition {
 
 // MARK: - Typography
 
+/// One ramp, six steps, every size in the app drawn from it. The window started life as a 420pt
+/// popover where 11pt read fine; resized to twice that it reads as fine print, so the ramp sits a
+/// step above where it began — `body` is 12, not 11 — and stays adjustable from one place.
+///
 /// Tracking is size-specific: letters read too far apart as type grows and too tight as it shrinks,
 /// so one `letter-spacing` value is always wrong somewhere.
 enum Typography {
+    /// Badges and counters — the only text allowed below `caption`.
+    static let micro: CGFloat = 10
+    /// Field labels, port chips, metadata.
+    static let caption: CGFloat = 11
+    /// The workhorse: values, log lines, buttons, list rows.
+    static let body: CGFloat = 12
+    /// Emphasis inside a dense row — branch names in the list, sheet fields.
+    static let callout: CGFloat = 13
+    /// Screen and section titles.
+    static let headline: CGFloat = 14
+    /// Sheet titles.
+    static let title: CGFloat = 16
+    /// Onboarding only.
+    static let hero: CGFloat = 34
+
     static func tracking(forPointSize size: CGFloat) -> CGFloat {
         switch size {
         case ..<11: return 0.1
@@ -213,9 +235,6 @@ extension View {
 // MARK: - Layout
 
 enum Layout {
-    /// The traffic lights float over the full-size content view; the leading edge of any top bar
-    /// has to clear them.
-    static let trafficLightInset: CGFloat = 78
     /// Horizontal margin for content. One value, so every edge lines up down the window.
     static let gutter: CGFloat = 12
 }
@@ -266,7 +285,12 @@ extension View {
 // MARK: - Materials
 
 extension View {
-    /// The floating chrome layer: one translucent bar with content passing beneath it.
+    /// The chrome layer: a fill, not a second material.
+    ///
+    /// A `.bar` material here stacked translucency on the window's own vibrancy, and in light
+    /// appearance the two resolved to different greys — a white strip pasted onto a grey body. A
+    /// plain fill tints the one material instead of competing with it, which is the rule the rest
+    /// of the palette already follows.
     ///
     /// Under reduced transparency it goes opaque rather than merely frostier — the setting exists
     /// because translucency is the problem, not because the blur radius is.
@@ -275,7 +299,7 @@ extension View {
             if reduceTransparency {
                 Color(nsColor: .windowBackgroundColor)
             } else {
-                Rectangle().fill(.bar)
+                Rectangle().fill(Palette.chromeFill)
             }
         }
     }
@@ -296,8 +320,8 @@ struct PillButton: View {
     var systemImage: String?
     var tone: Tone = .plain
     var isDisabled: Bool = false
-    var horizontalPadding: CGFloat = 9
-    var verticalPadding: CGFloat = 4
+    var horizontalPadding: CGFloat = 10
+    var verticalPadding: CGFloat = 5
     /// What VoiceOver reads. Required in practice for icon-only buttons, which have no text.
     var accessibilityLabel: String?
     var action: () -> Void
@@ -309,16 +333,16 @@ struct PillButton: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 if let systemImage {
-                    Image(systemName: systemImage).font(.system(size: 10, weight: .semibold))
+                    Image(systemName: systemImage).font(.system(size: Typography.caption, weight: .semibold))
                 }
                 if !title.isEmpty {
                     Text(title)
                 }
             }
-            .font(.system(size: 11, weight: tone == .accent ? .semibold : .medium))
+            .font(.system(size: Typography.body, weight: tone == .accent ? .semibold : .medium))
             .padding(.horizontal, horizontalPadding)
             .padding(.vertical, verticalPadding)
-            .frame(minHeight: 20)
+            .frame(minHeight: 22)
             .contentShape(Rectangle())
         }
         .buttonStyle(

@@ -24,10 +24,17 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         window.delegate = self
         window.setFrameAutosaveName("TeaBranchMainWindow")
 
-        // The desktop-blurring layer the translucent palette is designed to sit on.
+        // The surface the palette's fills layer onto.
+        //
+        // It used to be `.underWindowBackground` blended *behind* the window, which samples the
+        // desktop. The app also forces its own appearance, so whenever the two disagreed — dark app
+        // over a light wallpaper, or light app over a dark one — the window resolved to a muddy grey
+        // with a mismatched toolbar pasted on it. Appearance you choose, wallpaper you don't; a
+        // window's legibility should not depend on the second one. `.withinWindow` keeps the
+        // material's depth without letting the desktop decide the value of every surface above it.
         let vibrancy = NSVisualEffectView()
-        vibrancy.material = .underWindowBackground
-        vibrancy.blendingMode = .behindWindow
+        vibrancy.material = .windowBackground
+        vibrancy.blendingMode = .withinWindow
         vibrancy.state = .active
         vibrancy.autoresizingMask = [.width, .height]
 

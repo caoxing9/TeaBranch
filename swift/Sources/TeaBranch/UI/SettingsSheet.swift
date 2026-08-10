@@ -13,12 +13,12 @@ struct SettingsSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Settings").font(.system(size: 14, weight: .bold))
+                Text("Settings").font(.system(size: Typography.title, weight: .bold))
                 Spacer()
                 Button {
                     dismiss()
                 } label: {
-                    Image(systemName: "xmark").font(.system(size: 11, weight: .medium))
+                    Image(systemName: "xmark").font(.system(size: Typography.body, weight: .medium))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Palette.textSecondary)
@@ -28,7 +28,7 @@ struct SettingsSheet: View {
             .padding(.bottom, 16)
 
             Text("Terminal App")
-                .font(.system(size: 12))
+                .font(.system(size: Typography.callout))
                 .foregroundStyle(Palette.textSecondary)
                 .padding(.bottom, 6)
 
@@ -39,7 +39,7 @@ struct SettingsSheet: View {
                 Text("Custom...").tag(Self.customTag)
             }
             .labelsHidden()
-            .font(.system(size: 12))
+            .font(.system(size: Typography.callout))
             .onChange(of: selection) { _, value in
                 if value == Self.customTag {
                     isCustom = true
@@ -53,7 +53,7 @@ struct SettingsSheet: View {
                 HStack(spacing: 6) {
                     TextField("App name, e.g. WezTerm", text: $customName)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 12))
+                        .font(.system(size: Typography.callout))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
                         .background(Palette.fillSubtle, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -77,7 +77,7 @@ struct SettingsSheet: View {
             }
 
             Text(tabSupportNote)
-                .font(.system(size: 10))
+                .font(.system(size: Typography.caption))
                 .foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 10)

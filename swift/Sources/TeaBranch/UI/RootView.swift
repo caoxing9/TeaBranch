@@ -85,11 +85,11 @@ struct RootView: View {
     private func errorBanner(_ message: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 11))
+                .font(.system(size: Typography.body))
                 .foregroundStyle(Palette.statusError)
 
             Text(message)
-                .font(.system(size: 11))
+                .font(.system(size: Typography.body))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -121,18 +121,18 @@ struct OnboardingView: View {
         VStack(spacing: 28) {
             VStack(spacing: 10) {
                 Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 34, weight: .regular))
+                    .font(.system(size: Typography.hero, weight: .regular))
                     .foregroundStyle(Palette.accent)
                     .padding(.bottom, 4)
                     .accessibilityHidden(true)
 
                 Text("TeaBranch")
                     // Large type reads too loose at its default tracking, so it tightens as it grows.
-                    .font(.system(size: 34, weight: .bold))
-                    .opticalTracking(34)
+                    .font(.system(size: Typography.hero, weight: .bold))
+                    .opticalTracking(Typography.hero)
 
                 Text("Run every branch in parallel — each with its own worktree, ports and database.")
-                    .font(.system(size: 12))
+                    .font(.system(size: Typography.callout))
                     .foregroundStyle(Palette.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(2)
@@ -151,13 +151,13 @@ struct OnboardingView: View {
                 .keyboardShortcut(.defaultAction)
 
                 Text("Pick the git repository you want to manage.")
-                    .font(.system(size: 11))
+                    .font(.system(size: Typography.body))
                     .foregroundStyle(Palette.textSecondary)
             }
 
             if let errorMessage = model.errorMessage {
                 Text(errorMessage)
-                    .font(.system(size: 11))
+                    .font(.system(size: Typography.body))
                     .foregroundStyle(Palette.statusError)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 14)
