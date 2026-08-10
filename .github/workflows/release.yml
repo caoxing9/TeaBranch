@@ -140,3 +140,29 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The native Swift build. One job, not a matrix: SwiftPM cross-compiles both slices from
+  # a single runner and `lipo` merges them, so this ships one universal DMG. No Rust, Node
+  # or pnpm toolchain needed — the whole thing is `swift build`.
+  build-swift:
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.version }}
+
+      - name: Build universal .app and DMG
+        working-directory: swift
+        run: ./scripts/build_app.sh --universal --dmg
+
+      - name: Upload DMG to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.release.outputs.version }}
+          files: |
+            swift/build/*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
