@@ -9,7 +9,7 @@
 #   ./scripts/build_app.sh                    debug-free release build, host architecture
 #   ./scripts/build_app.sh debug              debug build
 #   ./scripts/build_app.sh --universal        arm64 + x86_64, lipo'd into one binary
-#   ./scripts/build_app.sh --universal --dmg  ...and packaged as build/TeaBranch-native-<v>-universal.dmg
+#   ./scripts/build_app.sh --universal --dmg  ...and packaged as build/TeaBranch-<v>-universal.dmg
 #
 # `--universal` builds each slice with its own `--triple` and merges them with `lipo`,
 # rather than SwiftPM's `--arch a --arch b`. The latter routes through xcbuild, which
@@ -83,7 +83,7 @@ echo "built: $APP ($(lipo -archs "$APP/Contents/MacOS/TeaBranch"))"
 if [ "$MAKE_DMG" -eq 1 ]; then
     VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ROOT/Resources/Info.plist")"
     SUFFIX=$([ "$UNIVERSAL" -eq 1 ] && echo "universal" || uname -m)
-    DMG="$ROOT/build/TeaBranch-native-$VERSION-$SUFFIX.dmg"
+    DMG="$ROOT/build/TeaBranch-$VERSION-$SUFFIX.dmg"
 
     echo "==> packaging $DMG"
     STAGING="$(mktemp -d)"

@@ -14,43 +14,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build frontend
-        run: pnpm build
-
-      - name: Check Rust
-        working-directory: src-tauri
-        run: cargo check --target aarch64-apple-darwin
-
-  # Separate job: the native build shares no toolchain with the Tauri one, so running it
-  # alongside rather than after keeps PR feedback fast. Universal, so an x86_64-only
-  # compile error can't reach main.
-  build-check-swift:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      # Universal, so an x86_64-only compile error can't reach main. Both slices come from
+      # this one runner — see swift/scripts/build_app.sh for why --triple rather than --arch.
       - name: Build native app
         working-directory: swift
         run: ./scripts/build_app.sh --universal

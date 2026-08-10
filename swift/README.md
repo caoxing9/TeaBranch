@@ -1,18 +1,18 @@
 # TeaBranch — native Swift
 
-A native rewrite of TeaBranch: SwiftUI + AppKit, no web view, no Rust, no Node runtime.
-Same features, same on-disk state, same menu bar behaviour.
+The app: SwiftUI + AppKit, no web view, no Rust, no Node runtime.
 
 ## Build & run
 
-There is no Xcode project — this machine has only the Command Line Tools, so `xcodebuild`
-isn't available. SwiftPM builds the binary and a script lays out the bundle by hand.
+There is deliberately no Xcode project. SwiftPM builds the binary and a script lays out the
+bundle by hand, so the whole build works with just the Command Line Tools — nothing in the
+path needs `xcodebuild`.
 
 ```bash
 cd swift
 ./scripts/build_app.sh                    # host arch → build/TeaBranch.app (ad-hoc signed)
 ./scripts/build_app.sh --universal        # arm64 + x86_64, lipo'd into one binary
-./scripts/build_app.sh --universal --dmg  # ...and build/TeaBranch-native-<version>-universal.dmg
+./scripts/build_app.sh --universal --dmg  # ...and build/TeaBranch-<version>-universal.dmg
 open build/TeaBranch.app
 
 swift build                               # plain debug build, no bundle
@@ -27,17 +27,17 @@ command runs here and in CI.
 
 ## Release
 
-`.github/workflows/release.yml` has a `build-swift` job that runs on every release semantic-release
-publishes: it builds universal, packages the DMG, and uploads it alongside the two Tauri DMGs.
-The three assets are named distinctly, so a release carries both builds and you can pick one.
+`.github/workflows/release.yml` builds and uploads one universal DMG per release semantic-release
+publishes. One job, not a matrix: both slices cross-compile from a single runner.
 
-The version comes from `Resources/Info.plist` — there is no generated manifest to derive it from.
-`scripts/bump-version.mjs` stamps it there along with `package.json` / `Cargo.toml` /
-`tauri.conf.json`, and `.releaserc.json` commits it, so the plist can't drift from the tag.
+The version lives in `Resources/Info.plist` — there is no generated manifest to derive it from,
+and it's what ends up in the bundle and the DMG filename. `scripts/bump-version.mjs` stamps it
+(alongside `package.json`, which exists only as semantic-release's version anchor) and
+`.releaserc.json` commits it, so the plist can't drift from the tag.
 
-Both DMGs are **ad-hoc signed and not notarized**, so a downloaded build is quarantined on first
+The DMG is **ad-hoc signed and not notarized**, so a downloaded build is quarantined on first
 launch: right-click → Open, or `xattr -d com.apple.quarantine /Applications/TeaBranch.app`.
-Escaping that needs a paid Developer ID, and applies to the Tauri build exactly the same way.
+Escaping that needs a paid Developer ID.
 
 ## Layout
 
@@ -70,7 +70,7 @@ swift/
     │   ├── NgrokService.swift      tunnel lifecycle + 4040 API recovery
     │   └── TerminalService.swift   open a worktree in a terminal tab / VS Code
     └── UI/
-        ├── Theme.swift             design tokens from the old global.css, appearance-aware
+        ├── Theme.swift             design tokens, appearance-aware
         ├── AppModel.swift          main-actor view model
         ├── RootView.swift          shell, title bar, onboarding
         ├── BranchListView.swift    search / filter / sort toolbars
@@ -84,36 +84,38 @@ swift/
         └── SettingsSheet.swift
 ```
 
-## How this maps to the Tauri build
+## How the pieces fit
 
-| Tauri | Native |
-|---|---|
-| `#[tauri::command]` + `invoke()` | direct calls into `Services/`, dispatched off the main actor |
-| `app.emit("environment-updated")` | `NotificationCenter` (`.environmentsChanged`, `.ngrokChanged`) |
-| `emit("branch-log:<branch>")` per line | `LogStore` + a 150 ms polling `LogFeed` (coalesced) |
-| `Mutex<AppState>` | `AppState` behind an `NSRecursiveLock` |
-| `std::process::Command` + `pre_exec(setpgid)` | `posix_spawn` with `POSIX_SPAWN_SETPGROUP` |
-| `pre_exec` raising `RLIMIT_NOFILE` | raised once at launch; children inherit |
-| `localStorage` (theme, categories) | `UserDefaults` + `categories.json` |
-| React `useState` / `useMemo` | `@Observable` models |
-| `window-vibrancy` | `NSVisualEffectView` behind the hosting view |
-| `anser` | `AnsiText.swift` |
-| `react-window` | `LazyVStack` + `ScrollViewReader` |
+Services are plain synchronous Swift and every one of them blocks — `git`, `psql`, `lsof`,
+`pnpm install`, waiting on ngrok, sometimes for minutes. Swift concurrency's cooperative pool
+is sized to the core count and must not block, so that work goes to the GCD queues in
+`Background.swift` and hops back to the main actor explicitly via `onMain`. `AppState` sits
+behind an `NSRecursiveLock` rather than an actor for the same reason: the log readers, the
+health watchdog and the reconcile loop all live on their own threads and need synchronous reads.
 
-State lives where it always did — `~/Library/Application Support/com.teabranch.dev/settings.json`
-— so the native app picks up an existing project path with no re-onboarding.
+Services announce changes through `NotificationCenter` (`.environmentsChanged`, `.ngrokChanged`)
+and `AppModel` refreshes off that. Log lines are the exception — they arrive far faster than
+SwiftUI wants to re-render, so `LogStore` keeps capped per-source buffers and `LogFeed` polls a
+generation counter every 150 ms, rebuilding only when it actually moved.
 
-## Deliberate differences
+State lives in `~/Library/Application Support/com.teabranch.dev/settings.json`, with swim-lane
+assignments alongside it in `categories.json`.
 
-- **Swipe-to-delete → hover + confirm.** Swiping a row is a touch idiom; the native card
-  reveals a trash button on hover (and offers Delete in the context menu), then asks once.
-- **Lane resizing is an `HSplitView`** instead of hand-rolled drag handles.
-- **File watcher dropped.** It only ever emitted `file-changed:<branch>`, which nothing but the
-  embedded preview iframe consumed — and that window was unreachable from the UI.
-- **Split-preview window dropped.** `open_preview_window` / `SplitPreview` had no call site in
-  the React app; "Preview" opens the branch in the default browser, as it did before.
-- **Auto-scroll is a toggle only.** The web build turned it off when you scrolled away from the
-  bottom; detecting that needs macOS 15 scroll-geometry APIs, and the deployment floor is 14.
+## Behaviour worth knowing
+
+- **Delete is hover-revealed, then confirmed.** A trash button appears on card hover, the first
+  click arms a `Confirm`, the second deletes; `Delete Worktree` is also in the context menu so
+  the action isn't hover-only. A drag/swipe gesture was tried and abandoned — on macOS the mouse
+  has to travel a real distance to trigger one, and a trackpad's two-finger horizontal scroll
+  steals it.
+- **Auto-scroll in the log pane is a toggle only.** Turning it off automatically when the user
+  scrolls away from the bottom needs macOS 15 scroll-geometry APIs; the deployment floor is 14.
+- **"Preview" opens the default browser**, on a `<branch>.localhost` subdomain so each branch
+  gets its own cookie jar. There is no embedded preview.
+- **Quitting kills dev servers**, including ones TeaBranch didn't start: `reconcile()` adopts
+  anything listening on a worktree's configured ports as a recovered environment, and
+  `cleanupAll()` kills by port. That is what makes force-quit recovery work, but it means the
+  app is not safe to run alongside hand-started servers on those ports.
 
 ## Terminal integration
 

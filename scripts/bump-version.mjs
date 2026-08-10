@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+// Stamp a release version into every file that carries one. Run by @semantic-release/exec.
+//
+// There are only two: package.json, which exists solely as semantic-release's version anchor,
+// and swift/Resources/Info.plist, which is what build_app.sh puts in the bundle and in the DMG
+// filename. Neither is generated, so both have to be written explicitly.
 import { readFileSync, writeFileSync } from "node:fs";
 
 const version = process.argv[2];
@@ -15,26 +20,6 @@ function bumpJson(path) {
   writeFileSync(path, JSON.stringify(data, null, 2) + trailing);
 }
 
-function bumpCargoToml(path) {
-  const content = readFileSync(path, "utf8");
-  const updated = content.replace(
-    /^version\s*=\s*"[^"]*"$/m,
-    `version = "${version}"`
-  );
-  writeFileSync(path, updated);
-}
-
-function bumpCargoLock(path) {
-  const content = readFileSync(path, "utf8");
-  const updated = content.replace(
-    /(\[\[package\]\]\nname = "teabranch"\nversion = ")[^"]+(")/,
-    `$1${version}$2`
-  );
-  writeFileSync(path, updated);
-}
-
-/// The native build has no generated manifest — Info.plist is hand-maintained and is what
-/// build_app.sh stamps into the bundle and the DMG filename, so it has to move in lockstep.
 function bumpInfoPlist(path) {
   const content = readFileSync(path, "utf8");
   const updated = ["CFBundleShortVersionString", "CFBundleVersion"].reduce(
@@ -53,9 +38,6 @@ function bumpInfoPlist(path) {
 }
 
 bumpJson("package.json");
-bumpJson("src-tauri/tauri.conf.json");
-bumpCargoToml("src-tauri/Cargo.toml");
-bumpCargoLock("src-tauri/Cargo.lock");
 bumpInfoPlist("swift/Resources/Info.plist");
 
 console.log(`Bumped version to ${version}`);
