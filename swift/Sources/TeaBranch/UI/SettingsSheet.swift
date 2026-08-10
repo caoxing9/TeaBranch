@@ -22,6 +22,8 @@ struct SettingsSheet: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Palette.textSecondary)
+                .keyboardShortcut(.cancelAction)
+                .accessibilityLabel("Close settings")
             }
             .padding(.bottom, 16)
 
@@ -54,7 +56,7 @@ struct SettingsSheet: View {
                         .font(.system(size: 12))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
-                        .background(Palette.bgCard, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .background(Palette.fillSubtle, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                         .overlay {
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
                                 .strokeBorder(Palette.border, lineWidth: 1)
@@ -82,7 +84,7 @@ struct SettingsSheet: View {
         }
         .padding(20)
         .frame(width: 380)
-        .background(Palette.bgPrimary)
+        .background(Color(nsColor: .windowBackgroundColor))
         .foregroundStyle(Palette.textPrimary)
         .onAppear(perform: load)
     }

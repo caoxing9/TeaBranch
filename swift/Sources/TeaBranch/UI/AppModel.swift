@@ -48,6 +48,10 @@ final class AppModel {
     // Sheets
     var showCreateSheet = false
     var showSettingsSheet = false
+    /// Set while a delete is awaiting confirmation. Removing a worktree is irreversible, which is
+    /// the one case that earns a modal — the old hover-revealed inline "Confirm" pill sat one
+    /// mis-aimed click away from destroying work.
+    var pendingDelete: Branch?
 
     // Per-branch in-flight flags, so a card can show "..." without blocking the rest
     private(set) var busyBranches: Set<String> = []
@@ -245,6 +249,10 @@ final class AppModel {
                 self.refresh()
             }
         }
+    }
+
+    func confirmDelete(branch: Branch) {
+        pendingDelete = branch
     }
 
     func delete(branch: Branch) {
