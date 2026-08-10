@@ -1,3 +1,10 @@
+# [0.8.0](https://github.com/caoxing9/TeaBranch/compare/v0.7.0...v0.8.0) (2026-08-10)
+
+
+### Features
+
+* **ui:** rebuild the interface on system-native design foundations ([#3](https://github.com/caoxing9/TeaBranch/issues/3)) ([0651ca5](https://github.com/caoxing9/TeaBranch/commit/0651ca5e28d30fd0d12f161b24afa44ff8968ba4))
+
 # [0.7.0](https://github.com/caoxing9/TeaBranch/compare/v0.6.2...v0.7.0) (2026-08-10)
 
 
