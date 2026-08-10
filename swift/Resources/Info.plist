@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>TeaBranch</string>
+	<key>CFBundleDisplayName</key>
+	<string>TeaBranch</string>
+	<key>CFBundleExecutable</key>
+	<string>TeaBranch</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.teabranch.dev</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.6.2</string>
+	<key>CFBundleVersion</key>
+	<string>0.6.2</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSSupportsSuddenTermination</key>
+	<false/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>TeaBranch drives Ghostty via AppleScript to open a worktree in a new tab.</string>
+</dict>
+</plist>

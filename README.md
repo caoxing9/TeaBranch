@@ -11,6 +11,12 @@ A lightweight macOS menubar app for managing parallel branch development environ
   <img src="docs/screenshot.png" width="600" alt="TeaBranch branch detail" />
 </p>
 
+> **Native Swift rewrite in progress** — `swift/` holds a full SwiftUI + AppKit port with the
+> same feature set and no web view, Rust or Node runtime. It reads the same
+> `~/Library/Application Support/com.teabranch.dev/settings.json`, so both builds share state.
+> Build it with `cd swift && ./scripts/build_app.sh`. See [swift/README.md](swift/README.md)
+> for the architecture mapping and the handful of deliberate behaviour differences.
+
 ## What is TeaBranch?
 
 Teable is a complex full-stack project — when developing multiple features simultaneously, switching branches and restarting services is slow and error-prone. TeaBranch solves this by using Git worktrees to let you run **multiple branches in parallel**, each with its own isolated dev server, port, database, and environment — all managed from a single menubar app.
