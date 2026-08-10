@@ -1,3 +1,10 @@
+## [0.8.1](https://github.com/caoxing9/TeaBranch/compare/v0.8.0...v0.8.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **ui:** stop the detail pane wasting space, and size type for the window it grew into ([#4](https://github.com/caoxing9/TeaBranch/issues/4)) ([b115f38](https://github.com/caoxing9/TeaBranch/commit/b115f38af780ffd373e32ebc2d51339ee0f9e182)), closes [#3](https://github.com/caoxing9/TeaBranch/issues/3)
+
 # [0.8.0](https://github.com/caoxing9/TeaBranch/compare/v0.7.0...v0.8.0) (2026-08-10)
 
 
