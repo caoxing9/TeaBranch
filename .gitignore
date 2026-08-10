@@ -1,9 +1,14 @@
-# Dependencies
-node_modules/
+# Swift build products (see also swift/.gitignore)
+.build/
+build/
+.swiftpm/
+Package.resolved
 
-# Build output
+# Leftovers from the removed Tauri build, and anything a stray `npm install` in the root
+# (package.json is still here as semantic-release's version anchor) would drop.
+node_modules/
 dist/
-src-tauri/target/
+src-tauri/
 
 # IDE
 .vscode/
@@ -11,6 +16,3 @@ src-tauri/target/
 *.swp
 *.swo
 .DS_Store
-
-# Tauri
-src-tauri/gen/
