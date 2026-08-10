@@ -1,3 +1,10 @@
+# [0.7.0](https://github.com/caoxing9/TeaBranch/compare/v0.6.2...v0.7.0) (2026-08-10)
+
+
+### Features
+
+* replace the Tauri build with a native Swift app ([341626a](https://github.com/caoxing9/TeaBranch/commit/341626ae1a1de37b60b5023896503b87ea625e4d)), closes [#2](https://github.com/caoxing9/TeaBranch/issues/2)
+
 ## [0.6.2](https://github.com/caoxing9/TeaBranch/compare/v0.6.1...v0.6.2) (2026-06-11)
 
 
