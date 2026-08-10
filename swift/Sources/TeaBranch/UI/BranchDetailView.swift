@@ -126,9 +126,6 @@ struct BranchDetailView: View {
     var branch: Branch
 
     @State private var detail = BranchDetailModel()
-    @State private var isScrolled = false
-
-    private static let scrollSpace = "branchDetail"
 
     private var environment: BranchEnvironment? { branch.environment }
     private var isRunning: Bool { branch.status.isLive }
@@ -137,8 +134,15 @@ struct BranchDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            infoRegion
-                .safeAreaInset(edge: .top, spacing: 0) { header }
+            header
+            summaryRegion
+            envSection
+                .padding(.horizontal, Layout.gutter)
+                .padding(.bottom, 12)
+                // The editor slides in and out from this region's top edge, so the region has to be
+                // its own clip: without one the moving copy paints over the rows above it.
+                .clipped()
+                .bottomDivider()
             LogPaneView(branch: branch)
         }
         .onAppear { detail.bind(to: branch.name) }
@@ -166,8 +170,8 @@ struct BranchDetailView: View {
             HStack(spacing: 5) {
                 StatusDotView(status: branch.status)
                 Text(branch.name)
-                    .font(.system(size: 13, weight: .semibold))
-                    .opticalTracking(13)
+                    .font(.system(size: Typography.headline, weight: .semibold))
+                    .opticalTracking(Typography.headline)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -185,28 +189,16 @@ struct BranchDetailView: View {
 
             overflowMenu
         }
-        .padding(.leading, Layout.trafficLightInset)
-        .padding(.trailing, Layout.gutter)
+        .padding(.horizontal, Layout.gutter)
         .padding(.vertical, 8)
         .chromeBackground(reduceTransparency: reduceTransparency)
-        .scrollEdgeDivider(isVisible: isScrolled)
+        .bottomDivider()
     }
 
+    /// Only what is genuinely rare or destructive lives here. Everything you reach for while working
+    /// a branch is on the surface, next to the thing it acts on.
     private var overflowMenu: some View {
         Menu {
-            if hasWorktree {
-                Button(isNgrokHere ? "Stop ngrok Tunnel" : "Start ngrok Tunnel") {
-                    detail.toggleNgrok(branch: branch.name, isActiveHere: isNgrokHere)
-                }
-                .disabled(detail.ngrokBusy)
-
-                if let tunnel = model.ngrok, !isNgrokHere {
-                    Text("ngrok is on \(tunnel.branchName)")
-                }
-
-                Divider()
-            }
-
             Picker("Move to", selection: Binding(
                 get: { model.category(for: branch.name) },
                 set: { model.setCategory($0, for: branch.name) }
@@ -224,46 +216,37 @@ struct BranchDetailView: View {
             .disabled(!hasWorktree)
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: Typography.body, weight: .semibold))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .foregroundStyle(isNgrokHere ? Palette.accent : Palette.textSecondary)
+        .foregroundStyle(Palette.textSecondary)
         .accessibilityLabel("More actions")
     }
 
     // MARK: - Info
 
-    private var infoRegion: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                if isNgrokHere, let tunnel = model.ngrok {
-                    tunnelRow(tunnel)
-                }
-                if let error = detail.ngrokError {
-                    inlineError(error)
-                }
-
-                statusRow
-                portsRow
-                worktreeRow
-                envSection
+    /// Identity, ports and the worktree actions never scroll. They are what the screen is *for*;
+    /// scrolling them away to make room for an env field you are editing trades the reference you
+    /// need for the field you are already looking at.
+    private var summaryRegion: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if isNgrokHere, let tunnel = model.ngrok {
+                tunnelRow(tunnel)
             }
-            .padding(.horizontal, Layout.gutter)
-            .padding(.top, 12)
-            .padding(.bottom, 14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .reportsScrollEdge(in: Self.scrollSpace)
+            if let error = detail.ngrokError {
+                inlineError(error)
+            }
+
+            statusRow
+            portsRow
+            worktreeRow
         }
-        .coordinateSpace(name: Self.scrollSpace)
-        .onPreferenceChange(ScrollEdgeKey.self) { offset in
-            let scrolled = offset > 1
-            guard scrolled != isScrolled else { return }
-            isScrolled = scrolled
-        }
-        .frame(maxHeight: 300)
-        .bottomDivider()
+        .padding(.horizontal, Layout.gutter)
+        .padding(.top, 12)
+        .padding(.bottom, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var statusRow: some View {
@@ -283,7 +266,7 @@ struct BranchDetailView: View {
             field("Ports") { portsView }
             field("Database") {
                 Text(environment?.databaseName ?? "—")
-                    .font(.system(size: 11))
+                    .font(.system(size: Typography.body))
                     .monospaced()
                     .foregroundStyle(
                         environment?.databaseName == nil ? Palette.textTertiary : Palette.textPrimary
@@ -295,13 +278,13 @@ struct BranchDetailView: View {
         }
     }
 
-    /// The path and the three things you can do with it sit together — a control belongs next to
-    /// what it acts on, not in a toolbar three regions away.
+    /// The path and the things you can do with it sit together — a control belongs next to what it
+    /// acts on, not in a toolbar three regions away and not behind a menu.
     private var worktreeRow: some View {
         field(branch.managed ? "Worktree · managed by TeaBranch" : "Worktree · external") {
             VStack(alignment: .leading, spacing: 7) {
                 Text(branch.effectiveWorktreePath ?? "No worktree for this branch")
-                    .font(.system(size: 11))
+                    .font(.system(size: Typography.body))
                     .monospaced()
                     .foregroundStyle(hasWorktree ? Palette.textPrimary : Palette.textTertiary)
                     .textSelection(.enabled)
@@ -320,17 +303,44 @@ struct BranchDetailView: View {
                                 model.openPreview(for: branch)
                             }
                         }
+                        ngrokButton
                     }
                 }
             }
         }
     }
 
+    /// One tunnel exists app-wide, so this is a three-state control: off, on-here, on-elsewhere.
+    /// The third state stays enabled — starting here is how you move the tunnel.
+    private var ngrokButton: some View {
+        let elsewhere = model.ngrok.flatMap { isNgrokHere ? nil : $0.branchName }
+        let title: String = {
+            if detail.ngrokBusy { return "…" }
+            if isNgrokHere { return "Stop ngrok" }
+            return "ngrok"
+        }()
+
+        return PillButton(
+            title: title,
+            tone: isNgrokHere ? .active : .plain,
+            isDisabled: detail.ngrokBusy,
+            horizontalPadding: 10
+        ) {
+            detail.toggleNgrok(branch: branch.name, isActiveHere: isNgrokHere)
+        }
+        .help(
+            isNgrokHere
+                ? (model.ngrok?.publicURL ?? "")
+                : elsewhere.map { "ngrok is on \($0) — starting here moves it" }
+                    ?? "Tunnel SERVER_PORT and write SANDBOX_TEABLE_ENDPOINT"
+        )
+    }
+
     private func tunnelRow(_ tunnel: NgrokTunnel) -> some View {
         field("Public tunnel") {
             HStack(spacing: 6) {
                 Text(tunnel.publicURL)
-                    .font(.system(size: 11))
+                    .font(.system(size: Typography.body))
                     .monospaced()
                     .foregroundStyle(Palette.accent)
                     .lineLimit(1)
@@ -338,7 +348,7 @@ struct BranchDetailView: View {
                     .textSelection(.enabled)
 
                 Text("→ :\(String(tunnel.port))")
-                    .font(.system(size: 10))
+                    .font(.system(size: Typography.caption))
                     .monospacedDigit()
                     .foregroundStyle(Palette.textSecondary)
             }
@@ -351,8 +361,8 @@ struct BranchDetailView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
-                .font(.system(size: 10, weight: .medium))
-                .opticalTracking(10)
+                .font(.system(size: Typography.caption, weight: .medium))
+                .opticalTracking(Typography.caption)
                 .foregroundStyle(Palette.textSecondary)
             content()
         }
@@ -360,7 +370,7 @@ struct BranchDetailView: View {
 
     private func inlineError(_ message: String) -> some View {
         Text(message)
-            .font(.system(size: 11))
+            .font(.system(size: Typography.body))
             .foregroundStyle(Palette.statusError)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
@@ -369,7 +379,7 @@ struct BranchDetailView: View {
     @ViewBuilder
     private var portsView: some View {
         if environment?.port == nil && environment?.backendPort == nil {
-            Text("—").foregroundStyle(Palette.textTertiary).font(.system(size: 11))
+            Text("—").foregroundStyle(Palette.textTertiary).font(.system(size: Typography.body))
         } else {
             HStack(spacing: 4) {
                 if let backend = environment?.backendPort {
@@ -392,7 +402,7 @@ struct BranchDetailView: View {
                 .monospacedDigit()
                 .foregroundStyle(tinted ? Palette.accent : Palette.textPrimary)
         }
-        .font(.system(size: 10))
+        .font(.system(size: Typography.caption))
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .background(Palette.fillSubtle, in: Capsule())
@@ -408,13 +418,13 @@ struct BranchDetailView: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: Typography.micro, weight: .semibold))
                         .rotationEffect(.degrees(detail.isExpanded ? 90 : 0))
                     Text("Environment Overrides")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: Typography.body, weight: .medium))
                     if detail.isDirty {
                         Text("unsaved")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: Typography.micro, weight: .medium))
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .foregroundStyle(Palette.statusBuilding)
@@ -428,20 +438,28 @@ struct BranchDetailView: View {
             .buttonStyle(.plain)
 
             if detail.isExpanded {
-                Group {
-                    if let draft = detail.draft {
-                        envEditor(draft)
-                    } else if let error = detail.envError {
-                        inlineError(error)
-                    } else {
-                        HStack(spacing: 6) {
-                            ProgressView().controlSize(.small)
-                            Text("Reading .env.development.local…")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Palette.textSecondary)
+                // Only the editor scrolls. Collapsed there is no ScrollView at all, so nothing is
+                // holding space open; expanded it takes at most 260pt and yields the rest — and
+                // less than that on a short window, rather than squeezing the log pane out.
+                ScrollView {
+                    Group {
+                        if let draft = detail.draft {
+                            envEditor(draft)
+                        } else if let error = detail.envError {
+                            inlineError(error)
+                        } else {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text("Reading .env.development.local…")
+                                    .font(.system(size: Typography.body))
+                                    .foregroundStyle(Palette.textSecondary)
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.trailing, 2)
                 }
+                .frame(maxHeight: 260)
                 .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -510,7 +528,7 @@ struct BranchDetailView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(label)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: Typography.caption, weight: .medium))
                     .monospaced()
                     .foregroundStyle(Palette.textSecondary)
 
@@ -521,7 +539,7 @@ struct BranchDetailView: View {
                         }
                     }
                     .menuStyle(.borderlessButton)
-                    .font(.system(size: 10))
+                    .font(.system(size: Typography.caption))
                     .foregroundStyle(Palette.accent)
                     .fixedSize()
                 }
@@ -532,7 +550,7 @@ struct BranchDetailView: View {
                 set: { onChange($0) }
             ))
             .textFieldStyle(.plain)
-            .font(.system(size: 11))
+            .font(.system(size: Typography.body))
             .monospaced()
             .padding(.horizontal, 7)
             .padding(.vertical, 5)

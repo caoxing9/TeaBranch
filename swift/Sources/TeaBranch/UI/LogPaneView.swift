@@ -228,7 +228,7 @@ struct LogPaneView: View {
             ))
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: Typography.body, weight: .semibold))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -247,9 +247,9 @@ struct LogPaneView: View {
             activeMatch = 0
         } label: {
             HStack(spacing: 4) {
-                Text(target.title).font(.system(size: 11, weight: isActive ? .semibold : .medium))
+                Text(target.title).font(.system(size: Typography.body, weight: isActive ? .semibold : .medium))
                 Text("\(count)")
-                    .font(.system(size: 10))
+                    .font(.system(size: Typography.caption))
                     // Counts tick up several times a second while a server boots; monospaced digits
                     // keep the tab from twitching wider and narrower as they do.
                     .monospacedDigit()
@@ -271,12 +271,12 @@ struct LogPaneView: View {
     private var searchField: some View {
         HStack(spacing: 4) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 9, weight: .medium))
+                .font(.system(size: Typography.micro, weight: .medium))
                 .foregroundStyle(Palette.textSecondary)
 
             TextField("Filter logs", text: $searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 11))
+                .font(.system(size: Typography.body))
                 .monospaced()
                 .focused($searchFocused)
                 .onSubmit { jump(to: activeMatch + 1) }
@@ -288,7 +288,7 @@ struct LogPaneView: View {
 
             if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
                 Text(matches.isEmpty ? "0/0" : "\(activeMatch + 1)/\(matches.count)")
-                    .font(.system(size: 10))
+                    .font(.system(size: Typography.caption))
                     .monospacedDigit()
                     .foregroundStyle(matches.isEmpty ? Palette.statusError : Palette.textSecondary)
             }
@@ -311,7 +311,7 @@ struct LogPaneView: View {
         ZStack(alignment: .bottomTrailing) {
             if visibleLines.isEmpty {
                 Text(emptyMessage)
-                    .font(.system(size: 11))
+                    .font(.system(size: Typography.body))
                     .foregroundStyle(Palette.logTextDim)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .padding(24)
@@ -345,7 +345,7 @@ struct LogPaneView: View {
 
             if let toast {
                 Text(toast)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: Typography.body, weight: .semibold))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .foregroundStyle(Palette.accentOn)
@@ -363,7 +363,7 @@ struct LogPaneView: View {
 
             if matches.isEmpty, !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
                 Text("No matches")
-                    .font(.system(size: 10))
+                    .font(.system(size: Typography.caption))
                     .foregroundStyle(Palette.textSecondary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
@@ -454,7 +454,7 @@ private struct LogRowView: View {
                     onCopy(Ansi.plainText(line.text))
                 } label: {
                     Image(systemName: "doc.on.doc")
-                        .font(.system(size: 9, weight: .medium))
+                        .font(.system(size: Typography.micro, weight: .medium))
                         .padding(4)
                         .foregroundStyle(Palette.logText)
                         .background(.regularMaterial, in: Circle())

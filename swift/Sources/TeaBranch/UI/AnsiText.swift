@@ -81,7 +81,7 @@ enum Ansi {
             piece.foregroundColor = run.style.foreground ?? baseColor
             if let background = run.style.background { piece.backgroundColor = background }
             piece.font = .system(
-                size: 11,
+                size: Typography.body,
                 weight: run.style.bold ? .bold : .regular,
                 design: .monospaced
             )

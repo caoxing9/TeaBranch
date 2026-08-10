@@ -36,7 +36,7 @@ struct SwimLaneBoardView: View {
                 LazyVStack(spacing: 2) {
                     if branches.isEmpty {
                         Text(isTargeted ? "Release to move here" : "Empty")
-                            .font(.system(size: 11))
+                            .font(.system(size: Typography.body))
                             .foregroundStyle(isTargeted ? color : Palette.textTertiary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 24)
@@ -76,10 +76,10 @@ struct SwimLaneBoardView: View {
         HStack(spacing: 6) {
             Circle().fill(color).frame(width: 7, height: 7)
             Text(lane.label)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: Typography.body, weight: .semibold))
             Spacer()
             Text("\(count)")
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: Typography.caption, weight: .medium))
                 // Monospaced digits so the count doesn't nudge the header as branches move lanes.
                 .monospacedDigit()
                 .foregroundStyle(Palette.textSecondary)

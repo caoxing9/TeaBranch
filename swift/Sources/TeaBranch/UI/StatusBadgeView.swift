@@ -42,7 +42,7 @@ struct StatusBadgeView: View {
         HStack(spacing: 5) {
             StatusDotView(status: status)
             Text(status.label)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: Typography.body, weight: .medium))
                 .foregroundStyle(
                     status == .stopped ? Palette.textSecondary : Palette.color(for: status)
                 )

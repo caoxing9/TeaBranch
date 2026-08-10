@@ -23,8 +23,8 @@ struct BranchListView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Text("TeaBranch")
-                    .font(.system(size: 13, weight: .semibold))
-                    .opticalTracking(13)
+                    .font(.system(size: Typography.headline, weight: .semibold))
+                    .opticalTracking(Typography.headline)
                     .fixedSize()
                     .layoutPriority(1)
 
@@ -45,8 +45,7 @@ struct BranchListView: View {
 
                 overflowMenu
             }
-            .padding(.leading, Layout.trafficLightInset)
-            .padding(.trailing, Layout.gutter)
+            .padding(.horizontal, Layout.gutter)
             .padding(.vertical, 8)
 
             // The filter row exists only while a filter does. Nothing is spent showing "All".
@@ -68,12 +67,12 @@ struct BranchListView: View {
 
         return HStack(spacing: 5) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: Typography.caption, weight: .medium))
                 .foregroundStyle(Palette.textSecondary)
 
             TextField("Search", text: $model.searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 11))
+                .font(.system(size: Typography.body))
                 .focused($searchFocused)
                 .onKeyPress(.escape) {
                     model.searchText = ""
@@ -87,7 +86,7 @@ struct BranchListView: View {
                     searchFocused = true
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: Typography.caption))
                         .foregroundStyle(Palette.textSecondary)
                 }
                 .buttonStyle(.plain)
@@ -160,7 +159,7 @@ struct BranchListView: View {
             Button("Settings…") { model.showSettingsSheet = true }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: Typography.body, weight: .semibold))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -181,9 +180,9 @@ struct BranchListView: View {
                         .fill(Palette.color(for: filter))
                         .frame(width: 6, height: 6)
                     Text(filter.label)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: Typography.caption, weight: .medium))
                     Image(systemName: "xmark")
-                        .font(.system(size: 7, weight: .bold))
+                        .font(.system(size: Typography.micro, weight: .bold))
                 }
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
@@ -195,7 +194,7 @@ struct BranchListView: View {
             .accessibilityLabel("Clear \(filter.label) filter")
 
             Text("\(model.visibleBranches.count) of \(model.branches.count)")
-                .font(.system(size: 10))
+                .font(.system(size: Typography.caption))
                 .monospacedDigit()
                 .foregroundStyle(Palette.textSecondary)
 
@@ -253,14 +252,14 @@ struct BranchListView: View {
     private func emptyState(title: String, detail: String, symbol: String) -> some View {
         VStack(spacing: 6) {
             Image(systemName: symbol)
-                .font(.system(size: 22, weight: .light))
+                .font(.system(size: Typography.hero * 0.7, weight: .light))
                 .foregroundStyle(Palette.textTertiary)
                 .padding(.bottom, 2)
                 .accessibilityHidden(true)
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: Typography.callout, weight: .medium))
             Text(detail)
-                .font(.system(size: 11))
+                .font(.system(size: Typography.body))
                 .foregroundStyle(Palette.textSecondary)
                 .multilineTextAlignment(.center)
         }
