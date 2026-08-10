@@ -146,7 +146,7 @@ struct CreateWorktreeSheet: View {
         }
         .padding(24)
         .frame(width: 440)
-        .background(Palette.bgPrimary)
+        .background(Color(nsColor: .windowBackgroundColor))
         .foregroundStyle(Palette.textPrimary)
         .onAppear {
             model.loadSources()
@@ -175,7 +175,7 @@ struct CreateWorktreeSheet: View {
                 .focused($nameFocused)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .background(Palette.bgCard, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(Palette.fillSubtle, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .strokeBorder(Palette.border, lineWidth: 1)
@@ -233,7 +233,7 @@ struct CreateWorktreeSheet: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Palette.bgCard, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(Palette.fillSubtle, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .strokeBorder(Palette.border, lineWidth: 1)
@@ -241,20 +241,19 @@ struct CreateWorktreeSheet: View {
                 .padding(.top, 12)
             }
 
-            HStack(spacing: 8) {
+            // Sheet buttons are the system's: default/cancel roles bring ⏎ and ⎋, the focus ring
+            // and the right visual weight without a bespoke control reimplementing any of it.
+            HStack(spacing: 10) {
                 Spacer()
-                PillButton(title: "Cancel", horizontalPadding: 14, verticalPadding: 6) { dismiss() }
-                PillButton(
-                    title: "Create",
-                    tone: .accent,
-                    isDisabled: !model.canCreate,
-                    horizontalPadding: 14,
-                    verticalPadding: 6
-                ) {
-                    create()
-                }
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Create") { create() }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!model.canCreate)
             }
-            .padding(.top, 16)
+            .controlSize(.large)
+            .padding(.top, 20)
         }
     }
 
@@ -293,7 +292,7 @@ struct CreateWorktreeSheet: View {
     }
 
     private var progressList: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(CreateWorktreeModel.steps, id: \.key) { step in
                 let currentIndex = CreateWorktreeModel.steps.firstIndex { $0.key == model.currentStep }
                 let stepIndex = CreateWorktreeModel.steps.firstIndex { $0.key == step.key } ?? 0
@@ -319,6 +318,9 @@ struct CreateWorktreeSheet: View {
                     isPast || isDone ? Palette.accent : (isActive ? Palette.statusBuilding : Palette.textSecondary)
                 )
                 .opacity(!isPast && !isActive && !isDone ? 0.5 : 1)
+                // Each step settles as it lands rather than snapping, so a long install reads as
+                // progress rather than a stalled list.
+                .animation(.easeOut(duration: 0.2), value: model.currentStep)
             }
 
             if model.isDone {

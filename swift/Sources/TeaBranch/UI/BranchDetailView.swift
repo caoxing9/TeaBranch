@@ -120,11 +120,15 @@ final class BranchDetailModel {
 
 struct BranchDetailView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var branch: Branch
 
     @State private var detail = BranchDetailModel()
-    @State private var confirmingDelete = false
+    @State private var isScrolled = false
+
+    private static let scrollSpace = "branchDetail"
 
     private var environment: BranchEnvironment? { branch.environment }
     private var isRunning: Bool { branch.status.isLive }
@@ -133,261 +137,319 @@ struct BranchDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
             infoRegion
+                .safeAreaInset(edge: .top, spacing: 0) { header }
             LogPaneView(branch: branch)
         }
         .onAppear { detail.bind(to: branch.name) }
-        .onChange(of: branch.name) { _, name in
-            detail.bind(to: name)
-            confirmingDelete = false
-        }
+        .onChange(of: branch.name) { _, name in detail.bind(to: name) }
     }
 
     // MARK: - Header
 
+    /// Back, identity, one primary action, and everything else a level deeper. The previous header
+    /// put seven same-weight buttons on a 420pt row, which left the branch name — the thing the
+    /// screen is about — with the least space of anything on it.
     private var header: some View {
         HStack(spacing: 8) {
-            PillButton(title: "Back", systemImage: "chevron.left") {
+            PillButton(
+                title: "",
+                systemImage: "chevron.left",
+                horizontalPadding: 7,
+                accessibilityLabel: "Back to branches"
+            ) {
                 model.selectedBranch = nil
             }
+            .keyboardShortcut("[", modifiers: .command)
+            .help("Back (⌘[)")
 
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
+                StatusDotView(status: branch.status)
                 Text(branch.name)
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 13, weight: .semibold))
+                    .opticalTracking(13)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                if branch.managed {
-                    Text("managed")
-                        .font(.system(size: 9, weight: .medium))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .foregroundStyle(Palette.accent)
-                        .background(Palette.accentDim, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             PillButton(
-                title: model.isBusy(branch.name) ? "..." : (isRunning ? "Stop" : "Start"),
+                title: model.isBusy(branch.name) ? "…" : (isRunning ? "Stop" : "Start"),
                 tone: isRunning ? .danger : .dim,
                 isDisabled: model.isBusy(branch.name),
-                horizontalPadding: 12
+                horizontalPadding: 12,
+                accessibilityLabel: isRunning ? "Stop \(branch.name)" : "Start \(branch.name)"
             ) {
                 model.toggle(branch: branch)
             }
 
+            overflowMenu
+        }
+        .padding(.leading, Layout.trafficLightInset)
+        .padding(.trailing, Layout.gutter)
+        .padding(.vertical, 8)
+        .chromeBackground(reduceTransparency: reduceTransparency)
+        .scrollEdgeDivider(isVisible: isScrolled)
+    }
+
+    private var overflowMenu: some View {
+        Menu {
             if hasWorktree {
-                PillButton(title: "Terminal", tone: .dim, horizontalPadding: 10) {
-                    model.openTerminal(for: branch)
+                Button(isNgrokHere ? "Stop ngrok Tunnel" : "Start ngrok Tunnel") {
+                    detail.toggleNgrok(branch: branch.name, isActiveHere: isNgrokHere)
                 }
-                PillButton(title: "VS Code", tone: .dim, horizontalPadding: 10) {
-                    model.openEditor(for: branch)
+                .disabled(detail.ngrokBusy)
+
+                if let tunnel = model.ngrok, !isNgrokHere {
+                    Text("ngrok is on \(tunnel.branchName)")
+                }
+
+                Divider()
+            }
+
+            Picker("Move to", selection: Binding(
+                get: { model.category(for: branch.name) },
+                set: { model.setCategory($0, for: branch.name) }
+            )) {
+                ForEach(DevCategory.allCases, id: \.self) { category in
+                    Text(category.label).tag(category)
                 }
             }
-            if branch.status == .running, environment?.port != nil {
-                PillButton(title: "Preview", tone: .dim, horizontalPadding: 10) {
-                    model.openPreview(for: branch)
-                }
+
+            Divider()
+
+            Button("Delete Worktree…", role: .destructive) {
+                model.confirmDelete(branch: branch)
             }
-            if hasWorktree {
-                ngrokButton
-                deleteControl
-            }
+            .disabled(!hasWorktree)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 11, weight: .semibold))
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Palette.toolbarBg)
-        .bottomDivider()
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .foregroundStyle(isNgrokHere ? Palette.accent : Palette.textSecondary)
+        .accessibilityLabel("More actions")
     }
 
-    private var ngrokButton: some View {
-        let otherBranch = model.ngrok.map { !isNgrokHere ? $0.branchName : nil } ?? nil
-        let title: String = {
-            if detail.ngrokBusy { return "..." }
-            if isNgrokHere { return "Stop Ngrok" }
-            if let otherBranch { return "Ngrok (on \(otherBranch))" }
-            return "Ngrok"
-        }()
-
-        return PillButton(
-            title: title,
-            tone: isNgrokHere ? .danger : .dim,
-            isDisabled: detail.ngrokBusy,
-            horizontalPadding: 10
-        ) {
-            detail.toggleNgrok(branch: branch.name, isActiveHere: isNgrokHere)
-        }
-        .help(isNgrokHere
-              ? (model.ngrok?.publicURL ?? "")
-              : "Start an ngrok tunnel for SERVER_PORT and write SANDBOX_TEABLE_ENDPOINT")
-    }
-
-    @ViewBuilder
-    private var deleteControl: some View {
-        if confirmingDelete {
-            HStack(spacing: 4) {
-                Text("Delete?")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.statusError)
-                PillButton(title: "Yes", tone: .danger) {
-                    confirmingDelete = false
-                    model.delete(branch: branch)
-                }
-                PillButton(title: "No") { confirmingDelete = false }
-            }
-        } else {
-            PillButton(title: "Delete", tone: .danger) { confirmingDelete = true }
-        }
-    }
-
-    // MARK: - Info + env
+    // MARK: - Info
 
     private var infoRegion: some View {
         ScrollView {
-            VStack(spacing: 0) {
-                infoGrid
+            VStack(alignment: .leading, spacing: 14) {
+                if isNgrokHere, let tunnel = model.ngrok {
+                    tunnelRow(tunnel)
+                }
+                if let error = detail.ngrokError {
+                    inlineError(error)
+                }
+
+                statusRow
+                portsRow
+                worktreeRow
                 envSection
             }
+            .padding(.horizontal, Layout.gutter)
+            .padding(.top, 12)
+            .padding(.bottom, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .reportsScrollEdge(in: Self.scrollSpace)
         }
-        .frame(maxHeight: 320)
+        .coordinateSpace(name: Self.scrollSpace)
+        .onPreferenceChange(ScrollEdgeKey.self) { offset in
+            let scrolled = offset > 1
+            guard scrolled != isScrolled else { return }
+            isScrolled = scrolled
+        }
+        .frame(maxHeight: 300)
         .bottomDivider()
     }
 
-    private var infoGrid: some View {
-        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
-            GridRow {
-                infoCell("Status") { StatusBadgeView(status: branch.status) }
-                infoCell("Category") {
-                    CategoryPickerView(value: model.category(for: branch.name)) { category in
-                        model.setCategory(category, for: branch.name)
+    private var statusRow: some View {
+        HStack(alignment: .top, spacing: 16) {
+            field("Status") { StatusBadgeView(status: branch.status) }
+            field("Lane") {
+                CategoryPickerView(value: model.category(for: branch.name)) { category in
+                    model.setCategory(category, for: branch.name)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var portsRow: some View {
+        HStack(alignment: .top, spacing: 16) {
+            field("Ports") { portsView }
+            field("Database") {
+                Text(environment?.databaseName ?? "—")
+                    .font(.system(size: 11))
+                    .monospaced()
+                    .foregroundStyle(
+                        environment?.databaseName == nil ? Palette.textTertiary : Palette.textPrimary
+                    )
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+    }
+
+    /// The path and the three things you can do with it sit together — a control belongs next to
+    /// what it acts on, not in a toolbar three regions away.
+    private var worktreeRow: some View {
+        field(branch.managed ? "Worktree · managed by TeaBranch" : "Worktree · external") {
+            VStack(alignment: .leading, spacing: 7) {
+                Text(branch.effectiveWorktreePath ?? "No worktree for this branch")
+                    .font(.system(size: 11))
+                    .monospaced()
+                    .foregroundStyle(hasWorktree ? Palette.textPrimary : Palette.textTertiary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if hasWorktree {
+                    HStack(spacing: 6) {
+                        PillButton(title: "Terminal", horizontalPadding: 10) {
+                            model.openTerminal(for: branch)
+                        }
+                        PillButton(title: "VS Code", horizontalPadding: 10) {
+                            model.openEditor(for: branch)
+                        }
+                        if branch.status == .running, environment?.port != nil {
+                            PillButton(title: "Preview", tone: .dim, horizontalPadding: 10) {
+                                model.openPreview(for: branch)
+                            }
+                        }
                     }
                 }
             }
-            GridRow {
-                infoCell("Database") {
-                    Text(environment?.databaseName ?? "—")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(environment?.databaseName == nil
-                                         ? Palette.textSecondary
-                                         : Palette.color(for: model.category(for: branch.name)))
-                        .textSelection(.enabled)
-                }
-                infoCell("Ports") { portsView }
-            }
-            GridRow {
-                infoCell("Source") {
-                    Text(branch.managed ? "TeaBranch" : "External")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(branch.managed ? Palette.accent : Palette.textSecondary)
-                }
-                Color.clear.frame(height: 1)
-            }
-            GridRow {
-                infoCell("Worktree") {
-                    Text(branch.effectiveWorktreePath ?? "—")
-                        .font(.system(size: 11, design: .monospaced))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .gridCellColumns(2)
-            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.bgCard)
-        .bottomDivider()
     }
 
-    private func infoCell<Content: View>(
+    private func tunnelRow(_ tunnel: NgrokTunnel) -> some View {
+        field("Public tunnel") {
+            HStack(spacing: 6) {
+                Text(tunnel.publicURL)
+                    .font(.system(size: 11))
+                    .monospaced()
+                    .foregroundStyle(Palette.accent)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+
+                Text("→ :\(String(tunnel.port))")
+                    .font(.system(size: 10))
+                    .monospacedDigit()
+                    .foregroundStyle(Palette.textSecondary)
+            }
+        }
+    }
+
+    private func field<Content: View>(
         _ label: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(label)
-                .font(.system(size: 10))
+                .font(.system(size: 10, weight: .medium))
+                .opticalTracking(10)
                 .foregroundStyle(Palette.textSecondary)
             content()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func inlineError(_ message: String) -> some View {
+        Text(message)
+            .font(.system(size: 11))
+            .foregroundStyle(Palette.statusError)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder
     private var portsView: some View {
         if environment?.port == nil && environment?.backendPort == nil {
-            Text("—").foregroundStyle(Palette.textSecondary).font(.system(size: 11))
+            Text("—").foregroundStyle(Palette.textTertiary).font(.system(size: 11))
         } else {
             HStack(spacing: 4) {
                 if let backend = environment?.backendPort {
-                    Text("Backend :\(String(backend))")
-                }
-                if environment?.backendPort != nil, environment?.socketPort != nil {
-                    Text("/").foregroundStyle(Palette.textSecondary)
+                    portChip("Backend", backend, tinted: false)
                 }
                 if let socket = environment?.socketPort {
-                    Text("Socket :\(String(socket))")
-                }
-                if environment?.socketPort != nil, environment?.port != nil {
-                    Text("/").foregroundStyle(Palette.textSecondary)
+                    portChip("Socket", socket, tinted: false)
                 }
                 if let frontend = environment?.port {
-                    Text("Frontend :\(String(frontend))").foregroundStyle(Palette.accent)
+                    portChip("Frontend", frontend, tinted: true)
                 }
             }
-            .font(.system(size: 11, design: .monospaced))
         }
+    }
+
+    private func portChip(_ label: String, _ port: UInt16, tinted: Bool) -> some View {
+        HStack(spacing: 3) {
+            Text(label).foregroundStyle(Palette.textSecondary)
+            Text(":\(String(port))")
+                .monospacedDigit()
+                .foregroundStyle(tinted ? Palette.accent : Palette.textPrimary)
+        }
+        .font(.system(size: 10))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Palette.fillSubtle, in: Capsule())
+        .textSelection(.enabled)
     }
 
     // MARK: - Environment overrides
 
     private var envSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 8) {
             Button {
-                withAnimation(.easeOut(duration: 0.15)) { detail.isExpanded.toggle() }
+                withAnimation(Motion.standard(reduceMotion)) { detail.isExpanded.toggle() }
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: 5) {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9))
+                        .font(.system(size: 9, weight: .semibold))
                         .rotationEffect(.degrees(detail.isExpanded ? 90 : 0))
                     Text("Environment Overrides")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 11, weight: .medium))
                     if detail.isDirty {
-                        Text("(unsaved)")
-                            .font(.system(size: 9))
+                        Text("unsaved")
+                            .font(.system(size: 9, weight: .medium))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
                             .foregroundStyle(Palette.statusBuilding)
+                            .background(Palette.statusBuilding.opacity(0.15), in: Capsule())
                     }
                     Spacer()
                 }
                 .foregroundStyle(Palette.textSecondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
             if detail.isExpanded {
-                if let draft = detail.draft {
-                    envEditor(draft)
-                } else if let error = detail.envError {
-                    Text(error)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.statusError)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 10)
-                } else {
-                    Text("Loading...")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.textSecondary)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 10)
+                Group {
+                    if let draft = detail.draft {
+                        envEditor(draft)
+                    } else if let error = detail.envError {
+                        inlineError(error)
+                    } else {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Reading .env.development.local…")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Palette.textSecondary)
+                        }
+                    }
                 }
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
         }
+        .padding(.top, 2)
     }
 
     private func envEditor(_ draft: WorktreeEnvOverrides) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             envField("PORT", value: draft.port) { detail.update(\.port, to: $0) }
             envField("SOCKET_PORT", value: draft.socketPort) { detail.update(\.socketPort, to: $0) }
             envField("SERVER_PORT", value: draft.serverPort) { detail.update(\.serverPort, to: $0) }
@@ -419,29 +481,24 @@ struct BranchDetailView: View {
             }
 
             if let error = detail.envError {
-                Text(error)
-                    .font(.system(size: 10))
-                    .foregroundStyle(Palette.statusError)
+                inlineError(error)
             }
 
             HStack(spacing: 6) {
                 Spacer()
-                PillButton(title: "Reset", isDisabled: !detail.isDirty, horizontalPadding: 10) {
+                PillButton(title: "Revert", isDisabled: !detail.isDirty, horizontalPadding: 12) {
                     detail.reset()
                 }
                 PillButton(
-                    title: detail.isSaving ? "Saving..." : "Save",
+                    title: detail.isSaving ? "Saving…" : "Save",
                     tone: detail.isDirty ? .accent : .plain,
                     isDisabled: !detail.isDirty || detail.isSaving,
-                    horizontalPadding: 10
+                    horizontalPadding: 12
                 ) {
                     detail.save()
                 }
             }
-            .padding(.top, 2)
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 10)
     }
 
     private func envField(
@@ -453,17 +510,18 @@ struct BranchDetailView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(label)
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: 10, weight: .medium))
+                    .monospaced()
                     .foregroundStyle(Palette.textSecondary)
 
                 if !options.isEmpty {
-                    Menu("选择已有实例...") {
+                    Menu("Copy from…") {
                         ForEach(options, id: \.value) { option in
                             Button(option.label) { onChange(option.value) }
                         }
                     }
                     .menuStyle(.borderlessButton)
-                    .font(.system(size: 9))
+                    .font(.system(size: 10))
                     .foregroundStyle(Palette.accent)
                     .fixedSize()
                 }
@@ -474,14 +532,19 @@ struct BranchDetailView: View {
                 set: { onChange($0) }
             ))
             .textFieldStyle(.plain)
-            .font(.system(size: 11, design: .monospaced))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            .background(Palette.bgCard, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .font(.system(size: 11))
+            .monospaced()
+            .padding(.horizontal, 7)
+            .padding(.vertical, 5)
+            .background(
+                Palette.fillSubtle,
+                in: RoundedRectangle(cornerRadius: Palette.controlRadius, style: .continuous)
+            )
             .overlay {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: Palette.controlRadius, style: .continuous)
                     .strokeBorder(Palette.border, lineWidth: 1)
             }
+            .accessibilityLabel(label)
         }
     }
 }

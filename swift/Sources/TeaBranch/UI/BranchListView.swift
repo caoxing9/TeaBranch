@@ -2,149 +2,207 @@ import SwiftUI
 
 struct BranchListView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    @State private var isScrolled = false
+    @FocusState private var searchFocused: Bool
+
+    private static let scrollSpace = "branchList"
 
     var body: some View {
-        if let branch = model.selectedBranchValue {
-            BranchDetailView(branch: branch)
-        } else {
-            listShell
-        }
+        content
+            // The bar floats; content passes underneath it rather than being pushed into a
+            // shorter box by an opaque strip.
+            .safeAreaInset(edge: .top, spacing: 0) { toolbar }
     }
 
-    private var listShell: some View {
+    // MARK: - Toolbar
+
+    private var toolbar: some View {
         VStack(spacing: 0) {
-            searchToolbar
-            filterToolbar
-            content
+            HStack(spacing: 8) {
+                Text("TeaBranch")
+                    .font(.system(size: 13, weight: .semibold))
+                    .opticalTracking(13)
+                    .fixedSize()
+                    .layoutPriority(1)
+
+                searchField
+
+                viewModePicker
+
+                PillButton(
+                    title: "",
+                    systemImage: "plus",
+                    tone: .accent,
+                    horizontalPadding: 7,
+                    accessibilityLabel: "New branch"
+                ) {
+                    model.showCreateSheet = true
+                }
+                .help("New branch (⌘N)")
+
+                overflowMenu
+            }
+            .padding(.leading, Layout.trafficLightInset)
+            .padding(.trailing, Layout.gutter)
+            .padding(.vertical, 8)
+
+            // The filter row exists only while a filter does. Nothing is spent showing "All".
+            if let filter = model.categoryFilter {
+                activeFilterRow(filter)
+                    .transition(
+                        reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity)
+                    )
+            }
         }
+        .animation(Motion.standard(reduceMotion), value: model.categoryFilter)
+        .chromeBackground(reduceTransparency: reduceTransparency)
+        // A separator only where content actually slides beneath the bar.
+        .scrollEdgeDivider(isVisible: isScrolled)
     }
 
-    // MARK: - Toolbars
-
-    private var searchToolbar: some View {
+    private var searchField: some View {
         @Bindable var model = model
 
-        return HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Palette.textSecondary)
-                TextField("Search branches...", text: $model.searchText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 11))
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(Palette.bgCard, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(Palette.border, lineWidth: 1)
-            }
+        return HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Palette.textSecondary)
 
-            HStack(spacing: 2) {
-                ForEach(AppModel.ViewMode.allCases, id: \.self) { mode in
-                    let isSelected = model.viewMode == mode
-                    Button {
-                        model.viewMode = mode
-                    } label: {
-                        Text(mode.rawValue.capitalized)
-                            .font(.system(size: 11))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 3)
-                            .foregroundStyle(isSelected ? Palette.accent : Palette.textSecondary)
-                            .background(
-                                isSelected ? Palette.accentDim : .clear,
-                                in: RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            )
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(2)
-            .background(Palette.bgCard, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(Palette.border, lineWidth: 1)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Palette.toolbarBg)
-        .bottomDivider()
-    }
-
-    private var filterToolbar: some View {
-        HStack {
-            HStack(spacing: 4) {
-                filterChip(title: "All", isSelected: model.categoryFilter == nil, color: Palette.accent) {
-                    model.categoryFilter = nil
-                }
-                ForEach(DevCategory.allCases, id: \.self) { category in
-                    filterChip(
-                        title: category.label,
-                        isSelected: model.categoryFilter == category,
-                        color: Palette.color(for: category)
-                    ) {
-                        model.categoryFilter = model.categoryFilter == category ? nil : category
-                    }
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            HStack(spacing: 2) {
-                Text("Sort:")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Palette.textSecondary)
-                    .opacity(0.7)
-                    .padding(.trailing, 2)
-
-                ForEach(AppModel.SortKey.allCases, id: \.self) { key in
-                    let isSelected = model.sortKey == key
-                    Button {
-                        model.toggleSort(key)
-                    } label: {
-                        Text(key.label + (isSelected ? (model.sortAscending ? " ↑" : " ↓") : ""))
-                            .font(.system(size: 10))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .foregroundStyle(isSelected ? Palette.accent : Palette.textSecondary)
-                            .background(
-                                isSelected ? Palette.accentDim : .clear,
-                                in: RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            )
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(Palette.toolbarBg)
-        .bottomDivider()
-    }
-
-    private func filterChip(
-        title: String,
-        isSelected: Bool,
-        color: Color,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Text(title)
+            TextField("Search", text: $model.searchText)
+                .textFieldStyle(.plain)
                 .font(.system(size: 11))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 2)
-                .foregroundStyle(isSelected ? color : Palette.textSecondary)
-                .background(
-                    isSelected ? color.opacity(0.13) : .clear,
-                    in: RoundedRectangle(cornerRadius: 5, style: .continuous)
-                )
-                .contentShape(Rectangle())
+                .focused($searchFocused)
+                .onKeyPress(.escape) {
+                    model.searchText = ""
+                    searchFocused = false
+                    return .handled
+                }
+
+            if !model.searchText.isEmpty {
+                Button {
+                    model.searchText = ""
+                    searchFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+                .transition(.opacity)
+            }
         }
-        .buttonStyle(.plain)
+        .animation(Motion.snappy(reduceMotion), value: model.searchText.isEmpty)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .frame(minWidth: 70)
+        .background(Palette.fillSubtle, in: Capsule())
+        .overlay {
+            Capsule().strokeBorder(searchFocused ? Palette.accent : Palette.border, lineWidth: 1)
+        }
+        .animation(Motion.snappy(reduceMotion), value: searchFocused)
+    }
+
+    private var viewModePicker: some View {
+        @Bindable var model = model
+
+        return Picker("View", selection: $model.viewMode) {
+            Image(systemName: "list.bullet").tag(AppModel.ViewMode.list)
+                .accessibilityLabel("List")
+            Image(systemName: "square.grid.2x2").tag(AppModel.ViewMode.board)
+                .accessibilityLabel("Board")
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.small)
+        .fixedSize()
+        .help("Switch between list and board")
+    }
+
+    /// Sorting, filtering and app-level settings live one level deeper — they are set rarely and
+    /// were costing two permanent rows of a 420pt-wide window.
+    private var overflowMenu: some View {
+        @Bindable var model = model
+
+        return Menu {
+            Picker("Sort By", selection: $model.sortKey) {
+                ForEach(AppModel.SortKey.allCases, id: \.self) { key in
+                    Text(key.label).tag(key)
+                }
+            }
+            Button(model.sortAscending ? "Reverse Order (Z→A)" : "Reverse Order (A→Z)") {
+                model.sortAscending.toggle()
+            }
+
+            Divider()
+
+            Picker("Show", selection: $model.categoryFilter) {
+                Text("All Branches").tag(DevCategory?.none)
+                ForEach(DevCategory.allCases, id: \.self) { category in
+                    Text(category.label).tag(DevCategory?.some(category))
+                }
+            }
+
+            Divider()
+
+            Picker("Appearance", selection: $model.theme) {
+                ForEach(ThemePreference.allCases, id: \.self) { theme in
+                    Label(theme.label, systemImage: theme.symbolName).tag(theme)
+                }
+            }
+
+            Divider()
+
+            Button("Open Repository…") { model.chooseProject() }
+            Button("Settings…") { model.showSettingsSheet = true }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        // Never let a filter hide silently: the control that owns it reads as active.
+        .foregroundStyle(model.categoryFilter == nil ? Palette.textSecondary : Palette.accent)
+        .accessibilityLabel("More options")
+        .help("Sort, filter and settings")
+    }
+
+    private func activeFilterRow(_ filter: DevCategory) -> some View {
+        HStack(spacing: 6) {
+            Button {
+                model.categoryFilter = nil
+            } label: {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(Palette.color(for: filter))
+                        .frame(width: 6, height: 6)
+                    Text(filter.label)
+                        .font(.system(size: 10, weight: .medium))
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .bold))
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .foregroundStyle(Palette.textPrimary)
+                .background(Palette.fillHover, in: Capsule())
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Clear \(filter.label) filter")
+
+            Text("\(model.visibleBranches.count) of \(model.branches.count)")
+                .font(.system(size: 10))
+                .monospacedDigit()
+                .foregroundStyle(Palette.textSecondary)
+
+            Spacer()
+        }
+        .padding(.horizontal, Layout.gutter)
+        .padding(.bottom, 7)
     }
 
     // MARK: - Content
@@ -153,38 +211,60 @@ struct BranchListView: View {
     private var content: some View {
         if model.branches.isEmpty {
             emptyState(
-                model.errorMessage == nil ? "No branches found" : "No project loaded",
-                detail: model.errorMessage == nil ? nil : "Select a git project to get started"
+                title: model.errorMessage == nil ? "No branches yet" : "No repository loaded",
+                detail: model.errorMessage == nil
+                    ? "Create a worktree to get started."
+                    : "Choose a git repository from the ⋯ menu.",
+                symbol: "arrow.triangle.branch"
             )
         } else if model.viewMode == .board {
             SwimLaneBoardView()
         } else if model.visibleBranches.isEmpty {
-            emptyState("No matching branches", detail: nil)
+            emptyState(
+                title: "No matching branches",
+                detail: "Try a different search or clear the filter.",
+                symbol: "magnifyingglass"
+            )
         } else {
-            ScrollView {
-                LazyVStack(spacing: 6) {
-                    ForEach(model.visibleBranches) { branch in
-                        BranchCardView(branch: branch)
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-            }
+            branchList
         }
     }
 
-    private func emptyState(_ title: String, detail: String?) -> some View {
-        VStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 12))
-                .foregroundStyle(Palette.textSecondary)
-            if let detail {
-                Text(detail)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.textSecondary)
+    private var branchList: some View {
+        ScrollView {
+            LazyVStack(spacing: 2) {
+                ForEach(model.visibleBranches) { branch in
+                    BranchCardView(branch: branch)
+                }
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .reportsScrollEdge(in: Self.scrollSpace)
+        }
+        .coordinateSpace(name: Self.scrollSpace)
+        .onPreferenceChange(ScrollEdgeKey.self) { offset in
+            // A hair of slack so a rubber-banded overscroll doesn't flicker the separator.
+            let scrolled = offset > 1
+            guard scrolled != isScrolled else { return }
+            isScrolled = scrolled
+        }
+    }
+
+    private func emptyState(title: String, detail: String, symbol: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.system(size: 22, weight: .light))
+                .foregroundStyle(Palette.textTertiary)
+                .padding(.bottom, 2)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+            Text(detail)
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.textSecondary)
+                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(20)
+        .padding(24)
     }
 }
