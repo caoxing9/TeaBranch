@@ -21,6 +21,8 @@ final class StatusItemController: NSObject {
 
         if let button = statusItem.button {
             button.image = Self.trayImage()
+            button.imagePosition = .imageLeft
+            button.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
             button.toolTip = "TeaBranch"
             button.target = self
             button.action = #selector(handleClick)
@@ -31,6 +33,24 @@ final class StatusItemController: NSObject {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit", action: #selector(handleQuit), keyEquivalent: "q")
         menu.items.forEach { $0.target = self }
+
+        NotificationCenter.default.addObserver(
+            forName: .environmentsChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshRunningCount() }
+        }
+        refreshRunningCount()
+    }
+
+    /// The icon carries the one fact that matters while the window is closed: how many dev servers
+    /// are alive right now. No number when nothing runs — an idle count is noise.
+    private func refreshRunningCount() {
+        guard let button = statusItem.button else { return }
+        let live = AppState.shared.environments.filter { $0.status.isLive }.count
+        button.title = live > 0 ? " \(live)" : ""
+        button.toolTip = live > 0 ? "TeaBranch — \(live) running" : "TeaBranch"
     }
 
     @objc private func handleClick() {

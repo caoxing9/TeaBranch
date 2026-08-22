@@ -7,6 +7,7 @@ struct SettingsSheet: View {
     @State private var selection: String = ""
     @State private var customName: String = ""
     @State private var isCustom = false
+    @State private var agentCommand = ""
 
     private static let customTag = "__custom__"
 
@@ -81,12 +82,53 @@ struct SettingsSheet: View {
                 .foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 10)
+
+            Divider().padding(.vertical, 16)
+
+            agentSection
         }
         .padding(20)
-        .frame(width: 380)
+        .frame(width: 420)
         .background(Color(nsColor: .windowBackgroundColor))
         .foregroundStyle(Palette.textPrimary)
         .onAppear(perform: load)
+    }
+
+    /// What the Agent button runs.
+    ///
+    /// Spelled out rather than named: `cc` is a shell alias, and the terminal starts this in a
+    /// context where `.zshrc` aliases do not exist. Showing the expanded command is also the only
+    /// way the user can tell what the button is about to do on their machine.
+    private var agentSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Agent Command")
+                .font(.system(size: Typography.callout))
+                .foregroundStyle(Palette.textSecondary)
+
+            TextField("claude --dangerously-skip-permissions", text: $agentCommand)
+                .textFieldStyle(.plain)
+                .font(.system(size: Typography.body))
+                .monospaced()
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Palette.fillSubtle, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Palette.border, lineWidth: 1)
+                }
+                .onSubmit { model.updateAgentCommand(agentCommand) }
+
+            Text(agentNote)
+                .font(.system(size: Typography.caption))
+                .foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var agentNote: String {
+        model.canRunAgent
+            ? "Runs in a new tab in the worktree. Your `cc` alias expands to this."
+            : "The Agent button is hidden: the selected terminal can't be told to run a command from outside. Otty and iTerm can."
     }
 
     /// Tell the user what "open in terminal" will actually do for the app they picked.
@@ -100,6 +142,8 @@ struct SettingsSheet: View {
             return "Opens a new window — this app exposes no way to open a tab from outside."
         }
         switch preset.value {
+        case "Otty":
+            return "Opens a new tab through Otty's control CLI — no Accessibility permission needed, and it can start the agent for you."
         case "Warp":
             return "Opens a new tab via the warp:// URL scheme."
         case "iTerm":
@@ -112,6 +156,7 @@ struct SettingsSheet: View {
     }
 
     private func load() {
+        agentCommand = model.settings.agentCommand
         let stored = model.settings.terminalApp ?? ""
         // Match presets case-insensitively: a hand-edited settings.json may well say "kero".
         let preset = TerminalService.presets.first {

@@ -5,10 +5,14 @@ import SwiftUI
 @MainActor
 final class MainWindowController: NSObject, NSWindowDelegate {
     private let window: NSWindow
+    /// Whether the window has been positioned once this launch. The autosaved frame wins after that.
+    private var hasPlacedWindow = false
 
     init(rootView: some View) {
+        // Sized for the split view it now contains. The old 420×600 was a popover that happened to
+        // be resizable; two columns and a log console need a window.
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 600),
+            contentRect: NSRect(x: 0, y: 0, width: 1120, height: 700),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -19,31 +23,24 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
-        window.minSize = NSSize(width: 360, height: 400)
+        window.minSize = NSSize(width: 720, height: 460)
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.setFrameAutosaveName("TeaBranchMainWindow")
+        // Deliberately a new key. The old one holds a frame sized for the single-column popover
+        // this app used to be — restoring it would open the split view at ~420pt of usable width
+        // and make the new layout look like a mistake. One reset, then it persists as normal.
+        window.setFrameAutosaveName("TeaBranchMainWindow.split")
 
-        // The surface the palette's fills layer onto.
+        // No `NSVisualEffectView` wrapper any more.
         //
-        // It used to be `.underWindowBackground` blended *behind* the window, which samples the
-        // desktop. The app also forces its own appearance, so whenever the two disagreed — dark app
-        // over a light wallpaper, or light app over a dark one — the window resolved to a muddy grey
-        // with a mismatched toolbar pasted on it. Appearance you choose, wallpaper you don't; a
-        // window's legibility should not depend on the second one. `.withinWindow` keeps the
-        // material's depth without letting the desktop decide the value of every surface above it.
-        let vibrancy = NSVisualEffectView()
-        vibrancy.material = .windowBackground
-        vibrancy.blendingMode = .withinWindow
-        vibrancy.state = .active
-        vibrancy.autoresizingMask = [.width, .height]
-
+        // It existed to give the old hand-rolled palette a material to layer opacity fills onto.
+        // `NavigationSplitView` brings its own sidebar material on macOS 26, and the chrome is
+        // Liquid Glass, which samples what is *behind* it — so an extra window-wide blur underneath
+        // meant every glass surface was sampling another blur rather than the content, which is
+        // exactly the stacked-translucency mush the style is supposed to avoid.
         let host = NSHostingView(rootView: rootView)
-        host.frame = vibrancy.bounds
         host.autoresizingMask = [.width, .height]
-        vibrancy.addSubview(host)
-
-        window.contentView = vibrancy
+        window.contentView = host
         window.center()
     }
 
@@ -58,13 +55,22 @@ final class MainWindowController: NSObject, NSWindowDelegate {
 
     var isVisible: Bool { window.isVisible }
 
-    /// Toggle the window, anchoring it under the status item when showing.
+    /// Toggle the window from the menu bar.
+    ///
+    /// It only anchors under the status item the *first* time, when there is no remembered frame.
+    /// It used to re-anchor on every toggle, which threw away the position on every single show:
+    /// you would size and place the window where you wanted it, close it, click the menu bar icon,
+    /// and it would teleport back under the icon. A window the user has placed is a window the
+    /// user has placed — `setFrameAutosaveName` already remembers where.
     func toggle(under statusItemFrame: NSRect) {
         if window.isVisible {
             hide()
             return
         }
-        position(under: statusItemFrame)
+        if !hasPlacedWindow {
+            position(under: statusItemFrame)
+            hasPlacedWindow = true
+        }
         show()
     }
 

@@ -47,10 +47,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "About TeaBranch", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
+        // ⌘, is where every Mac app keeps its settings; a sheet reachable only from an overflow
+        // menu inside one screen isn't discoverable from the keyboard at all.
+        let settingsItem = appMenu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide TeaBranch", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(withTitle: "Quit TeaBranch", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
+
+        // The File menu owns ⌘N, so "new branch" works from the detail screen and the board too —
+        // not just while the list toolbar's + button happens to be on screen.
+        let fileMenuItem = NSMenuItem()
+        let fileMenu = NSMenu(title: "File")
+        let newBranchItem = fileMenu.addItem(withTitle: "New Branch…", action: #selector(newBranch), keyEquivalent: "n")
+        newBranchItem.target = self
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
 
         let editMenuItem = NSMenuItem()
         let editMenu = NSMenu(title: "Edit")
@@ -73,5 +87,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.mainMenu = mainMenu
         NSApp.windowsMenu = windowMenu
+    }
+
+    @objc private func newBranch() {
+        // No repository yet means nothing to branch from — onboarding is the only screen then.
+        guard model.screen == .main else { return }
+        windowController.show()
+        model.showCreateSheet = true
+    }
+
+    @objc private func openSettings() {
+        windowController.show()
+        model.showSettingsSheet = true
     }
 }

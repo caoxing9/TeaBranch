@@ -4,6 +4,12 @@ import Foundation
 /// fetch develop → add worktree → write an env file with unique ports/DB/Redis → install
 /// dependencies → provision and migrate the database.
 enum WorktreeService {
+    /// The branch every new worktree is cut from, and the default database to reuse.
+    ///
+    /// Hard-coded because it is Teable's integration branch, not a preference — a worktree cut
+    /// from anywhere else would not match the schema of the database this app provisions.
+    static let baseBranch = "develop"
+
     /// The env keys we take ownership of when generating a worktree's env file.
     private static let generatedKeys = [
         "PORT", "SOCKET_PORT", "SERVER_PORT", "PUBLIC_ORIGIN",
@@ -37,8 +43,8 @@ enum WorktreeService {
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
 
         // 1. Fetch the branch point.
-        progress(WorktreeProgress(step: "fetch", message: "Fetching origin/develop...", done: false))
-        let fetch = Shell.git(["fetch", "origin", "develop"], cwd: repo)
+        progress(WorktreeProgress(step: "fetch", message: "Fetching origin/\(baseBranch)...", done: false))
+        let fetch = Shell.git(["fetch", "origin", baseBranch], cwd: repo)
         guard fetch.ok else {
             throw TeaBranchError("git fetch failed: \(fetch.stderr)")
         }
@@ -46,7 +52,7 @@ enum WorktreeService {
         // 2. Add the worktree, branching off origin/develop.
         progress(WorktreeProgress(step: "branch", message: "Creating branch \(branch)...", done: false))
         let add = Shell.git(
-            ["worktree", "add", "-b", branch, worktree.path, "origin/develop", "--no-track"],
+            ["worktree", "add", "-b", branch, worktree.path, "origin/\(baseBranch)", "--no-track"],
             cwd: repo
         )
         if !add.ok {
@@ -62,6 +68,8 @@ enum WorktreeService {
 
         // 3. Env file with an isolated port block, database and Redis index.
         progress(WorktreeProgress(step: "env", message: "Setting up environment...", done: false))
+        // A brand-new worktree must not inherit a cached answer from a path that was reused.
+        GitService.forgetManaged(worktree: worktree)
         let slot = assignSlot(repo: repo)
         let branchDbName = DatabaseURL.name(forBranch: branch)
 
@@ -138,15 +146,13 @@ enum WorktreeService {
 
     // MARK: - Slot allocation
 
-    /// Pick the next free "slot", which fixes a worktree's whole port block (3000 + slot*100).
+    /// Pick a free "slot", which fixes a worktree's whole port block (3000 + slot*100).
     ///
-    /// Scanning the slot markers alone isn't enough: a worktree's `# WORKTREE_SLOT` and its real
-    /// `PORT` drift apart whenever a derived port was already taken (macOS AirPlay owns 7000,
-    /// for one), and a marker-only `max+1` then hands the same PORT to two worktrees, which
-    /// proceed to kill each other's dev servers. So we collect the real PORT values too, and
-    /// skip any slot whose ports are claimed on disk or bound on the machine.
+    /// Slot markers are ignored entirely; only the real port values matter. A worktree's
+    /// `# WORKTREE_SLOT` and its actual `PORT` drift apart whenever a derived port was already
+    /// taken, so trusting the marker hands the same port to two worktrees, which then kill each
+    /// other's dev servers.
     static func assignSlot(repo: URL) -> UInt32 {
-        var maxSlot: UInt32 = 0
         var usedPorts = Set<UInt16>()
 
         var directories = [repo]
@@ -155,28 +161,38 @@ enum WorktreeService {
             directories.append(contentsOf: entries.filter(\.hasDirectoryPath))
         }
 
+        // Only the *ports* matter, not the slot markers. A marker says which slot a worktree was
+        // given; the ports say what is actually spoken for, and those are what can collide.
         for directory in directories {
             let envPath = directory.appendingPathComponent("enterprise/app-ee/.env.development.local")
             guard let contents = try? String(contentsOf: envPath, encoding: .utf8) else { continue }
             for rawLine in contents.split(separator: "\n") {
                 let line = rawLine.trimmingCharacters(in: .whitespaces)
-                if line.hasPrefix("# WORKTREE_SLOT=") {
-                    let value = line.dropFirst("# WORKTREE_SLOT=".count).trimmingCharacters(in: .whitespaces)
-                    if let slot = UInt32(value), slot > maxSlot { maxSlot = slot }
-                } else if line.hasPrefix("PORT=") {
-                    let value = line.dropFirst("PORT=".count).trimmingCharacters(in: .whitespaces)
+                for key in ["PORT=", "SOCKET_PORT=", "SERVER_PORT="] where line.hasPrefix(key) {
+                    let value = line.dropFirst(key.count).trimmingCharacters(in: .whitespaces)
                     if let port = UInt16(value) { usedPorts.insert(port) }
                 }
             }
         }
 
-        var slot = maxSlot + 1
+        // Search upward from the first slot, not from `max + 1`.
+        //
+        // The old version only ever counted up, so deleting the worktrees at slots 1–8 and keeping
+        // slot 9 still handed the next one slot 10. Over a few months of churn the block drifts
+        // into five-figure territory, and every gap left by a deleted worktree stays empty
+        // forever. Scanning from the bottom reuses those gaps, which is also what keeps the ports
+        // in a range you can recognise on sight.
+        var slot: UInt32 = 1
         while true {
             let base = 3000 + slot * 100
             guard base + 3 <= UInt32(UInt16.max) else { return slot }
             let port = UInt16(base)
             let companion = UInt16(base + 3)
+
             let collides = usedPorts.contains(port)
+                || usedPorts.contains(companion)
+                || Ports.isReserved(port)
+                || Ports.isReserved(companion)
                 || !Ports.isAvailable(port)
                 || !Ports.isAvailable(companion)
             if !collides { return slot }
@@ -252,6 +268,7 @@ enum WorktreeService {
         ]
 
         for path in candidates where FileManager.default.fileExists(atPath: path.path) {
+            GitService.forgetManaged(worktree: path)
             let result = Shell.git(["worktree", "remove", "--force", path.path], cwd: repo)
             if result.ok { return }
 

@@ -5,18 +5,29 @@ import SwiftUI
 @MainActor
 @Observable
 final class BranchDetailModel {
-    var draft: WorktreeEnvOverrides?
-    var saved: WorktreeEnvOverrides?
+    /// Every assignment in the worktree's env file, editable.
+    ///
+    /// This used to be nine hard-coded fields — the keys TeaBranch generates. But the file is the
+    /// worktree's whole environment, and the interesting ones are usually the *other* keys: a
+    /// feature flag, an API base, a credential you are swapping for the afternoon. Editing those
+    /// meant leaving the app.
+    var entries: [EnvFile.Entry] = []
+    private var saved: [EnvFile.Entry] = []
+
     var dbInfos: [WorktreeDbInfo] = []
-    var isDirty = false
     var isSaving = false
     var envError: String?
+    /// Set after a save that restarted the branch, so the UI can say so.
+    var restartNote: String?
 
     var ngrokBusy = false
     var ngrokError: String?
 
+    var isDirty: Bool { entries != saved }
+
+    /// Whether the env editor is open. Loads lazily the first time.
     var isExpanded = false {
-        didSet { if isExpanded, draft == nil { load() } }
+        didSet { if isExpanded, entries.isEmpty { load() } }
     }
 
     private var branch: String = ""
@@ -24,10 +35,10 @@ final class BranchDetailModel {
     func bind(to branch: String) {
         guard branch != self.branch else { return }
         self.branch = branch
-        draft = nil
-        saved = nil
-        isDirty = false
+        entries = []
+        saved = []
         envError = nil
+        restartNote = nil
         if isExpanded { load() }
     }
 
@@ -38,13 +49,12 @@ final class BranchDetailModel {
         Background.run {
             do {
                 let worktree = try GitService.worktreePath(for: branch, in: repo)
-                let overrides = EnvFile.overrides(in: worktree)
+                let entries = EnvFile.entries(in: worktree)
                 let infos = GitService.worktreeDbInfo(in: repo)
                 onMain {
-                    self.draft = overrides
-                    self.saved = overrides
+                    self.entries = entries
+                    self.saved = entries
                     self.dbInfos = infos
-                    self.isDirty = false
                     self.envError = nil
                 }
             } catch {
@@ -54,37 +64,65 @@ final class BranchDetailModel {
         }
     }
 
-    func update(_ keyPath: WritableKeyPath<WorktreeEnvOverrides, String?>, to value: String) {
-        guard draft != nil else { return }
-        draft?[keyPath: keyPath] = value
-        isDirty = true
+    func update(_ key: String, to value: String) {
+        guard let index = entries.firstIndex(where: { $0.key == key }) else { return }
+        entries[index].value = value
+    }
+
+    func remove(_ key: String) {
+        entries.removeAll { $0.key == key }
+    }
+
+    /// Add a key, or focus the existing one. Returns false when the key is unusable.
+    @discardableResult
+    func add(key rawKey: String, value: String = "") -> Bool {
+        let key = rawKey.trimmingCharacters(in: .whitespaces)
+        guard !key.isEmpty, !key.contains("="), !key.contains(" ") else { return false }
+        guard !entries.contains(where: { $0.key == key }) else { return false }
+        entries.append(EnvFile.Entry(key: key, value: value))
+        return true
     }
 
     func reset() {
-        draft = saved
-        isDirty = false
+        entries = saved
     }
 
-    func save() {
-        guard let draft, let repo = AppState.shared.projectURL else { return }
+    /// Save, then restart the branch if it is running.
+    ///
+    /// A dev server reads its environment once, at exec. Editing `PORT` or a feature flag and
+    /// watching nothing happen is the kind of thing you debug for ten minutes before remembering
+    /// why — so the save that changed it is also the thing that restarts it.
+    func save(restartIfRunning isRunning: Bool) {
+        guard let repo = AppState.shared.projectURL else { return }
         let branch = self.branch
+        let entries = self.entries
         isSaving = true
         envError = nil
+        restartNote = nil
 
-        Background.run {
+        // The restart goes through ProcessManager's own queue, like every other start/stop —
+        // `Background.io` is for short reads, and a restart is bounded by how long a dev server
+        // takes to die and boot.
+        ProcessManager.queue.async {
             do {
                 let worktree = try GitService.worktreePath(for: branch, in: repo)
-                try EnvFile.writeOverrides(draft, in: worktree)
+                try EnvFile.writeEntries(entries, in: worktree)
                 onMain {
-                    self.saved = draft
-                    self.isDirty = false
+                    self.saved = entries
                     self.isSaving = false
                 }
+
+                guard isRunning else { return }
+                onMain { self.restartNote = "Restarting to pick up the new environment…" }
+                try ProcessManager.stop(branch: branch)
+                try ProcessManager.start(branch: branch)
+                onMain { self.restartNote = nil }
             } catch {
                 let message = error.localizedDescription
                 onMain {
                     self.envError = message
                     self.isSaving = false
+                    self.restartNote = nil
                 }
             }
         }
@@ -118,6 +156,13 @@ final class BranchDetailModel {
     }
 }
 
+/// The detail pane: what this branch is, what you can do to it, and what it is saying.
+///
+/// Three bands, in the order you use them. Identity and the one destructive-ish control at the
+/// top; the things you reach for constantly on a glass action bar under it; and then the logs,
+/// which get every remaining pixel because they are the reason the window is open. Everything
+/// referential — ports, database, env, worktree path — moved into the inspector, where it is one
+/// click away instead of permanently occupying the top third of the pane.
 struct BranchDetailView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -126,77 +171,125 @@ struct BranchDetailView: View {
     var branch: Branch
 
     @State private var detail = BranchDetailModel()
+    @AppStorage("teabranch.inspector") private var showInspector = false
 
     private var environment: BranchEnvironment? { branch.environment }
     private var isRunning: Bool { branch.status.isLive }
     private var hasWorktree: Bool { branch.effectiveWorktreePath != nil }
     private var isNgrokHere: Bool { model.ngrok?.branchName == branch.name }
+    private var isBusy: Bool { model.isBusy(branch.name) }
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            summaryRegion
-            envSection
-                .padding(.horizontal, Layout.gutter)
-                .padding(.bottom, 12)
-                // The editor slides in and out from this region's top edge, so the region has to be
-                // its own clip: without one the moving copy paints over the rows above it.
-                .clipped()
-                .bottomDivider()
+            actionBar
             LogPaneView(branch: branch)
         }
-        .onAppear { detail.bind(to: branch.name) }
-        .onChange(of: branch.name) { _, name in detail.bind(to: name) }
+        .inspector(isPresented: $showInspector) {
+            BranchInspectorView(branch: branch, detail: detail)
+                .inspectorColumnWidth(min: 280, ideal: 330, max: 460)
+        }
+        .onAppear {
+            detail.bind(to: branch.name)
+            model.refreshUsage()
+        }
+        .onChange(of: branch.name) { _, name in
+            detail.bind(to: name)
+            model.refreshUsage()
+        }
+        // Sampling costs a `ps`, so it only ticks while something is actually running — a window
+        // full of stopped branches does no work at all.
+        //
+        // The refresh happens *before* the guard on purpose: when the last branch stops, this task
+        // restarts with an empty id and would otherwise return without ever clearing the previous
+        // sample, leaving a stopped branch showing 5.7 GB and a live uptime forever.
+        .task(id: model.liveBranches.map(\.id)) {
+            model.refreshUsage()
+            guard !model.liveBranches.isEmpty else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                if Task.isCancelled { break }
+                model.refreshUsage()
+            }
+        }
     }
 
     // MARK: - Header
 
-    /// Back, identity, one primary action, and everything else a level deeper. The previous header
-    /// put seven same-weight buttons on a 420pt row, which left the branch name — the thing the
-    /// screen is about — with the least space of anything on it.
     private var header: some View {
-        HStack(spacing: 8) {
-            PillButton(
-                title: "",
-                systemImage: "chevron.left",
-                horizontalPadding: 7,
-                accessibilityLabel: "Back to branches"
-            ) {
-                model.selectedBranch = nil
-            }
-            .keyboardShortcut("[", modifiers: .command)
-            .help("Back (⌘[)")
+        HStack(spacing: 10) {
+            StatusDotView(status: branch.status)
 
-            HStack(spacing: 5) {
-                StatusDotView(status: branch.status)
+            VStack(alignment: .leading, spacing: 1) {
                 Text(branch.name)
                     .font(.system(size: Typography.headline, weight: .semibold))
                     .opticalTracking(Typography.headline)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .textSelection(.enabled)
+
+                HStack(spacing: 5) {
+                    Text(branch.status.label)
+                        .foregroundStyle(
+                            branch.status == .stopped
+                                ? Palette.textSecondary
+                                : Palette.color(for: branch.status)
+                        )
+                    if let port = environment?.port {
+                        separator
+                        Text("localhost:\(String(port))")
+                            .monospacedDigit()
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                    // What this branch is actually costing, next to the fact that it is running.
+                    // A dev server that has quietly grown to 4GB is the single most useful thing
+                    // this header can tell you, and it was only discoverable in Activity Monitor.
+                    if let usage = model.usage(for: branch), !usage.isEmpty {
+                        separator
+                        Text(String(format: "%.0f%% CPU", usage.cpuPercent))
+                            .monospacedDigit()
+                            .foregroundStyle(usage.cpuPercent >= 150 ? Palette.statusBuilding : Palette.textSecondary)
+                        separator
+                        Text(ProcessStats.formatBytes(usage.residentBytes))
+                            .monospacedDigit()
+                            .foregroundStyle(Palette.textSecondary)
+                        separator
+                        Text("up \(usage.uptime)")
+                            .monospacedDigit()
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                }
+                .font(.system(size: Typography.caption))
+                .lineLimit(1)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer(minLength: 8)
 
             PillButton(
-                title: model.isBusy(branch.name) ? "…" : (isRunning ? "Stop" : "Start"),
-                tone: isRunning ? .danger : .dim,
-                isDisabled: model.isBusy(branch.name),
-                horizontalPadding: 12,
+                title: isBusy ? "…" : (isRunning ? "Stop" : "Start"),
+                systemImage: isBusy ? nil : (isRunning ? "stop.fill" : "play.fill"),
+                tone: isRunning ? .danger : .accent,
+                isDisabled: isBusy,
+                horizontalPadding: 14,
                 accessibilityLabel: isRunning ? "Stop \(branch.name)" : "Start \(branch.name)"
             ) {
                 model.toggle(branch: branch)
             }
+            .help(isRunning ? "Stop this branch's dev servers" : "Start this branch's dev servers")
 
             overflowMenu
         }
         .padding(.horizontal, Layout.gutter)
-        .padding(.vertical, 8)
+        .padding(.vertical, 9)
         .chromeBackground(reduceTransparency: reduceTransparency)
         .bottomDivider()
     }
 
-    /// Only what is genuinely rare or destructive lives here. Everything you reach for while working
-    /// a branch is on the surface, next to the thing it acts on.
+    /// Only what is genuinely rare or destructive lives here.
+    private var separator: some View {
+        Text("·").foregroundStyle(Palette.textTertiary)
+    }
+
     private var overflowMenu: some View {
         Menu {
             Picker("Move to", selection: Binding(
@@ -207,6 +300,10 @@ struct BranchDetailView: View {
                     Text(category.label).tag(category)
                 }
             }
+
+            Divider()
+
+            Button(showInspector ? "Hide Details" : "Show Details") { showInspector.toggle() }
 
             Divider()
 
@@ -225,89 +322,74 @@ struct BranchDetailView: View {
         .accessibilityLabel("More actions")
     }
 
-    // MARK: - Info
+    // MARK: - Action bar
 
-    /// Identity, ports and the worktree actions never scroll. They are what the screen is *for*;
-    /// scrolling them away to make room for an env field you are editing trades the reference you
-    /// need for the field you are already looking at.
-    private var summaryRegion: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if isNgrokHere, let tunnel = model.ngrok {
-                tunnelRow(tunnel)
-            }
-            if let error = detail.ngrokError {
-                inlineError(error)
-            }
+    /// The things you actually reach for, on one glass rail.
+    ///
+    /// They sit in a `GlassEffectContainer` so adjacent controls blend into a single piece of
+    /// material instead of each carrying its own blur — stacked glass is what makes this style
+    /// turn to mush.
+    private var actionBar: some View {
+        GlassEffectContainer(spacing: Layout.glassSpacing) {
+            HStack(spacing: Layout.glassSpacing) {
+                if branch.status == .running, environment?.port != nil {
+                    PillButton(title: "Preview", systemImage: "safari", tone: .dim) {
+                        model.openPreview(for: branch)
+                    }
+                    .help("Open http://<branch>.localhost:\(environment?.port.map(String.init) ?? "") — its own cookie jar")
+                }
 
-            statusRow
-            portsRow
-            worktreeRow
+                if model.canRunAgent {
+                    PillButton(
+                        title: "Agent",
+                        systemImage: "sparkles",
+                        tone: .dim,
+                        isDisabled: !hasWorktree
+                    ) {
+                        model.openAgent(for: branch)
+                    }
+                    .help("Open a terminal tab in this worktree running \(model.settings.agentCommand)")
+                }
+
+                PillButton(
+                    title: "Terminal",
+                    systemImage: model.hasTerminal(branch) ? "terminal.fill" : "terminal",
+                    isDisabled: !hasWorktree
+                ) {
+                    model.openTerminal(for: branch)
+                }
+                .help(model.hasTerminal(branch)
+                      ? "A tab is already open here — this adds another"
+                      : "Open this worktree in a terminal tab")
+
+                PillButton(
+                    title: "Code",
+                    systemImage: "chevron.left.forwardslash.chevron.right",
+                    isDisabled: !hasWorktree
+                ) {
+                    model.openEditor(for: branch)
+                }
+                .help("Open this worktree in VS Code")
+
+                ngrokButton
+
+                Spacer(minLength: 0)
+
+                PillButton(
+                    title: "",
+                    systemImage: "sidebar.trailing",
+                    tone: showInspector ? .active : .plain,
+                    horizontalPadding: 8,
+                    accessibilityLabel: showInspector ? "Hide details" : "Show details"
+                ) {
+                    showInspector.toggle()
+                }
+                .help("Ports, database and environment overrides")
+            }
         }
         .padding(.horizontal, Layout.gutter)
-        .padding(.top, 12)
-        .padding(.bottom, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var statusRow: some View {
-        HStack(alignment: .top, spacing: 16) {
-            field("Status") { StatusBadgeView(status: branch.status) }
-            field("Lane") {
-                CategoryPickerView(value: model.category(for: branch.name)) { category in
-                    model.setCategory(category, for: branch.name)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    private var portsRow: some View {
-        HStack(alignment: .top, spacing: 16) {
-            field("Ports") { portsView }
-            field("Database") {
-                Text(environment?.databaseName ?? "—")
-                    .font(.system(size: Typography.body))
-                    .monospaced()
-                    .foregroundStyle(
-                        environment?.databaseName == nil ? Palette.textTertiary : Palette.textPrimary
-                    )
-                    .textSelection(.enabled)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-        }
-    }
-
-    /// The path and the things you can do with it sit together — a control belongs next to what it
-    /// acts on, not in a toolbar three regions away and not behind a menu.
-    private var worktreeRow: some View {
-        field(branch.managed ? "Worktree · managed by TeaBranch" : "Worktree · external") {
-            VStack(alignment: .leading, spacing: 7) {
-                Text(branch.effectiveWorktreePath ?? "No worktree for this branch")
-                    .font(.system(size: Typography.body))
-                    .monospaced()
-                    .foregroundStyle(hasWorktree ? Palette.textPrimary : Palette.textTertiary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if hasWorktree {
-                    HStack(spacing: 6) {
-                        PillButton(title: "Terminal", horizontalPadding: 10) {
-                            model.openTerminal(for: branch)
-                        }
-                        PillButton(title: "VS Code", horizontalPadding: 10) {
-                            model.openEditor(for: branch)
-                        }
-                        if branch.status == .running, environment?.port != nil {
-                            PillButton(title: "Preview", tone: .dim, horizontalPadding: 10) {
-                                model.openPreview(for: branch)
-                            }
-                        }
-                        ngrokButton
-                    }
-                }
-            }
-        }
+        .padding(.vertical, 8)
+        .bottomDivider()
     }
 
     /// One tunnel exists app-wide, so this is a three-state control: off, on-here, on-elsewhere.
@@ -322,9 +404,9 @@ struct BranchDetailView: View {
 
         return PillButton(
             title: title,
+            systemImage: isNgrokHere ? "antenna.radiowaves.left.and.right" : nil,
             tone: isNgrokHere ? .active : .plain,
-            isDisabled: detail.ngrokBusy,
-            horizontalPadding: 10
+            isDisabled: detail.ngrokBusy
         ) {
             detail.toggleNgrok(branch: branch.name, isActiveHere: isNgrokHere)
         }
@@ -334,235 +416,5 @@ struct BranchDetailView: View {
                 : elsewhere.map { "ngrok is on \($0) — starting here moves it" }
                     ?? "Tunnel SERVER_PORT and write SANDBOX_TEABLE_ENDPOINT"
         )
-    }
-
-    private func tunnelRow(_ tunnel: NgrokTunnel) -> some View {
-        field("Public tunnel") {
-            HStack(spacing: 6) {
-                Text(tunnel.publicURL)
-                    .font(.system(size: Typography.body))
-                    .monospaced()
-                    .foregroundStyle(Palette.accent)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-
-                Text("→ :\(String(tunnel.port))")
-                    .font(.system(size: Typography.caption))
-                    .monospacedDigit()
-                    .foregroundStyle(Palette.textSecondary)
-            }
-        }
-    }
-
-    private func field<Content: View>(
-        _ label: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.system(size: Typography.caption, weight: .medium))
-                .opticalTracking(Typography.caption)
-                .foregroundStyle(Palette.textSecondary)
-            content()
-        }
-    }
-
-    private func inlineError(_ message: String) -> some View {
-        Text(message)
-            .font(.system(size: Typography.body))
-            .foregroundStyle(Palette.statusError)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    @ViewBuilder
-    private var portsView: some View {
-        if environment?.port == nil && environment?.backendPort == nil {
-            Text("—").foregroundStyle(Palette.textTertiary).font(.system(size: Typography.body))
-        } else {
-            HStack(spacing: 4) {
-                if let backend = environment?.backendPort {
-                    portChip("Backend", backend, tinted: false)
-                }
-                if let socket = environment?.socketPort {
-                    portChip("Socket", socket, tinted: false)
-                }
-                if let frontend = environment?.port {
-                    portChip("Frontend", frontend, tinted: true)
-                }
-            }
-        }
-    }
-
-    private func portChip(_ label: String, _ port: UInt16, tinted: Bool) -> some View {
-        HStack(spacing: 3) {
-            Text(label).foregroundStyle(Palette.textSecondary)
-            Text(":\(String(port))")
-                .monospacedDigit()
-                .foregroundStyle(tinted ? Palette.accent : Palette.textPrimary)
-        }
-        .font(.system(size: Typography.caption))
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(Palette.fillSubtle, in: Capsule())
-        .textSelection(.enabled)
-    }
-
-    // MARK: - Environment overrides
-
-    private var envSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                withAnimation(Motion.standard(reduceMotion)) { detail.isExpanded.toggle() }
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: Typography.micro, weight: .semibold))
-                        .rotationEffect(.degrees(detail.isExpanded ? 90 : 0))
-                    Text("Environment Overrides")
-                        .font(.system(size: Typography.body, weight: .medium))
-                    if detail.isDirty {
-                        Text("unsaved")
-                            .font(.system(size: Typography.micro, weight: .medium))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .foregroundStyle(Palette.statusBuilding)
-                            .background(Palette.statusBuilding.opacity(0.15), in: Capsule())
-                    }
-                    Spacer()
-                }
-                .foregroundStyle(Palette.textSecondary)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if detail.isExpanded {
-                // Only the editor scrolls. Collapsed there is no ScrollView at all, so nothing is
-                // holding space open; expanded it takes at most 260pt and yields the rest — and
-                // less than that on a short window, rather than squeezing the log pane out.
-                ScrollView {
-                    Group {
-                        if let draft = detail.draft {
-                            envEditor(draft)
-                        } else if let error = detail.envError {
-                            inlineError(error)
-                        } else {
-                            HStack(spacing: 6) {
-                                ProgressView().controlSize(.small)
-                                Text("Reading .env.development.local…")
-                                    .font(.system(size: Typography.body))
-                                    .foregroundStyle(Palette.textSecondary)
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.trailing, 2)
-                }
-                .frame(maxHeight: 260)
-                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .padding(.top, 2)
-    }
-
-    private func envEditor(_ draft: WorktreeEnvOverrides) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            envField("PORT", value: draft.port) { detail.update(\.port, to: $0) }
-            envField("SOCKET_PORT", value: draft.socketPort) { detail.update(\.socketPort, to: $0) }
-            envField("SERVER_PORT", value: draft.serverPort) { detail.update(\.serverPort, to: $0) }
-            envField("PUBLIC_ORIGIN", value: draft.publicOrigin) { detail.update(\.publicOrigin, to: $0) }
-            envField("STORAGE_PREFIX", value: draft.storagePrefix) { detail.update(\.storagePrefix, to: $0) }
-
-            envField(
-                "PRISMA_DATABASE_URL",
-                value: draft.prismaDatabaseURL,
-                picker: detail.dbInfos.compactMap { info in
-                    info.databaseURL.map { ("\(info.branchName) (\(info.databaseName ?? "?"))", $0) }
-                }
-            ) { detail.update(\.prismaDatabaseURL, to: $0) }
-
-            envField("PUBLIC_DATABASE_PROXY", value: draft.publicDatabaseProxy) {
-                detail.update(\.publicDatabaseProxy, to: $0)
-            }
-
-            envField(
-                "BACKEND_CACHE_REDIS_URI",
-                value: draft.backendCacheRedisURI,
-                picker: detail.dbInfos.compactMap { info in
-                    info.redisURI.map { ("\(info.branchName) (\($0))", $0) }
-                }
-            ) { detail.update(\.backendCacheRedisURI, to: $0) }
-
-            envField("SANDBOX_TEABLE_ENDPOINT", value: draft.sandboxTeableEndpoint) {
-                detail.update(\.sandboxTeableEndpoint, to: $0)
-            }
-
-            if let error = detail.envError {
-                inlineError(error)
-            }
-
-            HStack(spacing: 6) {
-                Spacer()
-                PillButton(title: "Revert", isDisabled: !detail.isDirty, horizontalPadding: 12) {
-                    detail.reset()
-                }
-                PillButton(
-                    title: detail.isSaving ? "Saving…" : "Save",
-                    tone: detail.isDirty ? .accent : .plain,
-                    isDisabled: !detail.isDirty || detail.isSaving,
-                    horizontalPadding: 12
-                ) {
-                    detail.save()
-                }
-            }
-        }
-    }
-
-    private func envField(
-        _ label: String,
-        value: String?,
-        picker options: [(label: String, value: String)] = [],
-        onChange: @escaping (String) -> Void
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Text(label)
-                    .font(.system(size: Typography.caption, weight: .medium))
-                    .monospaced()
-                    .foregroundStyle(Palette.textSecondary)
-
-                if !options.isEmpty {
-                    Menu("Copy from…") {
-                        ForEach(options, id: \.value) { option in
-                            Button(option.label) { onChange(option.value) }
-                        }
-                    }
-                    .menuStyle(.borderlessButton)
-                    .font(.system(size: Typography.caption))
-                    .foregroundStyle(Palette.accent)
-                    .fixedSize()
-                }
-            }
-
-            TextField("", text: Binding(
-                get: { value ?? "" },
-                set: { onChange($0) }
-            ))
-            .textFieldStyle(.plain)
-            .font(.system(size: Typography.body))
-            .monospaced()
-            .padding(.horizontal, 7)
-            .padding(.vertical, 5)
-            .background(
-                Palette.fillSubtle,
-                in: RoundedRectangle(cornerRadius: Palette.controlRadius, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: Palette.controlRadius, style: .continuous)
-                    .strokeBorder(Palette.border, lineWidth: 1)
-            }
-            .accessibilityLabel(label)
-        }
     }
 }

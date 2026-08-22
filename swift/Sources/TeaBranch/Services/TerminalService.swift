@@ -5,11 +5,16 @@ import Foundation
 ///
 /// Terminals get a **new tab** in the already-running instance rather than a new window.
 /// How that is done depends on what the app exposes:
-///   - Warp has a URL scheme (`warp://action/new_tab?path=…`) — cleanest, no permissions.
+///   - Otty has a real control CLI — a tab is requested, with cwd and command supplied. No
+///     Accessibility permission, no keystroke faking, and it reports failure. See `OttyService`.
+///   - Warp has a URL scheme (`warp://action/new_tab?path=…`) — no permissions either.
 ///   - iTerm has a real AppleScript dictionary — `create tab with default profile`.
 ///   - Terminal, Ghostty and Kero have no tab API, so we drive ⌘T through System Events,
 ///     which needs Accessibility permission for TeaBranch.
 ///   - Everything else falls back to `open -a`, which opens a window.
+///
+/// Only the first of those can also run a *command* in the new tab reliably, which is what the
+/// agent action needs — see `openAgent`.
 enum TerminalService {
     struct Preset: Hashable, Identifiable {
         /// `nil` means "system default", stored as no value in settings.
@@ -17,14 +22,17 @@ enum TerminalService {
         let label: String
         /// Whether we can put the worktree in a new tab of the running instance.
         let supportsTabs: Bool
+        /// Whether we can start a command in that tab without typing it as keystrokes.
+        var supportsCommands: Bool = false
 
         var id: String { value ?? "" }
     }
 
     static let presets: [Preset] = [
+        Preset(value: "Otty", label: "Otty", supportsTabs: true, supportsCommands: true),
         Preset(value: nil, label: "System Default (Terminal)", supportsTabs: true),
         Preset(value: "Warp", label: "Warp", supportsTabs: true),
-        Preset(value: "iTerm", label: "iTerm", supportsTabs: true),
+        Preset(value: "iTerm", label: "iTerm", supportsTabs: true, supportsCommands: true),
         Preset(value: "Ghostty", label: "Ghostty", supportsTabs: true),
         Preset(value: "Kero", label: "Kero", supportsTabs: true),
         Preset(value: "Alacritty", label: "Alacritty", supportsTabs: false),
@@ -35,15 +43,50 @@ enum TerminalService {
     /// Terminals that are Ghostty (or a fork of it): same CLI flags, same lack of a tab API.
     private static let ghosttyFamily = ["ghostty", "kero"]
 
+    static func isOtty(_ app: String?) -> Bool {
+        app?.caseInsensitiveCompare("Otty") == .orderedSame
+    }
+
     // MARK: - Terminal
 
-    static func openTerminal(at path: String, using app: String?) throws {
+    static func openTerminal(at path: String, using app: String?, title: String) throws {
+        try open(at: path, using: app, title: title, command: nil)
+    }
+
+    /// Open the worktree and start the coding agent in it.
+    ///
+    /// The command is run by the terminal itself rather than typed in, so it does not depend on
+    /// shell aliases resolving in a non-interactive context — `cc` is an alias in the user's
+    /// zshrc and would not exist here, so settings carry the expanded command.
+    static func openAgent(at path: String, using app: String?, title: String, command: String) throws {
+        guard !command.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw TeaBranchError("No agent command configured — set one in Settings.")
+        }
+        try open(at: path, using: app, title: title, command: command)
+    }
+
+    /// Whether `app` can start a command in a new tab for us.
+    static func canRunCommands(in app: String?) -> Bool {
+        guard let app, !app.isEmpty else { return false }
+        if isOtty(app) { return OttyService.isInstalled }
+        return presets.first { $0.value?.caseInsensitiveCompare(app) == .orderedSame }?
+            .supportsCommands ?? false
+    }
+
+    private static func open(at path: String, using app: String?, title: String, command: String?) throws {
         guard FileManager.default.fileExists(atPath: path) else {
             throw TeaBranchError("Path does not exist: \(path)")
         }
 
+        if isOtty(app) {
+            try OttyService.open(path: path, title: title, command: command)
+            return
+        }
+
+        // Every remaining terminal is driven by keystrokes or opens a bare window, so a command
+        // can only be delivered by appending it to the `cd` line we type.
         guard let app, !app.isEmpty else {
-            try openSystemTerminal(at: path)
+            try openSystemTerminal(at: path, command: command)
             return
         }
 
@@ -51,9 +94,9 @@ enum TerminalService {
             try openWarp(at: path)
         } else if app.caseInsensitiveCompare("iTerm") == .orderedSame
                     || app.caseInsensitiveCompare("iTerm2") == .orderedSame {
-            try openITerm(at: path)
+            try openITerm(at: path, command: command)
         } else if ghosttyFamily.contains(app.lowercased()) {
-            try openGhosttyLike(app: app, at: path)
+            try openGhosttyLike(app: app, at: path, command: command)
         } else {
             let result = Shell.run("open", ["-a", app, path])
             guard result.ok else {
@@ -63,16 +106,17 @@ enum TerminalService {
     }
 
     /// Terminal.app: ⌘T for the tab, then `do script … in front window` to run in it.
-    private static func openSystemTerminal(at path: String) throws {
+    private static func openSystemTerminal(at path: String, command: String?) throws {
+        let line = cdCommand(for: path, then: command)
         let script = """
         tell application "Terminal"
             activate
             if (count of windows) is 0 then
-                do script "\(appleScriptLiteral(cdCommand(for: path)))"
+                do script "\(appleScriptLiteral(line))"
             else
                 tell application "System Events" to keystroke "t" using {command down}
                 delay 0.2
-                do script "\(appleScriptLiteral(cdCommand(for: path)))" in front window
+                do script "\(appleScriptLiteral(line))" in front window
             end if
         end tell
         """
@@ -94,7 +138,7 @@ enum TerminalService {
         }
     }
 
-    private static func openITerm(at path: String) throws {
+    private static func openITerm(at path: String, command: String?) throws {
         let script = """
         tell application "iTerm"
             activate
@@ -103,7 +147,7 @@ enum TerminalService {
             else
                 tell current window to create tab with default profile
             end if
-            tell current session of current window to write text "\(appleScriptLiteral(cdCommand(for: path)))"
+            tell current session of current window to write text "\(appleScriptLiteral(cdCommand(for: path, then: command)))"
         end tell
         """
         try runAppleScript(script, failureHint: "iTerm")
@@ -112,7 +156,7 @@ enum TerminalService {
     /// Ghostty and its forks (Kero) expose no IPC for tabs, so we drive the running instance:
     /// activate → ⌘T → type `cd <path> && clear` → Return. If it isn't running yet, launch it
     /// with `--working-directory`, which lands in the first window anyway.
-    private static func openGhosttyLike(app: String, at path: String) throws {
+    private static func openGhosttyLike(app: String, at path: String, command: String?) throws {
         guard isRunning(app: app) else {
             let result = Shell.run("open", ["-na", app, "--args", "--working-directory=\(path)"])
             guard result.ok else {
@@ -127,7 +171,7 @@ enum TerminalService {
         tell application "System Events"
             keystroke "t" using {command down}
             delay 0.12
-            keystroke "\(appleScriptLiteral(cdCommand(for: path)))"
+            keystroke "\(appleScriptLiteral(cdCommand(for: path, then: command)))"
             keystroke return
         end tell
         """
@@ -155,8 +199,10 @@ enum TerminalService {
 
     // MARK: - Helpers
 
-    private static func cdCommand(for path: String) -> String {
-        "cd \(path.shellQuoted) && clear"
+    private static func cdCommand(for path: String, then command: String? = nil) -> String {
+        let base = "cd \(path.shellQuoted) && clear"
+        guard let command, !command.trimmingCharacters(in: .whitespaces).isEmpty else { return base }
+        return "\(base) && \(command)"
     }
 
     /// Escape a string for embedding in an AppleScript double-quoted literal.
