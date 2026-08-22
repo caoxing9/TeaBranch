@@ -41,7 +41,16 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         let host = NSHostingView(rootView: rootView)
         host.autoresizingMask = [.width, .height]
         window.contentView = host
-        window.center()
+
+        // Restore where the user last left it. `setFrameAutosaveName` only *records* the frame —
+        // reading it back is a separate call, and the `center()` that used to sit here ran after
+        // the name was set and threw the restored position away on every launch. A window that
+        // has a remembered frame also counts as already placed, so the menu bar never re-anchors it.
+        if window.setFrameUsingName(window.frameAutosaveName) {
+            hasPlacedWindow = true
+        } else {
+            window.center()
+        }
     }
 
     func show() {

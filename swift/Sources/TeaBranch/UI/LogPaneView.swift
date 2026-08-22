@@ -133,9 +133,17 @@ struct LogPaneView: View {
             return
         }
 
+        // The console prefixes each line with `[source] ` in the All tab, and its highlighter
+        // searches the rendered document — so the count here has to be taken over the same text.
+        // Without the prefix the two lists disagree and the ⌃/⌄ stepper walks to the wrong hit.
+        let showsGutter = tab == .all
+
         var result: [Match] = []
         for (index, line) in visibleLines.enumerated() {
-            let count = Ansi.matchCount(inPlain: line.haystack, needle: needle)
+            let haystack = showsGutter
+                ? "[\(line.source ?? "app")] ".lowercased() + line.haystack
+                : line.haystack
+            let count = Ansi.matchCount(inPlain: haystack, needle: needle)
             for local in 0..<count {
                 result.append(Match(line: index, local: local))
             }

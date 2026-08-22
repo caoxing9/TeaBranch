@@ -17,8 +17,10 @@ final class BranchDetailModel {
     var dbInfos: [WorktreeDbInfo] = []
     var isSaving = false
     var envError: String?
-    /// Set after a save that restarted the branch, so the UI can say so.
-    var restartNote: String?
+    /// Whether a load has completed. Distinguishes "still reading" from "read it, there is
+    /// nothing in it" — a worktree with no writable env file parses to zero entries and no error,
+    /// which the editor used to render as a spinner that never stopped.
+    private(set) var hasLoaded = false
 
     var ngrokBusy = false
     var ngrokError: String?
@@ -38,7 +40,7 @@ final class BranchDetailModel {
         entries = []
         saved = []
         envError = nil
-        restartNote = nil
+        hasLoaded = false
         if isExpanded { load() }
     }
 
@@ -56,10 +58,14 @@ final class BranchDetailModel {
                     self.saved = entries
                     self.dbInfos = infos
                     self.envError = nil
+                    self.hasLoaded = true
                 }
             } catch {
                 let message = error.localizedDescription
-                onMain { self.envError = message }
+                onMain {
+                    self.envError = message
+                    self.hasLoaded = true
+                }
             }
         }
     }
@@ -87,42 +93,33 @@ final class BranchDetailModel {
         entries = saved
     }
 
-    /// Save, then restart the branch if it is running.
+    /// Write the file, then hand the restart back to the caller.
     ///
     /// A dev server reads its environment once, at exec. Editing `PORT` or a feature flag and
     /// watching nothing happen is the kind of thing you debug for ten minutes before remembering
-    /// why — so the save that changed it is also the thing that restarts it.
-    func save(restartIfRunning isRunning: Bool) {
+    /// why — so the save that changed it is also the thing that restarts it. The restart itself
+    /// belongs to `AppModel`, which owns the busy flag that disables Start/Stop while it runs.
+    func save(then restart: @escaping @MainActor () -> Void) {
         guard let repo = AppState.shared.projectURL else { return }
         let branch = self.branch
         let entries = self.entries
         isSaving = true
         envError = nil
-        restartNote = nil
 
-        // The restart goes through ProcessManager's own queue, like every other start/stop —
-        // `Background.io` is for short reads, and a restart is bounded by how long a dev server
-        // takes to die and boot.
-        ProcessManager.queue.async {
+        Background.run {
             do {
                 let worktree = try GitService.worktreePath(for: branch, in: repo)
                 try EnvFile.writeEntries(entries, in: worktree)
                 onMain {
                     self.saved = entries
                     self.isSaving = false
+                    restart()
                 }
-
-                guard isRunning else { return }
-                onMain { self.restartNote = "Restarting to pick up the new environment…" }
-                try ProcessManager.stop(branch: branch)
-                try ProcessManager.start(branch: branch)
-                onMain { self.restartNote = nil }
             } catch {
                 let message = error.localizedDescription
                 onMain {
                     self.envError = message
                     self.isSaving = false
-                    self.restartNote = nil
                 }
             }
         }

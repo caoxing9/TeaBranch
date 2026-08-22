@@ -32,9 +32,44 @@ enum ProcessManager {
     /// same free port. Nothing slow happens inside it.
     private static let allocationLock = NSLock()
 
+    /// One lock per branch, so operations on the *same* branch still serialise.
+    ///
+    /// Making the queue concurrent bought parallelism across branches but removed the only thing
+    /// ordering work within one: Start (which can spend minutes in `pnpm install`) and Delete
+    /// (`git worktree remove --force`) could run at the same time, on the same directory. Different
+    /// branches still never wait for each other.
+    private static let branchLocks = BranchLocks()
+
+    private final class BranchLocks: @unchecked Sendable {
+        private let lock = NSLock()
+        private var locks: [String: NSRecursiveLock] = [:]
+
+        func lock(for branch: String) -> NSRecursiveLock {
+            lock.lock()
+            defer { lock.unlock() }
+            if let existing = locks[branch] { return existing }
+            let created = NSRecursiveLock()
+            locks[branch] = created
+            return created
+        }
+    }
+
+    /// Run `body` with exclusive access to one branch. Recursive, so `stop` nested inside a
+    /// delete or a restart does not deadlock.
+    static func withBranchLock<T>(_ branch: String, _ body: () throws -> T) rethrows -> T {
+        let lock = branchLocks.lock(for: branch)
+        lock.lock()
+        defer { lock.unlock() }
+        return try body()
+    }
+
     // MARK: - Start
 
     static func start(branch: String) throws {
+        try withBranchLock(branch) { try performStart(branch: branch) }
+    }
+
+    private static func performStart(branch: String) throws {
         let state = AppState.shared
         guard let repo = state.projectURL else {
             throw TeaBranchError("No project path set")
@@ -526,7 +561,20 @@ enum ProcessManager {
     /// is bounded by how long the dev server takes to die — but it is honest, and it runs on
     /// `ProcessManager.queue`, never on the main thread.
     static func stop(branch: String) throws {
+        try withBranchLock(branch) { try performStop(branch: branch) }
+    }
+
+    private static func performStop(branch: String) throws {
         let state = AppState.shared
+
+        // Nothing running means nothing to tear down. This guard is what keeps Delete safe: a
+        // stopped branch has no recorded ports, and reclaiming the ones named in its env file
+        // would SIGKILL whatever unrelated process happens to hold them today.
+        let isLive = state.environment(branch)?.status.isLive ?? false
+        guard isLive || state.isManagingProcesses(branch: branch) else {
+            state.mutateEnvironment(branch) { $0.status = .stopped }
+            return
+        }
 
         // Retire the watchdog before tearing anything down, so it can't read an intentional
         // stop as a crash and respawn what we're killing.
@@ -546,6 +594,16 @@ enum ProcessManager {
         for port in ports {
             let survivors = Ports.reclaim(port: port)
             if !survivors.isEmpty { stuck.append((port, survivors)) }
+        }
+
+        // `Ports.reclaim` is where the SIGTERM→SIGKILL grace period lives, and it only runs per
+        // port. With no ports to wait on, the escalation below would follow SIGTERM instantly and
+        // hard-kill a dev server before it could flush anything, so the wait happens here instead.
+        if ports.isEmpty, !pids.isEmpty {
+            for _ in 0..<12 {
+                if !pids.contains(where: { killpg($0, 0) == 0 }) { break }
+                Thread.sleep(forTimeInterval: 0.25)
+            }
         }
 
         // Anything of ours still alive after all that gets the group SIGKILL.

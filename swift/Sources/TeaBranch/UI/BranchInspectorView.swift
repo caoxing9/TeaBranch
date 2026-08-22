@@ -255,7 +255,7 @@ struct BranchInspectorView: View {
     private var environmentTab: some View {
         if !hasWorktree {
             emptyState("No worktree", "This branch has no worktree to configure.")
-        } else if detail.entries.isEmpty, detail.envError == nil {
+        } else if !detail.hasLoaded, detail.envError == nil {
             VStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Reading .env.development.local…")
@@ -265,6 +265,12 @@ struct BranchInspectorView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 0) {
+                if detail.entries.isEmpty {
+                    emptyState(
+                        "No variables",
+                        "This worktree has no .env.development.local to edit."
+                    )
+                }
                 filterField
                     .padding(.horizontal, Layout.gutter)
                     .padding(.vertical, 8)
@@ -421,10 +427,10 @@ struct BranchInspectorView: View {
     private var envFooter: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let error = detail.envError { inlineError(error) }
-            if let note = detail.restartNote {
+            if model.isBusy(branch.name) {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
-                    Text(note)
+                    Text("Restarting to pick up the new environment…")
                         .font(.system(size: Typography.caption))
                         .foregroundStyle(Palette.statusBuilding)
                 }
@@ -448,7 +454,7 @@ struct BranchInspectorView: View {
                     // A dev server reads its environment once, at exec. Saving without restarting
                     // leaves the file and the running process disagreeing — which is a bug you
                     // debug for ten minutes before remembering why.
-                    detail.save(restartIfRunning: isRunning)
+                    detail.save { if isRunning { model.restart(branch: branch) } }
                 }
             }
             .help(isRunning

@@ -364,6 +364,36 @@ final class AppModel {
         }
     }
 
+    /// Stop and start a branch, keeping it marked busy throughout.
+    ///
+    /// Used after an environment change. Going through here rather than calling ProcessManager
+    /// directly is what disables Start/Stop for the duration — otherwise the header button stays
+    /// live and a click races the restart over the same PID table and ports.
+    func restart(branch: Branch) {
+        let name = branch.name
+        guard !busyBranches.contains(name) else { return }
+        busyBranches.insert(name)
+
+        ProcessManager.queue.async {
+            var failure: String?
+            do {
+                try ProcessManager.withBranchLock(name) {
+                    try ProcessManager.stop(branch: name)
+                    try ProcessManager.start(branch: name)
+                }
+            } catch {
+                failure = error.localizedDescription
+            }
+            let message = failure
+            onMain {
+                self.busyBranches.remove(name)
+                if let message { self.errorMessage = message }
+                self.refresh()
+                self.refreshUsage()
+            }
+        }
+    }
+
     func confirmDelete(branch: Branch) {
         pendingDelete = branch
     }
@@ -376,12 +406,18 @@ final class AppModel {
         ProcessManager.queue.async {
             var failure: String?
             do {
-                // A worktree whose server won't die can't be removed either — git refuses while
-                // files are open, so surface the stop failure instead of a confusing git error.
-                try ProcessManager.stop(branch: name)
-                try WorktreeService.remove(branch: name, repo: repo)
-                AppState.shared.removeEnvironment(name)
-                AppState.shared.logs.remove(branch: name)
+                // Held across the whole delete: on a concurrent queue this would otherwise run
+                // `git worktree remove --force` alongside an in-flight Start still writing into
+                // that directory.
+                try ProcessManager.withBranchLock(name) {
+                    // A worktree whose server won't die can't be removed either — git refuses
+                    // while files are open, so surface the stop failure rather than a confusing
+                    // git error.
+                    try ProcessManager.stop(branch: name)
+                    try WorktreeService.remove(branch: name, repo: repo)
+                    AppState.shared.removeEnvironment(name)
+                    AppState.shared.logs.remove(branch: name)
+                }
             } catch {
                 failure = error.localizedDescription
             }

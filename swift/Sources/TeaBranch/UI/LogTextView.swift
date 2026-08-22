@@ -189,6 +189,14 @@ struct LogTextView: NSViewRepresentable {
             _ = wasAtBottom
         }
 
+        /// Forget everything that indexes into the storage by absolute offset.
+        private func invalidateHighlightOffsets() {
+            matchRanges.removeAll(keepingCapacity: true)
+            activeForeground = nil
+            appliedSearch = ""      // forces `applyHighlight` to run again this pass
+            appliedActiveMatch = -1
+        }
+
         /// Jump to the end without the move being mistaken for the user scrolling.
         private func scrollToEnd() {
             guard let textView else { return }
@@ -229,6 +237,10 @@ struct LogTextView: NSViewRepresentable {
                 storage.deleteCharacters(in: NSRange(location: 0, length: evictedLength))
                 renderedIDs.removeFirst(keepFrom)
                 renderedLengths.removeFirst(keepFrom)
+                // Every offset we hold just shifted. `matchRanges` and the saved foreground runs
+                // are absolute, and a stale-but-in-bounds range restores colours over unrelated
+                // characters — so they are dropped and the highlight pass rebuilds them.
+                invalidateHighlightOffsets()
             }
             for line in lines[surviving...] {
                 let rendered = render(line)
