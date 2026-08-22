@@ -96,11 +96,14 @@ struct LogTextView: NSViewRepresentable {
         weak var textView: NSTextView?
         weak var scrollView: NSScrollView?
 
-        /// How many of `lines` are already in the storage, and the ids that bracket them — enough
-        /// to tell "three new lines arrived" from "the buffer was replaced or evicted from".
-        private var renderedCount = 0
-        private var firstRenderedID: UInt64?
-        private var lastRenderedID: UInt64?
+        /// The ids currently in the storage, and how many characters each one occupies.
+        ///
+        /// Both are needed to update incrementally. The buffer is capped per source, so once a
+        /// chatty branch reaches the cap *every* new line evicts an old one from the front — and
+        /// a coordinator that only knew "the first id changed" would rebuild the whole document
+        /// several times a second forever. Knowing the lengths turns that into a prefix delete.
+        private var renderedIDs: [UInt64] = []
+        private var renderedLengths: [Int] = []
 
         private var appliedSearch = ""
         private var appliedActiveMatch = -1
@@ -149,14 +152,10 @@ struct LogTextView: NSViewRepresentable {
             let wasAtBottom = isScrolledToBottom()
             let gutterChanged = showsSourceGutter != self.showsSourceGutter
             self.showsSourceGutter = showsSourceGutter
-            let needsRebuild = gutterChanged || requiresRebuild(for: lines)
 
+            let needsRebuild = gutterChanged || !applyIncrementally(lines: lines, into: storage)
             if needsRebuild {
                 rebuild(lines: lines, into: storage)
-            } else if lines.count > renderedCount {
-                append(lines[renderedCount...], into: storage)
-                renderedCount = lines.count
-                lastRenderedID = lines.last?.id
             }
 
             let contentGrew = storage.length != appliedLength
@@ -207,34 +206,51 @@ struct LogTextView: NSViewRepresentable {
 
         // MARK: - Building
 
-        /// A rebuild is needed when the storage no longer corresponds to a prefix of `lines`:
-        /// a different branch or tab, a cleared buffer, or an eviction that dropped the oldest
-        /// lines off the front (which shifts every offset we hold).
-        private func requiresRebuild(for lines: [LogLine]) -> Bool {
-            if lines.isEmpty { return renderedCount != 0 }
-            if renderedCount == 0 { return true }
-            if lines.count < renderedCount { return true }
-            if lines.first?.id != firstRenderedID { return true }
-            return lines[renderedCount - 1].id != lastRenderedID
+        /// Bring the storage in line with `lines` by deleting an evicted prefix and appending a
+        /// new tail. Returns false when the two no longer describe the same buffer at all — a
+        /// different branch or tab, or a clear — and the caller should rebuild.
+        private func applyIncrementally(lines: [LogLine], into storage: NSTextStorage) -> Bool {
+            guard !renderedIDs.isEmpty else { return lines.isEmpty }
+            guard let firstWanted = lines.first?.id else { return false }
+
+            // How many rendered lines fell off the front.
+            guard let keepFrom = renderedIDs.firstIndex(of: firstWanted) else { return false }
+
+            // What remains must still be a prefix of `lines`, or the buffer was rewritten.
+            let surviving = renderedIDs.count - keepFrom
+            guard surviving <= lines.count else { return false }
+            for offset in 0..<surviving where renderedIDs[keepFrom + offset] != lines[offset].id {
+                return false
+            }
+
+            storage.beginEditing()
+            if keepFrom > 0 {
+                let evictedLength = renderedLengths[0..<keepFrom].reduce(0, +)
+                storage.deleteCharacters(in: NSRange(location: 0, length: evictedLength))
+                renderedIDs.removeFirst(keepFrom)
+                renderedLengths.removeFirst(keepFrom)
+            }
+            for line in lines[surviving...] {
+                let rendered = render(line)
+                storage.append(rendered)
+                renderedIDs.append(line.id)
+                renderedLengths.append(rendered.length)
+            }
+            storage.endEditing()
+            return true
         }
 
         private func rebuild(lines: [LogLine], into storage: NSTextStorage) {
             storage.beginEditing()
             storage.setAttributedString(NSAttributedString())
+            renderedIDs.removeAll(keepingCapacity: true)
+            renderedLengths.removeAll(keepingCapacity: true)
+
             for line in lines {
-                storage.append(render(line))
-            }
-            storage.endEditing()
-
-            renderedCount = lines.count
-            firstRenderedID = lines.first?.id
-            lastRenderedID = lines.last?.id
-        }
-
-        private func append(_ newLines: ArraySlice<LogLine>, into storage: NSTextStorage) {
-            storage.beginEditing()
-            for line in newLines {
-                storage.append(render(line))
+                let rendered = render(line)
+                storage.append(rendered)
+                renderedIDs.append(line.id)
+                renderedLengths.append(rendered.length)
             }
             storage.endEditing()
         }
