@@ -4,8 +4,12 @@ import SwiftUI
 @MainActor
 @Observable
 final class CreateWorktreeModel {
+    /// Listed in the order they are offered. `reuse` leads because it is what you almost always
+    /// want: a new branch off develop shares develop's schema, so pointing at that database costs
+    /// nothing and skips the slowest steps of creation. The other two exist for when a branch is
+    /// going to migrate the schema and must not touch anyone else's data.
     enum Mode: String, CaseIterable, Identifiable {
-        case new, clone, reuse
+        case reuse, clone, new
 
         var id: String { rawValue }
 
@@ -27,7 +31,7 @@ final class CreateWorktreeModel {
     }
 
     static let steps: [(key: String, label: String)] = [
-        ("fetch", "Fetch origin/develop"),
+        ("fetch", "Fetch origin/\(WorktreeService.baseBranch)"),
         ("branch", "Create branch & worktree"),
         ("env", "Setup environment"),
         ("install", "Install dependencies"),
@@ -37,7 +41,7 @@ final class CreateWorktreeModel {
     ]
 
     var branchName = ""
-    var mode: Mode = .new
+    var mode: Mode = .reuse
     var sourceBranch = ""
     var dbInfos: [WorktreeDbInfo] = []
 
@@ -69,7 +73,23 @@ final class CreateWorktreeModel {
         guard let repo = AppState.shared.projectURL else { return }
         Background.run {
             let infos = GitService.worktreeDbInfo(in: repo)
-            onMain { self.dbInfos = infos }
+            onMain {
+                self.dbInfos = infos
+                self.preselectDefaultSource()
+            }
+        }
+    }
+
+    /// Point the source picker at the base branch as soon as we know it has a database.
+    ///
+    /// The list arrives asynchronously, so the sheet opens with an empty picker and `canCreate`
+    /// false; this fills it the moment it can. Only ever sets an *unset* selection — reopening the
+    /// sheet after choosing something else must not undo that choice.
+    func preselectDefaultSource() {
+        guard sourceBranch.isEmpty else { return }
+        let base = WorktreeService.baseBranch
+        if availableSources.contains(where: { $0.branchName == base }) {
+            sourceBranch = base
         }
     }
 
@@ -164,7 +184,7 @@ struct CreateWorktreeSheet: View {
 
     private var form: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Branch name (from origin/develop):")
+            Text("Branch name (from origin/\(WorktreeService.baseBranch)):")
                 .font(.system(size: Typography.callout))
                 .foregroundStyle(Palette.textSecondary)
                 .padding(.bottom, 8)
@@ -261,7 +281,13 @@ struct CreateWorktreeSheet: View {
         let isSelected = model.mode == mode
         return Button {
             model.mode = mode
-            if mode == .new { model.sourceBranch = "" }
+            // Leaving reuse/clone drops the source; coming back restores the default rather than
+            // making you re-pick develop every time you toggle.
+            if mode == .new {
+                model.sourceBranch = ""
+            } else {
+                model.preselectDefaultSource()
+            }
         } label: {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")

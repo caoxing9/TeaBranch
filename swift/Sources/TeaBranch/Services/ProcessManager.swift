@@ -14,12 +14,62 @@ struct StartCommand: Hashable {
 /// Everything here runs off the main thread: callers dispatch to `ProcessManager.queue`, and
 /// the log readers and watchdogs live on their own threads.
 enum ProcessManager {
-    /// Serial queue for start/stop work, so two rapid clicks can't interleave port allocation.
-    static let queue = DispatchQueue(label: "sh.teabranch.process", qos: .userInitiated)
+    /// Where start/stop work runs. **Concurrent**, one slot per branch in practice.
+    ///
+    /// This was a serial queue, which was the wrong tool for the invariant it was defending. The
+    /// thing that must not interleave is *port allocation* — a few microseconds of arithmetic —
+    /// but a serial queue also made every other branch wait out a whole start (`pnpm install`,
+    /// migrations) or a whole stop (now bounded by how long a dev server takes to die). Running
+    /// several branches at once is the entire point of the app, so the exclusion moved down to
+    /// `allocationLock`, which guards exactly the critical section and nothing else.
+    static let queue = DispatchQueue(
+        label: "sh.teabranch.process",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
+
+    /// Held across "read the ports in use → claim ours", so two concurrent starts can't pick the
+    /// same free port. Nothing slow happens inside it.
+    private static let allocationLock = NSLock()
+
+    /// One lock per branch, so operations on the *same* branch still serialise.
+    ///
+    /// Making the queue concurrent bought parallelism across branches but removed the only thing
+    /// ordering work within one: Start (which can spend minutes in `pnpm install`) and Delete
+    /// (`git worktree remove --force`) could run at the same time, on the same directory. Different
+    /// branches still never wait for each other.
+    private static let branchLocks = BranchLocks()
+
+    private final class BranchLocks: @unchecked Sendable {
+        private let lock = NSLock()
+        private var locks: [String: NSRecursiveLock] = [:]
+
+        func lock(for branch: String) -> NSRecursiveLock {
+            lock.lock()
+            defer { lock.unlock() }
+            if let existing = locks[branch] { return existing }
+            let created = NSRecursiveLock()
+            locks[branch] = created
+            return created
+        }
+    }
+
+    /// Run `body` with exclusive access to one branch. Recursive, so `stop` nested inside a
+    /// delete or a restart does not deadlock.
+    static func withBranchLock<T>(_ branch: String, _ body: () throws -> T) rethrows -> T {
+        let lock = branchLocks.lock(for: branch)
+        lock.lock()
+        defer { lock.unlock() }
+        return try body()
+    }
 
     // MARK: - Start
 
     static func start(branch: String) throws {
+        try withBranchLock(branch) { try performStart(branch: branch) }
+    }
+
+    private static func performStart(branch: String) throws {
         let state = AppState.shared
         guard let repo = state.projectURL else {
             throw TeaBranchError("No project path set")
@@ -29,6 +79,15 @@ enum ProcessManager {
         }
 
         let worktree = try GitService.worktreePath(for: branch, in: repo)
+
+        // Pick the ports and claim them under the lock, so two branches starting at once can't
+        // both be handed the same free port. The liveness guard is re-checked inside it for the
+        // same reason — the one above is a fast path, this is the one that decides.
+        allocationLock.lock()
+        if let environment = state.environment(branch), environment.status.isLive {
+            allocationLock.unlock()
+            throw TeaBranchError("Branch is already running")
+        }
 
         // Ports come from the worktree's own env file when it has them — that env file is the
         // contract the dev servers themselves read. Only fall back to allocation if it doesn't.
@@ -44,11 +103,6 @@ enum ProcessManager {
         let frontendPort = EnvFile.port("PORT", in: worktree)
             ?? Ports.findAvailable(from: socketPort &+ 1, used: used)
 
-        Log.info("""
-            start_branch: branch=\(branch), worktree=\(worktree.path), \
-            backend_port=\(backendPort), socket_port=\(socketPort), frontend_port=\(frontendPort)
-            """)
-
         let databaseName = EnvFile.baseDatabaseURL(in: worktree).flatMap { DatabaseURL.name(of: $0) }
             ?? DatabaseURL.name(forBranch: branch)
 
@@ -61,6 +115,12 @@ enum ProcessManager {
             status: .building,
             databaseName: databaseName
         ))
+        allocationLock.unlock()
+
+        Log.info("""
+            start_branch: branch=\(branch), worktree=\(worktree.path), \
+            backend_port=\(backendPort), socket_port=\(socketPort), frontend_port=\(frontendPort)
+            """)
         AppEvents.post(.environmentsChanged)
 
         do {
@@ -87,6 +147,8 @@ enum ProcessManager {
     ) throws {
         let state = AppState.shared
 
+        note(branch, "Starting \(branch)")
+
         // A stale Next.js dev lock makes the next boot bail with "is another instance running?".
         for relative in ["enterprise/app-ee/.next/dev/lock", ".next/dev/lock"] {
             let lock = worktree.appendingPathComponent(relative)
@@ -98,14 +160,18 @@ enum ProcessManager {
 
         // Reclaim our ports from zombies left by a previous run before anything tries to bind.
         for port in [backendPort, socketPort, frontendPort] {
+            if Ports.isListening(port) {
+                note(branch, "Port \(port) is still held — reclaiming it")
+            }
             Ports.reclaim(port: port)
         }
 
-        try ensureDependencies(in: worktree)
+        try ensureDependencies(in: worktree, branch: branch)
 
         var sharedEnvironment: [String: String] = [:]
 
         if let envURL = EnvFile.baseDatabaseURL(in: worktree) {
+            note(branch, "Checking database")
             do {
                 let url = try DatabaseService.ensureExists(url: envURL)
                 Log.info("Using database URL: \(url)")
@@ -134,8 +200,10 @@ enum ProcessManager {
         }
 
         for command in commands {
+            note(branch, "Launching \(command.label) on port \(command.port)")
             try spawn(command, branch: branch, worktree: worktree)
         }
+        note(branch, "Waiting for the first output…")
 
         state.mutateEnvironment(branch) { $0.status = .running }
         let generation = state.bumpWatchdogGeneration(branch: branch)
@@ -232,15 +300,65 @@ enum ProcessManager {
         return "npm"
     }
 
-    private static func ensureDependencies(in worktree: URL) throws {
+    private static func ensureDependencies(in worktree: URL, branch: String) throws {
         guard !FileManager.default.fileExists(atPath: worktree.appendingPathComponent("node_modules").path) else {
             return
         }
-        let install = "\(detectPackageManager(in: worktree)) install"
-        let result = Shell.sh(install, cwd: worktree)
-        guard result.ok else {
-            throw TeaBranchError("Dependency install failed: \(result.stderr)")
+        let manager = detectPackageManager(in: worktree)
+        note(branch, "Installing dependencies — first run for this worktree, expect several minutes")
+        guard try runStreaming("\(manager) install", cwd: worktree, branch: branch, label: "dev") else {
+            throw TeaBranchError("Dependency install failed — see the log for what \(manager) said.")
         }
+    }
+
+    // MARK: - Progress narration
+
+    /// Say what the start is doing, in the branch's own log.
+    ///
+    /// Everything between clicking Start and the dev server's first line — reclaiming ports,
+    /// `pnpm install`, provisioning the database — used to happen in complete silence, so a start
+    /// that legitimately takes four minutes was indistinguishable from one that had hung. The log
+    /// pane sat on "Waiting for output…" the whole time. These lines are that missing output.
+    private static func note(_ branch: String, _ message: String) {
+        AppState.shared.logs.append(branch: branch, text: "[dev] \u{001B}[36m▸\u{001B}[0m \(message)")
+    }
+
+    /// Run a command to completion with its output streamed into the branch log as it arrives.
+    ///
+    /// `Shell.sh` would block and hand back the output only at the end, which for `pnpm install`
+    /// means several minutes of nothing followed by a wall of text.
+    @discardableResult
+    private static func runStreaming(
+        _ command: String,
+        cwd: URL,
+        branch: String,
+        label: String
+    ) throws -> Bool {
+        let child = try Spawn.shell(command: command, cwd: cwd.path)
+        let tag = "[\(label)] "
+        let append: (String) -> Void = { line in
+            AppState.shared.logs.append(branch: branch, text: tag + line)
+        }
+        child.standardOutput.streamLines(append)
+        child.standardError.streamLines(append)
+
+        let finished = DispatchSemaphore(value: 0)
+        let outcome = Mutex(false)
+        Spawn.reap(pid: child.pid) { reason in
+            outcome.set(reason.isClean)
+            finished.signal()
+        }
+        finished.wait()
+        return outcome.get()
+    }
+
+    /// Minimal box so the reap callback's result can cross back to this thread.
+    private final class Mutex: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: Bool
+        init(_ value: Bool) { self.value = value }
+        func set(_ newValue: Bool) { lock.lock(); value = newValue; lock.unlock() }
+        func get() -> Bool { lock.lock(); defer { lock.unlock() }; return value }
     }
 
     // MARK: - Spawning
@@ -426,20 +544,85 @@ enum ProcessManager {
 
     // MARK: - Stop
 
-    static func stop(branch: String) {
+    /// Stop a branch and *wait until it is actually stopped*.
+    ///
+    /// This used to fire SIGTERM, immediately declare the branch stopped, and escalate three
+    /// seconds later from a detached block. Two things then went wrong at once:
+    ///
+    ///  - `takePIDs` had already emptied our PID table, so `isManagingProcesses` went false and
+    ///    the 6-second reconcile loop adopted the branch. Reconcile reads the ports out of the
+    ///    worktree's own env file, saw the still-dying server answering, and set it back to
+    ///    Running. The user saw Stop do nothing.
+    ///  - A worktree recovered as an *orphan* has no PIDs of ours at all, so the SIGTERM pass was
+    ///    a no-op and only the delayed port kill could touch it.
+    ///
+    /// So: hold a suppression flag the reconcile loop respects, kill by process group *and* by
+    /// port, block until the ports are free, and throw if they never are. Stop is slow now — it
+    /// is bounded by how long the dev server takes to die — but it is honest, and it runs on
+    /// `ProcessManager.queue`, never on the main thread.
+    static func stop(branch: String) throws {
+        try withBranchLock(branch) { try performStop(branch: branch) }
+    }
+
+    private static func performStop(branch: String) throws {
         let state = AppState.shared
+
+        // Nothing running means nothing to tear down. This guard is what keeps Delete safe: a
+        // stopped branch has no recorded ports, and reclaiming the ones named in its env file
+        // would SIGKILL whatever unrelated process happens to hold them today.
+        let isLive = state.environment(branch)?.status.isLive ?? false
+        guard isLive || state.isManagingProcesses(branch: branch) else {
+            state.mutateEnvironment(branch) { $0.status = .stopped }
+            return
+        }
 
         // Retire the watchdog before tearing anything down, so it can't read an intentional
         // stop as a crash and respawn what we're killing.
         state.bumpWatchdogGeneration(branch: branch)
+        state.beginStopping(branch: branch)
+        defer { state.endStopping(branch: branch) }
 
-        let ports = state.environment(branch).map { environment in
-            [environment.port, environment.backendPort, environment.socketPort].compactMap { $0 }
-        } ?? []
-
+        let ports = portsToReclaim(branch: branch)
         let pids = state.takePIDs(branch: branch)
         for pid in pids {
             killpg(pid, SIGTERM)
+        }
+
+        // Reclaim escalates (SIGTERM → SIGKILL) and waits, and works by port — which is what
+        // reaches an orphan, and what reaches a child that escaped its process group.
+        var stuck: [(port: UInt16, holders: [pid_t])] = []
+        for port in ports {
+            let survivors = Ports.reclaim(port: port)
+            if !survivors.isEmpty { stuck.append((port, survivors)) }
+        }
+
+        // `Ports.reclaim` is where the SIGTERM→SIGKILL grace period lives, and it only runs per
+        // port. With no ports to wait on, the escalation below would follow SIGTERM instantly and
+        // hard-kill a dev server before it could flush anything, so the wait happens here instead.
+        if ports.isEmpty, !pids.isEmpty {
+            for _ in 0..<12 {
+                if !pids.contains(where: { killpg($0, 0) == 0 }) { break }
+                Thread.sleep(forTimeInterval: 0.25)
+            }
+        }
+
+        // Anything of ours still alive after all that gets the group SIGKILL.
+        for pid in pids where killpg(pid, 0) == 0 {
+            killpg(pid, SIGKILL)
+        }
+
+        guard stuck.isEmpty else {
+            let detail = stuck
+                .map { "port \($0.port) (pid \($0.holders.map(String.init).joined(separator: ", ")))" }
+                .joined(separator: "; ")
+            // Leave the status alone: the server really is still up, and reconcile reporting it as
+            // Running is the truth. What was missing was anyone saying *why* Stop didn't take.
+            state.logs.append(
+                branch: branch,
+                text: "[dev] ⛔️ TeaBranch: stop failed — still listening on \(detail) after SIGTERM and SIGKILL"
+            )
+            AppEvents.post(.environmentsChanged)
+            throw TeaBranchError("Stop failed — still listening on \(detail).")
         }
 
         state.mutateEnvironment(branch) { environment in
@@ -448,15 +631,33 @@ enum ProcessManager {
             environment.backendPort = nil
             environment.socketPort = nil
         }
-        state.logs.remove(branch: branch)
-
-        // Escalate in the background: SIGKILL the groups, then anything still on the ports.
-        DispatchQueue.global().asyncAfter(deadline: .now() + 3) {
-            pids.forEach { killpg($0, SIGKILL) }
-            ports.forEach { Ports.kill(port: $0) }
-        }
+        // Logs deliberately survive a stop. You stop a server *because* something went wrong, and
+        // wiping the output at that exact moment threw away the reason.
 
         AppEvents.post(.environmentsChanged)
+    }
+
+    /// Every port this branch might be holding.
+    ///
+    /// Prefers what we recorded when we started it, and falls back to the worktree's env file —
+    /// which is the only record that exists for an orphan we merely adopted, and the same source
+    /// the reconcile loop reads, so Stop and reconcile can no longer disagree about what to look at.
+    private static func portsToReclaim(branch: String) -> [UInt16] {
+        let state = AppState.shared
+        let environment = state.environment(branch)
+
+        let recorded = [environment?.port, environment?.backendPort, environment?.socketPort]
+            .compactMap { $0 }
+        if !recorded.isEmpty { return recorded }
+
+        guard let path = environment?.worktreePath
+                ?? state.projectURL.flatMap({ try? GitService.worktreePath(for: branch, in: $0).path })
+        else { return [] }
+
+        let overrides = EnvFile.overrides(in: URL(fileURLWithPath: path))
+        return [overrides.port, overrides.serverPort, overrides.socketPort]
+            .compactMap { $0?.trimmingCharacters(in: .whitespaces) }
+            .compactMap(UInt16.init)
     }
 
     /// Kill everything we started. Called on quit.
@@ -495,6 +696,9 @@ enum ProcessManager {
         for entry in GitService.worktrees(in: repo) {
             // Environments we manage belong to their own exit monitor.
             guard !state.isManagingProcesses(branch: entry.branch) else { continue }
+            // A stop in flight has already emptied the PID table, so without this the branch looks
+            // like an orphan and gets adopted — and its still-dying ports read as Running.
+            guard !state.isStopping(branch: entry.branch) else { continue }
 
             let overrides = EnvFile.overrides(in: entry.path)
             let frontendPort = overrides.port.flatMap { UInt16($0.trimmingCharacters(in: .whitespaces)) }

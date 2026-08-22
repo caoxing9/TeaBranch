@@ -38,9 +38,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # One job, not a matrix: SwiftPM cross-compiles both slices from a single runner and lipo
-  # merges them, so one universal DMG covers Apple Silicon and Intel. No toolchain setup —
-  # the whole build is `swift build` against the stock macOS runner image.
+  # Apple Silicon only since the macOS 26 / Liquid Glass rebuild — there is no Intel slice to
+  # build any more. Needs a runner image with the macOS 26 SDK and Swift 6.2; pin `runs-on` to a
+  # specific image if `macos-latest` lags behind.
   build:
     needs: release
     if: needs.release.outputs.published == 'true'
@@ -51,9 +51,9 @@ jobs:
         with:
           ref: v${{ needs.release.outputs.version }}
 
-      - name: Build universal .app and DMG
+      - name: Build .app and DMG
         working-directory: swift
-        run: ./scripts/build_app.sh --universal --dmg
+        run: ./scripts/build_app.sh --dmg
 
       - name: Upload DMG to release
         uses: softprops/action-gh-release@v2

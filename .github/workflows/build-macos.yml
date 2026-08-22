@@ -14,8 +14,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Universal, so an x86_64-only compile error can't reach main. Both slices come from
-      # this one runner — see swift/scripts/build_app.sh for why --triple rather than --arch.
+      # Apple Silicon only: the app targets macOS 26 and Liquid Glass, so there is no second
+      # slice to guard against. Needs a runner image carrying the macOS 26 SDK and Swift 6.2.
       - name: Build native app
         working-directory: swift
-        run: ./scripts/build_app.sh --universal
+        run: ./scripts/build_app.sh

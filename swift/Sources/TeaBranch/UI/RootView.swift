@@ -5,6 +5,8 @@ struct RootView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
+
     var body: some View {
         @Bindable var model = model
 
@@ -18,12 +20,7 @@ struct RootView: View {
                 mainShell
             }
         }
-        .frame(minWidth: 360, minHeight: 400)
-        // No tint of its own: the window's single `NSVisualEffectView` *is* the background. Painting
-        // another translucent layer over it is what makes stacked-glass UI illegible.
-        .background {
-            if reduceTransparency { Color(nsColor: .windowBackgroundColor) }
-        }
+        .frame(minWidth: 720, minHeight: 460)
         .foregroundStyle(Palette.textPrimary)
         .tint(Palette.accent)
         .sheet(isPresented: $model.showCreateSheet) {
@@ -52,20 +49,35 @@ struct RootView: View {
         }
     }
 
-    /// List and detail are two positions on one rail: the detail arrives from the trailing edge and
-    /// leaves the same way, so the path back is the path in.
+    /// Sidebar and detail, side by side.
+    ///
+    /// The app used to push between a list screen and a detail screen on one column, which is an
+    /// iOS navigation stack wearing a Mac window: opening a branch hid every other branch, on a
+    /// window wide enough to show thirty of them. `NavigationSplitView` is the shape this content
+    /// always wanted — the list is a persistent index, and selecting is not navigating away.
     private var mainShell: some View {
-        ZStack {
-            if let branch = model.selectedBranchValue {
-                BranchDetailView(branch: branch)
-                    .transition(.push(from: .trailing, reduceMotion: reduceMotion))
-                    .zIndex(1)
-            } else {
-                BranchListView()
-                    .transition(.push(from: .leading, reduceMotion: reduceMotion))
+        @Bindable var model = model
+
+        return NavigationSplitView(columnVisibility: $columnVisibility) {
+            BranchSidebarView()
+                .navigationSplitViewColumnWidth(
+                    min: Layout.sidebarMin,
+                    ideal: Layout.sidebarIdeal,
+                    max: Layout.sidebarMax
+                )
+        } detail: {
+            Group {
+                if let branch = model.selectedBranchValue {
+                    BranchDetailView(branch: branch)
+                } else {
+                    noSelection
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .animation(Motion.standard(reduceMotion), value: model.selectedBranch)
+        .navigationSplitViewStyle(.balanced)
+        // The error banner floats over the detail pane rather than reshaping the layout: a
+        // transient problem should not permanently move the content underneath it.
         .overlay(alignment: .bottom) {
             if let errorMessage = model.errorMessage {
                 errorBanner(errorMessage)
@@ -80,10 +92,25 @@ struct RootView: View {
         .animation(Motion.standard(reduceMotion), value: model.errorMessage)
     }
 
+    private var noSelection: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "sidebar.left")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(Palette.textTertiary)
+                .accessibilityHidden(true)
+            Text("Select a branch")
+                .font(.system(size: Typography.headline, weight: .medium))
+            Text("Pick one from the sidebar, or press ⌘N to create a worktree.")
+                .font(.system(size: Typography.body))
+                .foregroundStyle(Palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     /// Errors surface as a dismissible card over the content rather than a bar wedged into the
     /// chrome — a transient problem should not permanently reshape the layout.
     private func errorBanner(_ message: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: Typography.body))
                 .foregroundStyle(Palette.statusError)
@@ -96,21 +123,21 @@ struct RootView: View {
             PillButton(
                 title: "",
                 systemImage: "xmark",
-                horizontalPadding: 6,
+                horizontalPadding: 7,
                 accessibilityLabel: "Dismiss error"
             ) {
                 model.errorMessage = nil
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background {
-            let shape = RoundedRectangle(cornerRadius: Palette.cornerRadius, style: .continuous)
-            shape.fill(.regularMaterial)
-                .overlay { shape.fill(Palette.statusErrorDim) }
-                .overlay { shape.strokeBorder(Palette.statusError.opacity(0.35), lineWidth: 1) }
-                .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
-        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 560)
+        .glassSurface(
+            Surface.tinted(Palette.statusError.opacity(0.25)),
+            in: RoundedRectangle(cornerRadius: Palette.cornerRadius, style: .continuous),
+            reduceTransparency: reduceTransparency
+        )
+        .shadow(color: .black.opacity(0.2), radius: 16, y: 6)
     }
 }
 
@@ -136,7 +163,7 @@ struct OnboardingView: View {
                     .foregroundStyle(Palette.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(2)
-                    .frame(maxWidth: 300)
+                    .frame(maxWidth: 340)
             }
 
             VStack(spacing: 10) {
@@ -144,9 +171,9 @@ struct OnboardingView: View {
                     model.chooseProject()
                 } label: {
                     Text("Choose Repository…")
-                        .frame(minWidth: 150)
+                        .frame(minWidth: 160)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
 
@@ -162,7 +189,7 @@ struct OnboardingView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .frame(maxWidth: 320)
+                    .frame(maxWidth: 360)
                     .background(
                         Palette.statusErrorDim,
                         in: RoundedRectangle(cornerRadius: 8, style: .continuous)

@@ -35,6 +35,12 @@ final class AppState: @unchecked Sendable {
     /// Monotonic per branch. Bumped on every start/stop; a watchdog exits as soon as the
     /// stored generation no longer matches the one it was started with.
     private var storedWatchdogGenerations: [String: UInt64] = [:]
+    /// Branches whose stop is still in flight. The reconcile loop reads ground truth from each
+    /// worktree's env file, so between "user clicked Stop" and "the port is actually free" it
+    /// would see the dying server still listening and mark the branch Running again — which is
+    /// what made Stop look like it did nothing. Membership here means "we are deliberately
+    /// tearing this down; do not resurrect it".
+    private var storedStopping: Set<String> = []
     private var storedNgrokPID: pid_t?
     private var storedNgrokTunnel: NgrokTunnel?
 
@@ -137,6 +143,32 @@ final class AppState: @unchecked Sendable {
         withLock { storedPIDs.keys.contains { $0.hasPrefix("\(branch):") } }
     }
 
+    /// Every PID belonging to a branch, left in place.
+    ///
+    /// These are process-group leaders (we spawn with `POSIX_SPAWN_SETPGROUP`), so each one is
+    /// also the pgid of that command's whole tree — which is what makes per-branch resource
+    /// accounting a grouping key rather than a tree walk.
+    func pids(branch: String) -> [pid_t] {
+        withLock {
+            let prefix = "\(branch):"
+            return storedPIDs.filter { $0.key.hasPrefix(prefix) }.map(\.value)
+        }
+    }
+
+    /// Every PID belonging to a branch, keyed by the command label it was started for.
+    ///
+    /// The label is what turns a flat list of nine `node` processes into "these five are the
+    /// backend, these four are the frontend".
+    func pidsByLabel(branch: String) -> [pid_t: String] {
+        withLock {
+            let prefix = "\(branch):"
+            return storedPIDs.reduce(into: [pid_t: String]()) { result, entry in
+                guard entry.key.hasPrefix(prefix) else { return }
+                result[entry.value] = String(entry.key.dropFirst(prefix.count))
+            }
+        }
+    }
+
     /// Remove and return every PID belonging to a branch.
     func takePIDs(branch: String) -> [pid_t] {
         withLock {
@@ -149,6 +181,20 @@ final class AppState: @unchecked Sendable {
 
     func allPIDs() -> [pid_t] {
         withLock { Array(storedPIDs.values) }
+    }
+
+    // MARK: - Stop suppression
+
+    func beginStopping(branch: String) {
+        withLock { _ = storedStopping.insert(branch) }
+    }
+
+    func endStopping(branch: String) {
+        withLock { _ = storedStopping.remove(branch) }
+    }
+
+    func isStopping(branch: String) -> Bool {
+        withLock { storedStopping.contains(branch) }
     }
 
     // MARK: - Watchdog generations

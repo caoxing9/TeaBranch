@@ -11,9 +11,12 @@ import SwiftUI
 final class LogFeed {
     private(set) var lines: [LogLine] = []
 
+    /// Bumped whenever `lines` is replaced. Views observe this to recompute derived state (the
+    /// search index) exactly when the buffer changes, instead of on every body pass.
+    private(set) var generation: UInt64 = 0
+
     private let store: LogStore
     private var key: String
-    private var generation: UInt64 = 0
     private var timer: Timer?
 
     init(store: LogStore, key: String) {
@@ -78,12 +81,21 @@ struct LogPaneView: View {
         }
     }
 
+    /// One search hit: which visible line, and which occurrence within that line.
+    private struct Match: Equatable {
+        var line: Int
+        var local: Int
+    }
+
     @State private var branchFeed = LogFeed(store: AppState.shared.logs, key: "")
     @State private var ngrokFeed = LogFeed(store: AppState.shared.ngrokLogs, key: AppState.ngrokLogKey)
     @State private var tab: Tab = .all
     @State private var searchText = ""
+    @State private var matches: [Match] = []
     @State private var activeMatch = 0
     @State private var autoScroll = true
+    @State private var isPinnedToBottom = true
+    @State private var scrollToBottomToken = 0
     @State private var unlimited = false
     @State private var toast: String?
     @FocusState private var searchFocused: Bool
@@ -104,19 +116,39 @@ struct LogPaneView: View {
         return LogStore.knownSources.filter(seen.contains)
     }
 
-    /// (line offset, occurrence within that line) for every hit, in document order.
-    private var matches: [(line: Int, local: Int)] {
+    /// Recompute the search index.
+    ///
+    /// This used to be a computed property, which is the single most expensive mistake in the
+    /// file's history: SwiftUI evaluated it at six places in the body *and once per rendered row*,
+    /// each evaluation stripping ANSI and lowercasing the entire scrollback. With a search active
+    /// that was roughly a second of main-thread work per pass, repeated every 150ms as new output
+    /// arrived — the window simply stopped responding while you typed.
+    ///
+    /// Now it runs once per actual change of (buffer, needle, tab), and matches against the
+    /// haystack `LogLine` precomputed off the main thread.
+    private func recomputeMatches() {
         let needle = searchText.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !needle.isEmpty, tab != .ngrok else { return [] }
+        guard !needle.isEmpty, tab != .ngrok else {
+            if !matches.isEmpty { matches = [] }
+            return
+        }
 
-        var result: [(Int, Int)] = []
+        // The console prefixes each line with `[source] ` in the All tab, and its highlighter
+        // searches the rendered document — so the count here has to be taken over the same text.
+        // Without the prefix the two lists disagree and the ⌃/⌄ stepper walks to the wrong hit.
+        let showsGutter = tab == .all
+
+        var result: [Match] = []
         for (index, line) in visibleLines.enumerated() {
-            let count = Ansi.matchCount(in: line.text, needle: needle)
+            let haystack = showsGutter
+                ? "[\(line.source ?? "app")] ".lowercased() + line.haystack
+                : line.haystack
+            let count = Ansi.matchCount(inPlain: haystack, needle: needle)
             for local in 0..<count {
-                result.append((index, local))
+                result.append(Match(line: index, local: local))
             }
         }
-        return result
+        matches = result
     }
 
     var body: some View {
@@ -128,6 +160,7 @@ struct LogPaneView: View {
             branchFeed.rebind(to: branch.name)
             branchFeed.start()
             ngrokFeed.start()
+            recomputeMatches()
         }
         .onDisappear {
             branchFeed.stop()
@@ -137,14 +170,21 @@ struct LogPaneView: View {
             branchFeed.rebind(to: name)
             tab = .all
             unlimited = AppState.shared.logs.isUncapped(branch: name)
+            recomputeMatches()
         }
         .onChange(of: isNgrokForThisBranch) { _, active in
             if !active, tab == .ngrok { tab = .all }
         }
         .onChange(of: searchText) { _, _ in
             activeMatch = 0
+            recomputeMatches()
             if !matches.isEmpty { autoScroll = false }
         }
+        .onChange(of: tab) { _, _ in recomputeMatches() }
+        // New output invalidates the hit offsets, so the index is rebuilt when the buffer actually
+        // changes — not on every render, and not at all while no search is active.
+        .onChange(of: branchFeed.generation) { _, _ in recomputeMatches() }
+        .onChange(of: ngrokFeed.generation) { _, _ in recomputeMatches() }
     }
 
     // MARK: - Toolbar
@@ -309,38 +349,55 @@ struct LogPaneView: View {
     @ViewBuilder
     private var logBody: some View {
         ZStack(alignment: .bottomTrailing) {
+            Palette.logBg
+
             if visibleLines.isEmpty {
                 Text(emptyMessage)
-                    .font(.system(size: Typography.body))
+                    .font(.system(size: Typography.small))
                     .foregroundStyle(Palette.logTextDim)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .padding(24)
-                    .background(Palette.logBg)
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(Array(visibleLines.enumerated()), id: \.element.id) { index, line in
-                                LogRowView(
-                                    line: line,
-                                    searchTerm: tab == .ngrok ? "" : searchText.trimmingCharacters(in: .whitespaces),
-                                    activeMatchLocal: activeMatchLocal(for: index),
-                                    onCopy: { copy($0, note: "Copied line") }
-                                )
-                                .id(line.id)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 4)
+                LogTextView(
+                    lines: visibleLines,
+                    searchTerm: tab == .ngrok ? "" : searchText,
+                    activeMatch: matches.isEmpty ? -1 : activeMatch,
+                    autoScroll: autoScroll,
+                    // A single-source tab has nothing to disambiguate, so it gets the full width.
+                    showsSourceGutter: tab == .all,
+                    scrollToBottomToken: scrollToBottomToken,
+                    onPinnedChange: { pinned in
+                        isPinnedToBottom = pinned
+                        // Scrolling back to the bottom re-arms follow mode, the way `tail -f`
+                        // behaves in every terminal. Scrolling away silently turns it off — you
+                        // are reading, and yanking the view down is the rudest thing it could do.
+                        autoScroll = pinned
                     }
-                    .background(Palette.logBg)
-                    .onChange(of: visibleLines.count) { _, _ in
-                        guard autoScroll, let last = visibleLines.last else { return }
-                        proxy.scrollTo(last.id, anchor: .bottom)
+                )
+            }
+
+            if !isPinnedToBottom, !visibleLines.isEmpty {
+                Button {
+                    scrollToBottomToken += 1
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: Typography.caption, weight: .bold))
+                        Text("Jump to latest")
+                            .font(.system(size: Typography.caption, weight: .medium))
                     }
-                    .onChange(of: activeMatch) { _, _ in scrollToMatch(proxy) }
-                    .onChange(of: searchText) { _, _ in scrollToMatch(proxy) }
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 6)
+                    .foregroundStyle(Palette.accentOn)
+                    .background(Palette.accent, in: Capsule())
+                    .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
+                    .contentShape(Capsule())
                 }
+                .buttonStyle(.plain)
+                .padding(.trailing, 14)
+                .padding(.bottom, 12)
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                .accessibilityLabel("Jump to latest output")
             }
 
             if let toast {
@@ -377,6 +434,7 @@ struct LogPaneView: View {
             }
         }
         .animation(Motion.momentum(reduceMotion), value: toast)
+        .animation(Motion.standard(reduceMotion), value: isPinnedToBottom)
     }
 
     private var emptyMessage: String {
@@ -386,24 +444,11 @@ struct LogPaneView: View {
         return branch.status == .stopped ? "Start the branch to see logs" : "Waiting for output..."
     }
 
-    private func activeMatchLocal(for index: Int) -> Int {
-        guard matches.indices.contains(activeMatch) else { return -1 }
-        let match = matches[activeMatch]
-        return match.line == index ? match.local : -1
-    }
-
     private func jump(to index: Int) {
         guard !matches.isEmpty else { return }
         let count = matches.count
         activeMatch = ((index % count) + count) % count
         autoScroll = false
-    }
-
-    private func scrollToMatch(_ proxy: ScrollViewProxy) {
-        guard matches.indices.contains(activeMatch) else { return }
-        let lineIndex = matches[activeMatch].line
-        guard visibleLines.indices.contains(lineIndex) else { return }
-        proxy.scrollTo(visibleLines[lineIndex].id, anchor: .center)
     }
 
     // MARK: - Clipboard
@@ -412,8 +457,9 @@ struct LogPaneView: View {
         let needle = searchText.trimmingCharacters(in: .whitespaces).lowercased()
         let lines = needle.isEmpty
             ? visibleLines
-            : visibleLines.filter { Ansi.plainText($0.text).lowercased().contains(needle) }
-        let text = lines.map { Ansi.plainText($0.text) }.joined(separator: "\n")
+            : visibleLines.filter { $0.haystack.contains(needle) }
+        // Copies what is on screen, prefix-free — the point is to paste it into an issue.
+        let text = lines.map { Ansi.plainText($0.displayText) }.joined(separator: "\n")
         copy(text, note: needle.isEmpty ? "Copied \(lines.count) lines" : "Copied \(lines.count) matching lines")
     }
 
@@ -428,56 +474,3 @@ struct LogPaneView: View {
     }
 }
 
-/// One log line: ANSI-styled text, selectable, with a copy button on hover.
-private struct LogRowView: View {
-    var line: LogLine
-    var searchTerm: String
-    var activeMatchLocal: Int
-    var onCopy: (String) -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 6) {
-            Text(Ansi.attributedString(
-                for: line.text,
-                baseColor: baseColor,
-                highlight: searchTerm,
-                activeMatch: activeMatchLocal
-            ))
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
-
-            if isHovering {
-                Button {
-                    onCopy(Ansi.plainText(line.text))
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: Typography.micro, weight: .medium))
-                        .padding(4)
-                        .foregroundStyle(Palette.logText)
-                        .background(.regularMaterial, in: Circle())
-                        .overlay { Circle().strokeBorder(Palette.border, lineWidth: 1) }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Copy line")
-                .transition(.opacity)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 1)
-        .background(isHovering ? Palette.logText.opacity(0.07) : .clear)
-        .onHover { isHovering = $0 }
-    }
-
-    /// Tint by source, with errors taking precedence — same rules as the web build's row classes.
-    private var baseColor: Color {
-        if line.text.localizedCaseInsensitiveContains("error") { return Palette.logError }
-        switch line.source {
-        case "backend": return Palette.logBackend
-        case "frontend": return Palette.logFrontend
-        default: return Palette.logText
-        }
-    }
-}
