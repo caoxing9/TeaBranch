@@ -1,3 +1,10 @@
+# [0.9.0](https://github.com/caoxing9/TeaBranch/compare/v0.8.1...v0.9.0) (2026-08-23)
+
+
+### Features
+
+* rebuild on macOS 26 with Liquid Glass, and fix what made it feel slow ([fa6fc24](https://github.com/caoxing9/TeaBranch/commit/fa6fc24483419ed1c91b3952da4dcf639b30c49e)), closes [#5](https://github.com/caoxing9/TeaBranch/issues/5) [#5](https://github.com/caoxing9/TeaBranch/issues/5) [#2](https://github.com/caoxing9/TeaBranch/issues/2)
+
 ## [0.8.1](https://github.com/caoxing9/TeaBranch/compare/v0.8.0...v0.8.1) (2026-08-10)
 
 
