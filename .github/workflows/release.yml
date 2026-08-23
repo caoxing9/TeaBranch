@@ -50,6 +50,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: v${{ needs.release.outputs.version }}
+          # The cask update below commits back to main, which needs the credentials this keeps
+          # and enough history to fast-forward onto it.
+          fetch-depth: 0
 
       - name: Build .app and DMG
         working-directory: swift
@@ -63,3 +66,28 @@ jobs:
             swift/build/*.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The cask has to be updated after the DMG exists, because its sha256 is the sha256 of that
+      # DMG. `[skip ci]` keeps this from re-triggering the release workflow.
+      - name: Point the Homebrew cask at the new release
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.release.outputs.version }}"
+          DMG="swift/build/TeaBranch-$VERSION-arm64.dmg"
+          test -f "$DMG"
+          SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
+
+          # The build ran against the tag, in detached HEAD. `swift/build/` is gitignored, so the
+          # DMG survives the switch to main.
+          git fetch origin main
+          git checkout main
+
+          /usr/bin/sed -i '' -E "s|^  version \".*\"$|  version \"$VERSION\"|" Casks/teabranch.rb
+          /usr/bin/sed -i '' -E "s|^  sha256 \".*\"$|  sha256 \"$SHA\"|" Casks/teabranch.rb
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/teabranch.rb
+          git diff --cached --quiet && { echo "cask already current"; exit 0; }
+          git commit -m "chore(cask): TeaBranch $VERSION [skip ci]"
+          git push origin main

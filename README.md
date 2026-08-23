@@ -47,6 +47,29 @@ Teable is a large full-stack project, and switching branches means restarting ev
 
 ## Install
 
+### Homebrew
+
+```bash
+brew tap caoxing9/teabranch https://github.com/caoxing9/TeaBranch
+brew install --cask teabranch --no-quarantine
+```
+
+Upgrades are then `brew upgrade --cask teabranch`.
+
+`--no-quarantine` is doing real work, not decoration. Homebrew stamps every cask it downloads with
+`com.apple.quarantine`, and this build is ad-hoc signed rather than notarized — so without the flag
+Gatekeeper still blocks the first launch and Homebrew has only moved the problem. To stop typing
+it, put this in your shell profile:
+
+```bash
+export HOMEBREW_CASK_OPTS="--no-quarantine"
+```
+
+The tap is added by URL because the cask lives in this repository rather than a separate
+`homebrew-tap` repo.
+
+### Manual
+
 Grab `TeaBranch-<version>-arm64.dmg` from [Releases](https://github.com/caoxing9/TeaBranch/releases) and drag it to Applications.
 
 Requires **macOS 26 or later on Apple Silicon**. The interface is built on Liquid Glass — `glassEffect`, `GlassEffectContainer`, `.buttonStyle(.glass)` — which has no back-deployment path, so there is no Intel build and no older-macOS build.
@@ -57,7 +80,9 @@ The build is **ad-hoc signed and not notarized**, so macOS quarantines it on fir
 xattr -d com.apple.quarantine /Applications/TeaBranch.app
 ```
 
-Escaping that step needs a paid Apple Developer ID.
+Escaping that step for good — from any install route, with no flags — needs a paid Apple Developer
+ID to sign and notarize with. Until then the quarantine attribute is something every download has
+to shed one way or another.
 
 ## Build from source
 
