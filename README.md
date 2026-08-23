@@ -52,23 +52,25 @@ Teable is a large full-stack project, and switching branches means restarting ev
 ```bash
 brew tap caoxing9/teabranch https://github.com/caoxing9/TeaBranch
 brew trust --cask caoxing9/teabranch/teabranch
-brew install --cask teabranch --no-quarantine
+brew install --cask teabranch
 ```
 
-Upgrades are then `brew upgrade --cask teabranch`.
-
-`--no-quarantine` is doing real work, not decoration. Homebrew stamps every cask it downloads with
-`com.apple.quarantine`, and this build is ad-hoc signed rather than notarized — so without the flag
-Gatekeeper still blocks the first launch and Homebrew has only moved the problem. To stop typing
-it, put this in your shell profile:
-
-```bash
-export HOMEBREW_CASK_OPTS="--no-quarantine"
-```
+The app launches straight away — no right-click → Open, no `xattr` by hand. Upgrades are
+`brew upgrade --cask teabranch`.
 
 The tap is added by URL because the cask lives in this repository rather than a separate
-`homebrew-tap` repo, and `brew trust` is Homebrew refusing to run third-party cask code you have
-not vouched for — a reasonable thing for it to insist on.
+`homebrew-tap` repo. `brew trust` is Homebrew declining to run third-party cask code you have not
+vouched for, which is fair of it.
+
+**What the cask does to make that work, and why you should know.** This build is ad-hoc signed, not
+notarized. The DMG arrives marked as downloaded, the app copied out of it inherits that mark, and
+Gatekeeper then refuses the first launch. Homebrew does not fix this on its own — its
+`--no-quarantine` flag no longer exists and its internal quarantine support is switched off, yet
+the attribute still rides in on the downloaded file. So the cask strips it in a `postflight`: the
+same `xattr -dr com.apple.quarantine` the manual instructions below have always asked you to run,
+moved into the install. The consequence is that Gatekeeper does not vet this app on your machine.
+That is a reasonable trade for software you build yourself, and it is the reason to eventually pay
+for a Developer ID and notarize instead — then nothing needs stripping, from any install route.
 
 ### Manual
 
