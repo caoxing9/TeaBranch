@@ -128,6 +128,11 @@ Lane assignments live alongside it in `categories.json`.
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request — CI builds the app, so a compile error can't land
 
+**Title the PR with a Conventional Commits prefix.** Merges here squash, and GitHub uses the *PR
+title* as the commit subject — so a PR called "Rebuild the interface" lands on `main` as a commit
+semantic-release does not recognise, the release job reports success, the build job is skipped,
+and no release is cut. It has caught this repo twice.
+
 ## License
 
 MIT
