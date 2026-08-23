@@ -1,3 +1,15 @@
+# [0.10.0](https://github.com/caoxing9/TeaBranch/compare/v0.9.0...v0.10.0) (2026-08-23)
+
+
+### Bug Fixes
+
+* **cask:** use the non-deprecated depends_on spelling, and document brew trust ([e6b1d77](https://github.com/caoxing9/TeaBranch/commit/e6b1d7744f03ce4711db8efa41e3311cba2779b0))
+
+
+### Features
+
+* **cask:** install with Homebrew ([7ba2ded](https://github.com/caoxing9/TeaBranch/commit/7ba2ded935b5b2dae952c72d97a1967506786cfb))
+
 # [0.9.0](https://github.com/caoxing9/TeaBranch/compare/v0.8.1...v0.9.0) (2026-08-23)
 
 
