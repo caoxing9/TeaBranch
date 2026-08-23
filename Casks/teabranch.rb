@@ -27,8 +27,9 @@ cask "teabranch" do
     strategy :github_latest
   end
 
-  # Liquid Glass has no back-deployment path, and there is no Intel slice.
-  depends_on macos: ">= :tahoe"
+  # Liquid Glass has no back-deployment path, and there is no Intel slice. A bare symbol already
+  # means ">=" here — `macos=` parses with that comparator — and the string spelling is deprecated.
+  depends_on macos: :tahoe
   depends_on arch: :arm64
 
   app "TeaBranch.app"

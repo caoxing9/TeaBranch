@@ -51,6 +51,7 @@ Teable is a large full-stack project, and switching branches means restarting ev
 
 ```bash
 brew tap caoxing9/teabranch https://github.com/caoxing9/TeaBranch
+brew trust --cask caoxing9/teabranch/teabranch
 brew install --cask teabranch --no-quarantine
 ```
 
@@ -66,7 +67,8 @@ export HOMEBREW_CASK_OPTS="--no-quarantine"
 ```
 
 The tap is added by URL because the cask lives in this repository rather than a separate
-`homebrew-tap` repo.
+`homebrew-tap` repo, and `brew trust` is Homebrew refusing to run third-party cask code you have
+not vouched for — a reasonable thing for it to insist on.
 
 ### Manual
 
