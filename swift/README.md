@@ -10,7 +10,7 @@ path needs `xcodebuild`.
 
 ```bash
 cd swift
-./scripts/build_app.sh                    # host arch → build/TeaBranch.app (ad-hoc signed)
+./scripts/build_app.sh                    # → build/TeaBranch.app (ad-hoc signed)
 ./scripts/build_app.sh --dmg              # ...and build/TeaBranch-<version>-arm64.dmg
 open build/TeaBranch.app
 
@@ -27,7 +27,7 @@ Command Line Tools installed.
 ## Release
 
 `.github/workflows/release.yml` builds and uploads one arm64 DMG per release semantic-release
-publishes. One job, not a matrix: both slices cross-compile from a single runner.
+publishes. It needs a runner image carrying the macOS 26 SDK and Swift 6.2.
 
 The version lives in `Resources/Info.plist` — there is no generated manifest to derive it from,
 and it's what ends up in the bundle and the DMG filename. `scripts/bump-version.mjs` stamps it
@@ -49,13 +49,13 @@ swift/
     ├── App/                    AppKit entry point
     │   ├── main.swift              NSApplication bootstrap
     │   ├── AppDelegate.swift       lifecycle, main menu, cleanup on quit
-    │   ├── MainWindowController.swift  vibrancy window, hide-on-close, anchor under the status item
+    │   ├── MainWindowController.swift  the window: full-height sidebar, hide-on-close, frame restore
     │   └── StatusItemController.swift  menu bar icon, left-click toggle, right-click menu
     ├── Core/
     │   ├── Shell.swift             login-shell PATH resolution + blocking command capture
     │   ├── Spawn.swift             posix_spawn with its own process group, piped line streaming
     │   ├── Ports.swift             bind probes, lsof lookups, graceful port reclaim
-    │   ├── EnvFile.swift           .env read/rewrite, Postgres URL surgery
+    │   ├── EnvFile.swift           .env read/rewrite (conservative), Postgres URL surgery
     │   ├── Models.swift            Branch, BranchEnvironment, AppSettings, DbMode, …
     │   ├── AppState.swift          lock-protected shared state + change notifications
     │   ├── LogStore.swift          per-branch, per-source capped log buffers
@@ -68,16 +68,19 @@ swift/
     │   ├── DatabaseService.swift   psql provisioning
     │   ├── NgrokService.swift      tunnel lifecycle + 4040 API recovery
     │   ├── TerminalService.swift   open a worktree in a terminal tab / VS Code
-    │   └── OttyService.swift       Otty control CLI: open tabs, run the agent, read open cwds
+    │   ├── OttyService.swift       Otty control CLI: open tabs, run the agent, read open cwds
+    │   ├── ProcessStats.swift      per-worktree CPU/memory/uptime, grouped by process group
+    │   └── AgentScratchService.swift  locate what Claude Code generated for a worktree
     └── UI/
-        ├── Theme.swift             design tokens, appearance-aware
+        ├── Theme.swift             Liquid Glass surfaces, semantic colour, type ramp, motion
         ├── AppModel.swift          main-actor view model
         ├── RootView.swift          NavigationSplitView shell, onboarding
         ├── BranchSidebarView.swift persistent branch list, lane sections, row + context menu
         ├── BranchDetailView.swift  identity header, glass action bar, log pane
-        ├── BranchInspectorView.swift ports, database, worktree, env override editor
-        ├── LogPaneView.swift       tabbed log viewer with search, copy, auto-scroll
-        ├── AnsiText.swift          ANSI SGR → AttributedString
+        ├── BranchInspectorView.swift  Info / Env tabs: resources, ports, worktree, env editor
+        ├── LogPaneView.swift       source tabs, search, auto-scroll, jump-to-latest
+        ├── LogTextView.swift       the console itself — NSTextView, incremental, ANSI
+        ├── AnsiText.swift          ANSI SGR → AttributedString / NSAttributedString
         ├── StatusBadgeView.swift   status dot + category picker
         ├── CreateWorktreeSheet.swift
         └── SettingsSheet.swift
@@ -97,8 +100,14 @@ and `AppModel` refreshes off that. Log lines are the exception — they arrive f
 SwiftUI wants to re-render, so `LogStore` keeps capped per-source buffers and `LogFeed` polls a
 generation counter every 150 ms, rebuilding only when it actually moved.
 
-State lives in `~/Library/Application Support/com.teabranch.dev/settings.json`, with swim-lane
+State lives in `~/Library/Application Support/com.teabranch.dev/settings.json`, with lane
 assignments alongside it in `categories.json`.
+
+Branch reloads are coalesced. A single start posts `.environmentsChanged` three or four times —
+once when the environment is claimed, once when it goes running, once from the watchdog — and each
+one is a full reload: two `git` subprocesses, a terminal probe, and a managed-ness check across
+every worktree. `AppModel.refresh()` debounces; `refreshNow()` is the uncoalesced path for the
+first load.
 
 ## Behaviour worth knowing
 
@@ -109,10 +118,26 @@ assignments alongside it in `categories.json`.
   loop respects, kills by process group *and* by port, and throws if anything survives SIGKILL.
   Before this, Stop returned immediately and the 6-second reconcile — which reads ports out of
   the worktree env file — saw the still-dying server and set the branch back to Running.
+- **The log console is an `NSTextView`, updated incrementally.** A `LazyVStack` of one `Text` per
+  line cannot hold a selection across a line boundary. The coordinator tracks the id and rendered
+  length of every line in the storage, so the constant eviction past `perSourceCap` is a prefix
+  delete rather than a full rebuild — the rebuild it replaced cost 128 ms on a 15k-line buffer and
+  ran every 150 ms.
 - **Log search is indexed, not rescanned.** `LogLine` precomputes an ANSI-stripped lowercased
   haystack on the reader thread, and the match list is recomputed only when the buffer, needle or
   tab changes. It used to be a computed property evaluated six times per body pass plus once per
-  rendered row, which cost roughly a second of main thread per pass.
+  rendered row, which cost roughly a second of main thread per pass. The index must be counted
+  over the same text the highlighter searches — including the `[source] ` prefix in the All tab,
+  or the two lists disagree and the match stepper walks to the wrong hit.
+- **Start/stop run concurrently across branches, serially within one.** `allocationLock` covers
+  only port picking; a per-branch recursive lock is what keeps `git worktree remove --force` from
+  running alongside an in-flight `pnpm install` in the same directory.
+- **Env writes are conservative.** Unchanged lines go back byte for byte, only the assignment that
+  *decides* a value is rewritten, duplicates are never dropped, and comments and the
+  `# WORKTREE_SLOT=` marker survive — the file is usually under version control.
+- **Resource usage is grouped by process group.** Everything spawned leads its own, so a branch's
+  whole `pnpm → turbo → next dev` tree shares one pgid. A branch adopted as an orphan has no PIDs
+  of ours and is resolved through the port it serves instead.
 - **"Preview" opens the default browser**, on a `<branch>.localhost` subdomain so each branch
   gets its own cookie jar. There is no embedded preview.
 - **Quitting kills dev servers**, including ones TeaBranch didn't start: `reconcile()` adopts
