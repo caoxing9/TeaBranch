@@ -56,6 +56,11 @@ struct AppSettings: Codable, Hashable, Sendable {
     var basePort: UInt16 = 3001
     var defaultStartCommand: String = "npm run dev"
     var terminalApp: String?
+    /// What the "Agent" action runs in the worktree.
+    ///
+    /// Spelled out rather than referring to the user's `cc` alias: the terminal runs this in a
+    /// non-interactive context where shell aliases from `.zshrc` do not exist.
+    var agentCommand: String = "claude --dangerously-skip-permissions"
 
     var projectURL: URL? {
         projectPath.map { URL(fileURLWithPath: $0) }

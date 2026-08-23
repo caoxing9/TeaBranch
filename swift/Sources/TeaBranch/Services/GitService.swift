@@ -82,9 +82,54 @@ enum GitService {
         )
     }
 
+    /// Memoised `isManaged` answers, keyed by worktree path.
+    ///
+    /// The uncached version reads up to two env files per worktree, and it is called once per
+    /// worktree on *every* branch refresh — which the watchdog and the reconcile loop trigger
+    /// several times during a single start. With twenty worktrees that was ~40 file reads a
+    /// burst, to answer a question whose answer is fixed at creation time.
+    private static let managedCache = ManagedCache()
+
+    private final class ManagedCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [String: Bool] = [:]
+
+        func value(for path: String, compute: () -> Bool) -> Bool {
+            lock.lock()
+            if let cached = values[path] {
+                lock.unlock()
+                return cached
+            }
+            lock.unlock()
+
+            let computed = compute()
+            lock.lock()
+            values[path] = computed
+            lock.unlock()
+            return computed
+        }
+
+        func forget(_ path: String) {
+            lock.lock()
+            values.removeValue(forKey: path)
+            lock.unlock()
+        }
+    }
+
+    /// Drop a cached answer — call when a worktree is created or removed.
+    static func forgetManaged(worktree: URL) {
+        managedCache.forget(worktree.standardizedFileURL.path)
+    }
+
     /// A worktree counts as TeaBranch-managed if it sits under the `<repo>-worktree/` sibling
     /// directory, or if its env file still carries the marker we write during creation.
     static func isManaged(worktree: URL, repo: URL) -> Bool {
+        managedCache.value(for: worktree.standardizedFileURL.path) {
+            computeIsManaged(worktree: worktree, repo: repo)
+        }
+    }
+
+    private static func computeIsManaged(worktree: URL, repo: URL) -> Bool {
         let repoName = repo.lastPathComponent
         let managedBase = repo.deletingLastPathComponent().appendingPathComponent("\(repoName)-worktree")
         if worktree.path == managedBase.path || worktree.path.hasPrefix(managedBase.path + "/") {

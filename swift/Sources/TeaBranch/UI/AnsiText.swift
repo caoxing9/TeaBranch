@@ -124,10 +124,54 @@ enum Ansi {
         return result
     }
 
+    /// Render one line into an `NSAttributedString`, for the AppKit log console.
+    ///
+    /// The console is an `NSTextView` holding the whole buffer as one document, so that a
+    /// selection can span lines — a per-line SwiftUI `Text` can only ever be selected within
+    /// itself, which made copying a stack trace impossible. Search highlighting is *not* applied
+    /// here: it is a separate attribute pass over the finished storage, so changing the needle
+    /// doesn't re-parse every line's escape sequences.
+    static func nsAttributedString(
+        for line: String,
+        baseColor: NSColor,
+        fontSize: CGFloat
+    ) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let regular = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        let bold = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .bold)
+
+        for run in segments(of: line) {
+            var attributes: [NSAttributedString.Key: Any] = [:]
+            let foreground = run.style.foreground.map { NSColor($0) } ?? baseColor
+            attributes[.foregroundColor] = run.style.dim
+                ? foreground.withAlphaComponent(0.7)
+                : foreground
+            if let background = run.style.background {
+                attributes[.backgroundColor] = NSColor(background)
+            }
+
+            var font = run.style.bold ? bold : regular
+            if run.style.italic,
+               let italic = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) as NSFont? {
+                font = italic
+            }
+            attributes[.font] = font
+
+            if run.style.underline {
+                attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+            }
+            result.append(NSAttributedString(string: run.text, attributes: attributes))
+        }
+        return result
+    }
+
     /// Occurrences of `needle` in a line, as a count (used to build the match index).
-    static func matchCount(in line: String, needle: String) -> Int {
+    ///
+    /// Takes an already-stripped, already-lowercased haystack — `LogLine` computes that once when
+    /// the line is captured. Stripping and lowercasing here instead meant redoing it for the whole
+    /// scrollback on every pass, which is what made log search stall the window.
+    static func matchCount(inPlain haystack: String, needle: String) -> Int {
         guard !needle.isEmpty else { return 0 }
-        let haystack = plainText(line).lowercased()
         var count = 0
         var start = haystack.startIndex
         while let range = haystack.range(of: needle, range: start..<haystack.endIndex) {

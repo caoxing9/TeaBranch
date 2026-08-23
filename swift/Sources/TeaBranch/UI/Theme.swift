@@ -9,9 +9,9 @@ import SwiftUI
 /// AppKit's semantic colours, so the UI follows the user's accent colour, appearance, increased
 /// contrast and reduced-transparency settings without a second code path.
 ///
-/// The window is backed by one `NSVisualEffectView`. Surfaces layer with *fills* on top of that
-/// single material rather than stacking translucency on translucency, which is what collapses
-/// legibility.
+/// Since the macOS 26 rebuild the *chrome* is Liquid Glass (see `Surface`) and these fills are
+/// reserved for the content layer underneath it — selection, hover, dividers. Glass floats above
+/// content; it is not what content is painted with.
 enum Palette {
     // MARK: Text
 
@@ -29,9 +29,9 @@ enum Palette {
     // MARK: Fills
     //
     // `Color.primary` is near-black in light and near-white in dark, so a single opacity reads
-    // correctly in both appearances and over the window's vibrancy.
+    // correctly in both appearances.
 
-    /// Tints the window material under a toolbar or header, rather than layering a second material.
+    /// Tints a region under chrome, for the reduced-transparency path where glass is switched off.
     static let chromeFill = Color.primary.opacity(0.04)
 
     static let fillSubtle = Color.primary.opacity(0.05)
@@ -48,6 +48,9 @@ enum Palette {
     static let statusBuilding = Color(nsColor: .systemOrange)
     static let statusError = Color(nsColor: .systemRed)
     static let statusErrorDim = Color(nsColor: .systemRed).opacity(0.12)
+
+    /// An agent (Claude Code) working in this worktree's terminal.
+    static let statusAgent = Color(nsColor: .systemPurple)
 
     // MARK: Log console
     //
@@ -67,10 +70,10 @@ enum Palette {
 
     // MARK: Shape
 
-    /// Row/card radius. Matches the concentricity of macOS 14's own list selections.
+    /// Row/card radius. Matches the concentricity of macOS 26's own list selections.
     static let cornerRadius: CGFloat = 10
     /// Radius for the small controls that sit *inside* a row.
-    static let controlRadius: CGFloat = 6
+    static let controlRadius: CGFloat = 7
 
     static func color(for status: BranchStatus) -> Color {
         switch status {
@@ -118,9 +121,67 @@ extension NSColor {
     }
 }
 
+// MARK: - Liquid Glass
+
+/// The chrome layer.
+///
+/// Liquid Glass is for controls that *float above* content — toolbars, the action bar, the
+/// now-running strip, popovers. Content itself stays on ordinary backgrounds. Two rules keep it
+/// from turning to soup:
+///
+///  1. **Never nest glass in glass.** Sibling glass elements that sit near each other go inside a
+///     `GlassEffectContainer` so the system blends them into one shape instead of stacking blurs.
+///  2. **Reduced transparency wins.** The accessibility setting exists because translucency itself
+///     is the problem, so that path goes opaque rather than merely less blurry.
+enum Surface {
+    /// Chrome that carries controls. Interactive so it responds to the pointer the way system
+    /// controls do.
+    static var chrome: Glass { .regular.interactive() }
+
+    /// Chrome that is currently expressing the accent — an active filter, a primary action.
+    static func tinted(_ color: Color) -> Glass { .regular.tint(color).interactive() }
+}
+
+extension View {
+    /// Puts this view on glass, in `shape`, honouring reduced transparency.
+    ///
+    /// The fallback is a solid fill plus a hairline rather than a dimmer glass: at that point the
+    /// user has asked for edges they can see, and a border is the thing that provides them.
+    @ViewBuilder
+    func glassSurface(
+        _ glass: Glass = Surface.chrome,
+        in shape: some Shape = RoundedRectangle(cornerRadius: Palette.cornerRadius, style: .continuous),
+        reduceTransparency: Bool = false
+    ) -> some View {
+        if reduceTransparency {
+            background(Color(nsColor: .windowBackgroundColor), in: shape)
+                .overlay { shape.stroke(Palette.border, lineWidth: 1) }
+        } else {
+            glassEffect(glass, in: shape)
+        }
+    }
+
+    /// The chrome layer behind a toolbar or bottom bar that spans the full width.
+    ///
+    /// Edge-to-edge chrome takes a plain rect, not a capsule: a rounded shape that reaches both
+    /// window edges reads as a mistake rather than as a floating control.
+    @ViewBuilder
+    func chromeBackground(reduceTransparency: Bool) -> some View {
+        if reduceTransparency {
+            background(Color(nsColor: .windowBackgroundColor))
+        } else {
+            background {
+                Rectangle()
+                    .fill(.clear)
+                    .glassEffect(.regular, in: Rectangle())
+            }
+        }
+    }
+}
+
 // MARK: - Appearance
 
-/// Which appearance the user picked from the overflow menu.
+/// Which appearance the user picked.
 enum ThemePreference: String, CaseIterable, Hashable {
     case dark, light, system
 
@@ -193,9 +254,11 @@ extension AnyTransition {
 
 // MARK: - Typography
 
-/// One ramp, six steps, every size in the app drawn from it. The window started life as a 420pt
-/// popover where 11pt read fine; resized to twice that it reads as fine print, so the ramp sits a
-/// step above where it began — `body` is 12, not 11 — and stays adjustable from one place.
+/// One ramp, six steps, every size in the app drawn from it.
+///
+/// The ramp is sized for a real resizable window, not the 420pt popover the app started as: `body`
+/// is macOS's own 13pt control size, so the interface matches the system controls sitting next to
+/// it instead of reading a step small everywhere.
 ///
 /// Tracking is size-specific: letters read too far apart as type grows and too tight as it shrinks,
 /// so one `letter-spacing` value is always wrong somewhere.
@@ -204,16 +267,18 @@ enum Typography {
     static let micro: CGFloat = 10
     /// Field labels, port chips, metadata.
     static let caption: CGFloat = 11
-    /// The workhorse: values, log lines, buttons, list rows.
-    static let body: CGFloat = 12
+    /// Secondary values and log lines.
+    static let small: CGFloat = 12
+    /// The workhorse: values, buttons, list rows. macOS's standard control size.
+    static let body: CGFloat = 13
     /// Emphasis inside a dense row — branch names in the list, sheet fields.
-    static let callout: CGFloat = 13
+    static let callout: CGFloat = 14
     /// Screen and section titles.
-    static let headline: CGFloat = 14
+    static let headline: CGFloat = 16
     /// Sheet titles.
-    static let title: CGFloat = 16
+    static let title: CGFloat = 19
     /// Onboarding only.
-    static let hero: CGFloat = 34
+    static let hero: CGFloat = 38
 
     static func tracking(forPointSize size: CGFloat) -> CGFloat {
         switch size {
@@ -236,7 +301,14 @@ extension View {
 
 enum Layout {
     /// Horizontal margin for content. One value, so every edge lines up down the window.
-    static let gutter: CGFloat = 12
+    static let gutter: CGFloat = 14
+    /// Spacing between sibling glass elements inside a `GlassEffectContainer`. Below this they
+    /// merge into one blob; far above it they stop reading as a group.
+    static let glassSpacing: CGFloat = 8
+    /// Sidebar width bounds for the split view.
+    static let sidebarMin: CGFloat = 220
+    static let sidebarIdeal: CGFloat = 270
+    static let sidebarMax: CGFloat = 380
 }
 
 // MARK: - Scroll edge
@@ -280,130 +352,113 @@ extension View {
             Rectangle().fill(Palette.border).frame(height: 1)
         }
     }
-}
 
-// MARK: - Materials
-
-extension View {
-    /// The chrome layer: a fill, not a second material.
-    ///
-    /// A `.bar` material here stacked translucency on the window's own vibrancy, and in light
-    /// appearance the two resolved to different greys — a white strip pasted onto a grey body. A
-    /// plain fill tints the one material instead of competing with it, which is the rule the rest
-    /// of the palette already follows.
-    ///
-    /// Under reduced transparency it goes opaque rather than merely frostier — the setting exists
-    /// because translucency is the problem, not because the blur radius is.
-    func chromeBackground(reduceTransparency: Bool) -> some View {
-        background {
-            if reduceTransparency {
-                Color(nsColor: .windowBackgroundColor)
-            } else {
-                Rectangle().fill(Palette.chromeFill)
-            }
+    /// The same hairline on the top edge — for chrome that sits at the bottom of the window.
+    func topDivider() -> some View {
+        overlay(alignment: .top) {
+            Rectangle().fill(Palette.border).frame(height: 1)
         }
     }
 }
 
 // MARK: - Controls
 
-/// A compact pill control.
+/// A compact control on glass.
 ///
 /// Feedback lands on pointer-*down* via `configuration.isPressed`, not on release: the moment a
 /// control waits for touch-up to acknowledge you, directness falls off a cliff.
+///
+/// Tone maps to a glass *tint* rather than to a flat fill, so a Stop button is red glass that still
+/// samples what is behind it — the same material as its neighbours, saying something different.
 struct PillButton: View {
     enum Tone {
         case plain, accent, dim, danger, active
+
+        var tint: Color? {
+            switch self {
+            case .plain: return nil
+            case .accent, .dim: return Palette.accent
+            case .danger: return Palette.statusError
+            case .active: return Palette.accent
+            }
+        }
+
+        /// Prominent tones carry the tint at full strength and put legible text on top of it.
+        var isProminent: Bool { self == .accent }
     }
 
     var title: String
     var systemImage: String?
     var tone: Tone = .plain
     var isDisabled: Bool = false
-    var horizontalPadding: CGFloat = 10
+    var horizontalPadding: CGFloat = 11
     var verticalPadding: CGFloat = 5
     /// What VoiceOver reads. Required in practice for icon-only buttons, which have no text.
     var accessibilityLabel: String?
     var action: () -> Void
 
-    @State private var isHovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
                 if let systemImage {
-                    Image(systemName: systemImage).font(.system(size: Typography.caption, weight: .semibold))
+                    Image(systemName: systemImage)
+                        .font(.system(size: Typography.small, weight: .semibold))
                 }
                 if !title.isEmpty {
                     Text(title)
                 }
             }
-            .font(.system(size: Typography.body, weight: tone == .accent ? .semibold : .medium))
+            .font(.system(size: Typography.body, weight: tone.isProminent ? .semibold : .medium))
             .padding(.horizontal, horizontalPadding)
             .padding(.vertical, verticalPadding)
-            .frame(minHeight: 22)
+            .frame(minHeight: 24)
             .contentShape(Rectangle())
         }
         .buttonStyle(
-            PillButtonStyle(tone: tone, isHovering: isHovering && !isDisabled, reduceMotion: reduceMotion)
+            PillButtonStyle(
+                tone: tone,
+                reduceMotion: reduceMotion,
+                reduceTransparency: reduceTransparency
+            )
         )
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.4 : 1)
-        .onHover { isHovering = $0 }
         .accessibilityLabel(accessibilityLabel ?? title)
     }
 }
 
 private struct PillButtonStyle: ButtonStyle {
     var tone: PillButton.Tone
-    var isHovering: Bool
     var reduceMotion: Bool
+    var reduceTransparency: Bool
 
     func makeBody(configuration: Configuration) -> some View {
         let shape = RoundedRectangle(cornerRadius: Palette.controlRadius, style: .continuous)
 
         return configuration.label
             .foregroundStyle(foreground)
-            .background {
-                // Two layers, not one blended colour: the state fill composites *over* the tone
-                // fill, so a press always reads as a deeper version of the hover it came from.
-                shape.fill(toneFill)
-                    .overlay { shape.fill(stateFill(pressed: configuration.isPressed)) }
-            }
-            .overlay {
-                shape.strokeBorder(tone == .plain ? Palette.border : .clear, lineWidth: 1)
-            }
+            .glassSurface(glass, in: shape, reduceTransparency: reduceTransparency)
             // Scale is compositor-only, so the press reads instantly at any frame rate.
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(Motion.snappy(reduceMotion), value: configuration.isPressed)
-            .animation(Motion.snappy(reduceMotion), value: isHovering)
+    }
+
+    private var glass: Glass {
+        guard let tint = tone.tint else { return Surface.chrome }
+        // A prominent tone owns its colour; the quieter tinted tones only hint at it, so the label
+        // stays the thing you read rather than competing with a saturated pill.
+        return Surface.tinted(tone.isProminent ? tint : tint.opacity(0.28))
     }
 
     private var foreground: Color {
         switch tone {
-        case .plain, .active: return Palette.textSecondary
+        case .plain: return Palette.textPrimary
         case .accent: return Palette.accentOn
-        case .dim: return Palette.accent
+        case .dim, .active: return Palette.accent
         case .danger: return Palette.statusError
         }
-    }
-
-    private var toneFill: Color {
-        switch tone {
-        case .plain: return Palette.fillSubtle
-        case .accent: return Palette.accent
-        case .dim: return Palette.accentDim
-        case .danger: return Palette.statusErrorDim
-        case .active: return Palette.fillPressed
-        }
-    }
-
-    /// `Color.primary` inverts with the appearance, so this one ramp darkens in light mode and
-    /// lightens in dark mode — the right direction for "pressed" in both.
-    private func stateFill(pressed: Bool) -> Color {
-        if pressed { return Palette.fillPressed }
-        if isHovering { return Palette.fillHover }
-        return .clear
     }
 }

@@ -6,26 +6,21 @@
 # by hand, then ad-hoc sign it so macOS will run it.
 #
 # Usage:
-#   ./scripts/build_app.sh                    debug-free release build, host architecture
-#   ./scripts/build_app.sh debug              debug build
-#   ./scripts/build_app.sh --universal        arm64 + x86_64, lipo'd into one binary
-#   ./scripts/build_app.sh --universal --dmg  ...and packaged as build/TeaBranch-<v>-universal.dmg
+#   ./scripts/build_app.sh          release build
+#   ./scripts/build_app.sh debug    debug build
+#   ./scripts/build_app.sh --dmg    ...and packaged as build/TeaBranch-<version>-arm64.dmg
 #
-# `--universal` builds each slice with its own `--triple` and merges them with `lipo`,
-# rather than SwiftPM's `--arch a --arch b`. The latter routes through xcbuild, which
-# needs a full Xcode install; the triple path works with Command Line Tools alone, so
-# the same command runs locally and in CI.
+# Apple Silicon only: the app targets macOS 26 for Liquid Glass, and macOS 26 does not run on
+# Intel, so there is no second slice to lipo in.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG="release"
-UNIVERSAL=0
 MAKE_DMG=0
 
 for argument in "$@"; do
     case "$argument" in
         release|debug) CONFIG="$argument" ;;
-        --universal) UNIVERSAL=1 ;;
         --dmg) MAKE_DMG=1 ;;
         *) echo "unknown argument: $argument" >&2; exit 2 ;;
     esac
@@ -33,32 +28,18 @@ done
 
 APP="$ROOT/build/TeaBranch.app"
 # Keep this in step with `platforms:` in Package.swift and LSMinimumSystemVersion.
-DEPLOYMENT_TARGET="14.0"
+DEPLOYMENT_TARGET="26.0"
 
 # MARK: - Build
 
 BIN="$ROOT/build/TeaBranch-binary"
 mkdir -p "$ROOT/build"
 
-if [ "$UNIVERSAL" -eq 1 ]; then
-    SLICES=()
-    for arch in arm64 x86_64; do
-        triple="$arch-apple-macosx$DEPLOYMENT_TARGET"
-        echo "==> swift build -c $CONFIG --triple $triple"
-        swift build -c "$CONFIG" --package-path "$ROOT" --triple "$triple"
-        slice="$(swift build -c "$CONFIG" --package-path "$ROOT" --triple "$triple" --show-bin-path)/TeaBranch"
-        [ -x "$slice" ] || { echo "build product missing: $slice" >&2; exit 1; }
-        SLICES+=("$slice")
-    done
-    echo "==> lipo -create (${#SLICES[@]} slices)"
-    lipo -create "${SLICES[@]}" -output "$BIN"
-else
-    echo "==> swift build -c $CONFIG"
-    swift build -c "$CONFIG" --package-path "$ROOT"
-    built="$(swift build -c "$CONFIG" --package-path "$ROOT" --show-bin-path)/TeaBranch"
-    [ -x "$built" ] || { echo "build product missing: $built" >&2; exit 1; }
-    cp "$built" "$BIN"
-fi
+echo "==> swift build -c $CONFIG"
+swift build -c "$CONFIG" --package-path "$ROOT"
+built="$(swift build -c "$CONFIG" --package-path "$ROOT" --show-bin-path)/TeaBranch"
+[ -x "$built" ] || { echo "build product missing: $built" >&2; exit 1; }
+cp "$built" "$BIN"
 
 # MARK: - Bundle
 
@@ -82,8 +63,7 @@ echo "built: $APP ($(lipo -archs "$APP/Contents/MacOS/TeaBranch"))"
 
 if [ "$MAKE_DMG" -eq 1 ]; then
     VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ROOT/Resources/Info.plist")"
-    SUFFIX=$([ "$UNIVERSAL" -eq 1 ] && echo "universal" || uname -m)
-    DMG="$ROOT/build/TeaBranch-$VERSION-$SUFFIX.dmg"
+    DMG="$ROOT/build/TeaBranch-$VERSION-$(uname -m).dmg"
 
     echo "==> packaging $DMG"
     STAGING="$(mktemp -d)"
