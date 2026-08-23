@@ -1,3 +1,10 @@
+## [0.10.1](https://github.com/caoxing9/TeaBranch/compare/v0.10.0...v0.10.1) (2026-08-23)
+
+
+### Bug Fixes
+
+* **cask:** strip the quarantine attribute so the install is actually one step ([58532ac](https://github.com/caoxing9/TeaBranch/commit/58532ace072f2685196f76923522877cfba96c9e))
+
 # [0.10.0](https://github.com/caoxing9/TeaBranch/compare/v0.9.0...v0.10.0) (2026-08-23)
 
 
