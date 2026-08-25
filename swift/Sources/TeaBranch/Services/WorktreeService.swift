@@ -14,7 +14,7 @@ enum WorktreeService {
     private static let generatedKeys = [
         "PORT", "SOCKET_PORT", "SERVER_PORT", "PUBLIC_ORIGIN",
         "STORAGE_PREFIX", "PRISMA_DATABASE_URL", "PUBLIC_DATABASE_PROXY",
-        "BACKEND_CACHE_REDIS_URI",
+        "BACKEND_CACHE_REDIS_URI", "SANDBOX_TEABLE_ENDPOINT",
     ]
 
     static func worktreeBase(for repo: URL) -> URL {
@@ -247,6 +247,10 @@ enum WorktreeService {
             "PRISMA_DATABASE_URL=\(databaseURL)",
             "PUBLIC_DATABASE_PROXY=127.0.0.1:5432",
             "BACKEND_CACHE_REDIS_URI=\(redisURI)",
+            // Sandbox agents call back into this worktree's frontend from inside
+            // Docker, so the endpoint must track the slot's PORT — a value copied
+            // from the main repo would point every sandbox at the wrong stack.
+            "SANDBOX_TEABLE_ENDPOINT=http://host.docker.internal:\(port)",
         ])
 
         let target = worktree.appendingPathComponent("enterprise/app-ee/.env.development.local")
