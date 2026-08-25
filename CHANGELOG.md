@@ -1,3 +1,10 @@
+## [0.10.2](https://github.com/caoxing9/TeaBranch/compare/v0.10.1...v0.10.2) (2026-08-25)
+
+
+### Bug Fixes
+
+* **env:** pin SANDBOX_TEABLE_ENDPOINT to the worktree's own port ([#6](https://github.com/caoxing9/TeaBranch/issues/6)) ([fe48e36](https://github.com/caoxing9/TeaBranch/commit/fe48e36955e79ee1f6b19e059aa58ea6c9499632))
+
 ## [0.10.1](https://github.com/caoxing9/TeaBranch/compare/v0.10.0...v0.10.1) (2026-08-23)
 
 
