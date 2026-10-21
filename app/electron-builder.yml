@@ -1,0 +1,24 @@
+appId: com.teabranch.dev
+productName: TeaBranch
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: resources/trayTemplate@2x.png
+    to: trayTemplate@2x.png
+mac:
+  target:
+    - target: dmg
+      arch: [arm64]
+  icon: resources/icon.icns
+  category: public.app-category.developer-tools
+  # Ad-hoc signed, not notarized — same as the Swift build.
+  identity: '-'
+  hardenedRuntime: false
+  extendInfo:
+    NSAppleEventsUsageDescription: TeaBranch drives your terminal to open worktrees in new tabs.
+dmg:
+  artifactName: TeaBranch-${version}-arm64.dmg
