@@ -179,7 +179,10 @@ class IssueAgent {
       ? `\n\n<attachments>\n${attachments.map((path) => `- ${path}`).join('\n')}\n</attachments>\nOpen these with the Read tool.`
       : ''
     const shown = display ?? message
-    this.append(issue.id, entry('user', 'agent', attachments.length ? `${shown}\n\n📎 ${attachments.map((path) => path.split('/').pop()).join(', ')}` : shown))
+    this.append(
+      issue.id,
+      entry('user', 'agent', attachments.length ? `${shown}\n\n📎 ${attachments.map((path) => path.split('/').pop()).join(', ')}` : shown),
+    )
     message = message + files
     this.update(issue.id, (r) => {
       r.phase = 'fixing'
@@ -416,13 +419,7 @@ class IssueAgent {
     }
   }
 
-  private startAgent(
-    issue: Issue,
-    prompt: string,
-    cwd: string,
-    config: TeableConfig,
-    onExit: (outcome: Outcome) => void,
-  ): void {
+  private startAgent(issue: Issue, prompt: string, cwd: string, config: TeableConfig, onExit: (outcome: Outcome) => void): void {
     const run = this.runs[issue.id]
     const handle = runClaude({
       prompt,
@@ -487,9 +484,7 @@ class IssueAgent {
       })
       this.append(issue.id, entry('system', 'agent', '验证结论：确认是 bug，开始修复'))
       this.append(issue.id, entry('user', 'agent', `【自动修复任务】${issue.key} ${issue.title}`))
-      this.startAgent(issue, fixAfterTriagePrompt(issue, run.branch), cwd, config, (next) =>
-        this.agentFinished(issue, next, config),
-      )
+      this.startAgent(issue, fixAfterTriagePrompt(issue, run.branch), cwd, config, (next) => this.agentFinished(issue, next, config))
     } catch (error) {
       this.fail(issue.id, `启动 agent 失败：${errorMessage(error)}`)
     } finally {
@@ -551,8 +546,7 @@ class IssueAgent {
   private startReview(issue: Issue, run: IssueRun, cwd: string, config: TeableConfig): void {
     const round = run.reviews.length + 1
     const prompt = reviewPrompt(issue, run.branch, round)
-    const model =
-      config.reviewEngine === 'codex' ? config.codexModel || 'codex default' : agentModelLabel(config.reviewModel)
+    const model = config.reviewEngine === 'codex' ? config.codexModel || 'codex default' : agentModelLabel(config.reviewModel)
     this.update(issue.id, (r) => {
       r.phase = 'reviewing'
     })
@@ -583,13 +577,7 @@ class IssueAgent {
     this.changed()
   }
 
-  private async reviewFinished(
-    issue: Issue,
-    outcome: Outcome,
-    round: number,
-    model: string,
-    config: TeableConfig,
-  ): Promise<void> {
+  private async reviewFinished(issue: Issue, outcome: Outcome, round: number, model: string, config: TeableConfig): Promise<void> {
     try {
       if (this.runs[issue.id]?.phase === 'cancelled' || outcome.cancelled) return
       if (!outcome.finalText) {
@@ -781,11 +769,7 @@ function sessionExists(sessionId: string, cwd: string): boolean {
 }
 
 async function findPR(branch: string, cwd: string): Promise<string | undefined> {
-  const result = await run(
-    'gh',
-    ['pr', 'view', branch, '--json', 'url,state', '-q', 'select(.state != "CLOSED") | .url'],
-    { cwd },
-  )
+  const result = await run('gh', ['pr', 'view', branch, '--json', 'url,state', '-q', 'select(.state != "CLOSED") | .url'], { cwd })
   return result.ok && result.out.startsWith('http') ? result.out : undefined
 }
 
@@ -860,7 +844,6 @@ function fixAfterTriagePrompt(issue: Issue, branch: string, overridden = false):
 1. Start from what you found. If you wrote a reproducing test, it is the regression test: it must fail before your fix and pass after.
 ${fixSteps(issue, branch)}`
 }
-
 
 function reviewPrompt(issue: Issue, branch: string, round: number): string {
   const base = worktrees.baseBranch

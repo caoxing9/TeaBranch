@@ -20,9 +20,7 @@ export async function sample(targets: Target[]): Promise<Record<string, BranchUs
   const known = targets.flatMap((t) => [...t.pgids.keys()])
   const columns = 'pid=,pgid=,%cpu=,rss=,etime=,args='
   const result =
-    !needsPortLookup && known.length
-      ? await run('ps', ['-o', columns, '-g', known.join(',')])
-      : await run('ps', ['-Ao', columns])
+    !needsPortLookup && known.length ? await run('ps', ['-o', columns, '-g', known.join(',')]) : await run('ps', ['-Ao', columns])
   if (!result.ok && !result.stdout) return {}
 
   const rows: { pgid: number; process: ProcessSample }[] = []

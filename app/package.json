@@ -1,9 +1,8 @@
 {
   "name": "teabranch-app",
-  "productName": "TeaBranch",
   "version": "0.10.2",
-  "description": "Parallel branch development environment manager",
   "private": true,
+  "description": "Parallel branch development environment manager",
   "license": "MIT",
   "main": "./out/main/index.js",
   "scripts": {
@@ -13,6 +12,10 @@
     "test": "vitest run",
     "dist": "electron-vite build && electron-builder --mac --arm64",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper && scripts/dev-bundle-name.sh"
+  },
+  "dependencies": {
+    "cn": "^0.5.0",
+    "node-pty": "1.1.0"
   },
   "devDependencies": {
     "@base-ui/react": "1.9.0",
@@ -51,8 +54,5 @@
       "node-pty"
     ]
   },
-  "dependencies": {
-    "cn": "^0.5.0",
-    "node-pty": "1.1.0"
-  }
+  "productName": "TeaBranch"
 }

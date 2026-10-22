@@ -52,9 +52,7 @@ export function spawnShell(
     child.once('error', () => resolve({ code: -1, signal: null }))
     child.once('exit', (code, signal) => {
       // Give the readers their last lines before reporting the exit.
-      void Promise.race([Promise.all(drained), new Promise((r) => setTimeout(r, 500))]).then(() =>
-        resolve({ code, signal }),
-      )
+      void Promise.race([Promise.all(drained), new Promise((r) => setTimeout(r, 500))]).then(() => resolve({ code, signal }))
     })
   })
 

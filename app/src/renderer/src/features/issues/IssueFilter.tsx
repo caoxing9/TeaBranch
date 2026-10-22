@@ -3,14 +3,7 @@ import type { ReactNode, SelectHTMLAttributes } from 'react'
 import type { TeableField } from '@shared/types'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cx } from '@/lib/format'
-import {
-  type FilterCondition,
-  type FilterOperator,
-  type IssueFilterSet,
-  isComplete,
-  newConditionId,
-  useIssues,
-} from '@/store/issues'
+import { type FilterCondition, type FilterOperator, type IssueFilterSet, isComplete, newConditionId, useIssues } from '@/store/issues'
 
 /**
  * Teable's view filter — "当 [字段] [条件] [值]" rows joined by 且/或 — reshaped for a Mac sidebar:
@@ -253,7 +246,10 @@ function ChoiceValue({ field, value, onChange }: { field: TeableField; value: st
   return (
     <div className="flex min-h-6 flex-wrap items-center gap-1 rounded-md bg-fill px-1 py-0.5">
       {value.map((choice) => (
-        <span key={choice} className="inline-flex h-5 items-center gap-0.5 rounded bg-background pr-0.5 pl-1.5 text-[11.5px] shadow-xs ring-1 ring-border">
+        <span
+          key={choice}
+          className="inline-flex h-5 items-center gap-0.5 rounded bg-background pr-0.5 pl-1.5 text-[11.5px] shadow-xs ring-1 ring-border"
+        >
           <span className="max-w-24 truncate">{choice}</span>
           <button
             type="button"

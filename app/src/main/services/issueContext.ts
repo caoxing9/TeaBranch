@@ -126,7 +126,9 @@ export function contextPrompt(context: IssueContext): string {
     parts.push(
       '<attachments>',
       ...context.files.map((file) =>
-        file.path ? `- ${file.name} (${file.mimetype}): ${file.path}` : `- ${file.name} (${file.mimetype}): not downloaded — ${file.skipped}`,
+        file.path
+          ? `- ${file.name} (${file.mimetype}): ${file.path}`
+          : `- ${file.name} (${file.mimetype}): not downloaded — ${file.skipped}`,
       ),
       '</attachments>',
       'Open the image attachments with the Read tool before changing code — they usually show the bug.',

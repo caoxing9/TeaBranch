@@ -31,15 +31,16 @@ export interface Handle {
 
 export type Session = { kind: 'new' | 'resume'; id: string }
 
-export const entry = (
-  kind: EntryKind,
-  channel: EntryChannel,
-  text: string,
-  isError = false,
-): ConversationEntry => ({ id: randomUUID(), kind, channel, text, isError, at: Date.now() })
+export const entry = (kind: EntryKind, channel: EntryChannel, text: string, isError = false): ConversationEntry => ({
+  id: randomUUID(),
+  kind,
+  channel,
+  text,
+  isError,
+  at: Date.now(),
+})
 
-export const truncate = (text: string, limit: number): string =>
-  text.length > limit ? `${text.slice(0, limit)}…` : text
+export const truncate = (text: string, limit: number): string => (text.length > limit ? `${text.slice(0, limit)}…` : text)
 
 /** `base` comes from settings; everything appended is quoted — the prompt is table text anyone edits. */
 export const commandLine = (base: string, args: string[]): string => [base, ...args.map(shellQuote)].join(' ')
@@ -78,8 +79,7 @@ export function accessArgs(access: AgentAccess): string[] {
 }
 
 /** The default agent command skips permissions outright, which would override any mode. */
-export const withoutSkipPermissions = (command: string): string =>
-  command.replace(/\s+--dangerously-skip-permissions\b/g, '')
+export const withoutSkipPermissions = (command: string): string => command.replace(/\s+--dangerously-skip-permissions\b/g, '')
 
 /** `--effort` for the CLI's own levels; `ultracode` is `xhigh` plus its setting, `ultrathink` a prompt prefix. */
 export function effortArgs(effort: AgentModel['effort']): string[] {
@@ -117,18 +117,13 @@ export function runClaude(options: {
 
   const parser = new StreamParser(options.channel, options.onContext)
   let cancelled = false
-  const child = spawnShell(
-    commandLine(baseCommand, args),
-    options.cwd,
-    modelEnvironment(options.model),
-    (line, stream) => {
-      if (stream === 'stderr') {
-        if (line.trim()) options.onEntry(entry('system', options.channel, line.trim(), true))
-        return
-      }
-      for (const parsed of parser.consume(line)) options.onEntry(parsed)
-    },
-  )
+  const child = spawnShell(commandLine(baseCommand, args), options.cwd, modelEnvironment(options.model), (line, stream) => {
+    if (stream === 'stderr') {
+      if (line.trim()) options.onEntry(entry('system', options.channel, line.trim(), true))
+      return
+    }
+    for (const parsed of parser.consume(line)) options.onEntry(parsed)
+  })
   void child.exited.then((exit) =>
     options.onExit({
       exit,
@@ -180,7 +175,10 @@ class StreamParser {
         if (usage && this.onContext && !event.parent_tool_use_id && message?.id !== this.lastUsageId) {
           this.lastUsageId = message?.id ?? ''
           this.onContext(
-            (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.output_tokens ?? 0),
+            (usage.input_tokens ?? 0) +
+              (usage.cache_read_input_tokens ?? 0) +
+              (usage.cache_creation_input_tokens ?? 0) +
+              (usage.output_tokens ?? 0),
           )
         }
         return content.flatMap((block) => {
@@ -236,8 +234,7 @@ function flatten(content: unknown): string {
 // MARK: - Codex
 
 const htmlNotice = '（模型服务返回了一个 HTML 错误页，已省略）'
-const connectionPattern =
-  /Unable to connect|Connection refused|ECONNREFUSED|error sending request|stream disconnected|failed to connect/i
+const connectionPattern = /Unable to connect|Connection refused|ECONNREFUSED|error sending request|stream disconnected|failed to connect/i
 
 /** `codex exec` in a read-only sandbox: it can read the repo and run git, not edit. */
 export function runCodexReview(options: {
@@ -287,9 +284,7 @@ export function runCodexReview(options: {
       finalText: text,
       costUSD: 0,
       isError: !isCleanExit(exit) || !text,
-      diagnosis: connectionFailed
-        ? 'Codex 连不上模型服务 — 检查 ~/.codex/config.toml 指向的服务（如 Magpie）是否在运行'
-        : undefined,
+      diagnosis: connectionFailed ? 'Codex 连不上模型服务 — 检查 ~/.codex/config.toml 指向的服务（如 Magpie）是否在运行' : undefined,
     })
   })
   return {
@@ -339,7 +334,10 @@ export function sessionContextUsed(sessionId: string): number | undefined {
       const usage = event.type === 'assistant' && !event.isSidechain ? event.message?.usage : undefined
       if (usage)
         return (
-          (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.output_tokens ?? 0)
+          (usage.input_tokens ?? 0) +
+          (usage.cache_read_input_tokens ?? 0) +
+          (usage.cache_creation_input_tokens ?? 0) +
+          (usage.output_tokens ?? 0)
         )
     } catch {
       // Skip a partial line.

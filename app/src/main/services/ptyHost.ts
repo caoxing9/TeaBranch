@@ -26,12 +26,7 @@ interface Session {
 const sessions = new Map<string, Session>()
 
 /** Start the shell for `id`, or reattach to it: either way the output so far comes back for replay. */
-export function open(
-  id: string,
-  cwd: string,
-  cols: number,
-  rows: number,
-): { replay: string; seq: number; title: string; exited: boolean } {
+export function open(id: string, cwd: string, cols: number, rows: number): { replay: string; seq: number; title: string; exited: boolean } {
   const existing = sessions.get(id)
   if (existing) {
     if (!existing.exited) existing.pty.resize(Math.max(cols, 2), Math.max(rows, 1))

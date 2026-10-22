@@ -67,7 +67,14 @@ export function IssueTabs() {
               tab.chat
                 ? [
                     { label: '关闭', onSelect: () => close(tab.id, neighbour(tab.id)) },
-                    { label: '关闭其他对话', onSelect: () => closeOthers(tab.id, chatTabs.map((other) => other.id)) },
+                    {
+                      label: '关闭其他对话',
+                      onSelect: () =>
+                        closeOthers(
+                          tab.id,
+                          chatTabs.map((other) => other.id),
+                        ),
+                    },
                   ]
                 : [{ label: '关闭所有对话', disabled: !chatTabs.length, onSelect: () => chatTabs.forEach((other) => close(other.id)) }]
             }
@@ -119,20 +126,20 @@ export function IssueTabs() {
               )}
               <span className="min-w-0 flex-1 truncate">{tab.title}</span>
               {tab.chat && (
-              <button
-                type="button"
-                aria-label="关闭"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  close(tab.id, neighbour(tab.id))
-                }}
-                className={cn(
-                  'grid size-5 shrink-0 place-items-center rounded-md hover:bg-foreground/10',
-                  active ? 'opacity-70' : 'opacity-0 group-hover:opacity-70',
-                )}
-              >
-                <X className="size-3" />
-              </button>
+                <button
+                  type="button"
+                  aria-label="关闭"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    close(tab.id, neighbour(tab.id))
+                  }}
+                  className={cn(
+                    'grid size-5 shrink-0 place-items-center rounded-md hover:bg-foreground/10',
+                    active ? 'opacity-70' : 'opacity-0 group-hover:opacity-70',
+                  )}
+                >
+                  <X className="size-3" />
+                </button>
               )}
             </div>
           </ContextMenuArea>
@@ -173,8 +180,7 @@ function NewChatButton() {
       useTabs.getState().openChat(chat.id)
     })
   // A chat belongs to the issue whose tabs are showing, wherever it runs.
-  const start = (cwd: string, branch?: string) =>
-    open(() => api.createChat({ cwd, branch, issueId: currentGroup(selection) ?? undefined }))
+  const start = (cwd: string, branch?: string) => open(() => api.createChat({ cwd, branch, issueId: currentGroup(selection) ?? undefined }))
 
   const here =
     issue && needsWorktree

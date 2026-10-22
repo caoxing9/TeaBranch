@@ -15,7 +15,11 @@ export function Attachments({ attachments }: { attachments: Attachment[] }) {
   // Images preview in place; other files (PDFs, logs, videos) still go to the default app.
   const open = (attachment: Attachment) => {
     const at = images.indexOf(attachment)
-    if (at >= 0) useLightbox.getState().open(images.map((image) => ({ url: image.url as string, name: image.name })), at)
+    if (at >= 0)
+      useLightbox.getState().open(
+        images.map((image) => ({ url: image.url as string, name: image.name })),
+        at,
+      )
     else if (attachment.url) void api.openExternal(attachment.url)
   }
   return (
@@ -93,7 +97,12 @@ export function Comments({ comments }: { comments: IssueComment[] }) {
                     <button
                       key={url}
                       type="button"
-                      onClick={() => useLightbox.getState().open(comment.images.map((image) => ({ url: image })), index)}
+                      onClick={() =>
+                        useLightbox.getState().open(
+                          comment.images.map((image) => ({ url: image })),
+                          index,
+                        )
+                      }
                       className="h-20 w-32 overflow-hidden rounded-md border bg-muted"
                     >
                       <img src={url} alt="" className="size-full object-cover" />

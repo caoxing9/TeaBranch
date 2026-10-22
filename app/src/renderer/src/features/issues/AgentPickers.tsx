@@ -63,7 +63,11 @@ export const ClaudeMark = ({ className }: { className?: string }) => (
 )
 
 const ProviderIcon = ({ provider, className }: { provider: AgentModel['provider']; className?: string }) =>
-  provider === 'claude' ? <ClaudeMark className={className} /> : <Cpu className={cn('size-3.5 shrink-0 text-muted-foreground', className)} />
+  provider === 'claude' ? (
+    <ClaudeMark className={className} />
+  ) : (
+    <Cpu className={cn('size-3.5 shrink-0 text-muted-foreground', className)} />
+  )
 
 /** What a model is called in the picker: the CLI's display name when it is known. */
 function nameOf(model: AgentModel, catalog: ClaudeCatalog | null): string {
@@ -74,7 +78,8 @@ function nameOf(model: AgentModel, catalog: ClaudeCatalog | null): string {
 
 function effortsOf(model: AgentModel, catalog: ClaudeCatalog | null): AgentEffort[] {
   if (model.provider !== 'claude' || !catalog) return agentEfforts.map((option) => option.value)
-  const listed = catalog.models.find((option) => option.value === model.model) ?? catalog.models.find((option) => option.name === catalog.defaultName)
+  const listed =
+    catalog.models.find((option) => option.value === model.model) ?? catalog.models.find((option) => option.name === catalog.defaultName)
   return listed?.efforts.length ? listed.efforts : agentEfforts.map((option) => option.value)
 }
 
@@ -190,7 +195,10 @@ function MenuRow({ label, value, active, onEnter }: { label: string; value: Reac
       type="button"
       onMouseEnter={onEnter}
       onClick={onEnter}
-      className={cn('flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] outline-none', active ? 'bg-accent' : 'hover:bg-accent')}
+      className={cn(
+        'flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] outline-none',
+        active ? 'bg-accent' : 'hover:bg-accent',
+      )}
     >
       <span className="flex-1">{label}</span>
       <span className="flex max-w-36 min-w-0 items-center gap-1 text-muted-foreground">{value}</span>
@@ -246,7 +254,7 @@ function ModelList({ current, catalog, onPick }: { current: AgentModel; catalog:
     tab === 'favorites' && !needle
       ? '还没有收藏的模型'
       : tab === 'claude' && !catalog
-        ? catalogError ?? '正在读取 Claude 模型…'
+        ? (catalogError ?? '正在读取 Claude 模型…')
         : tab === 'magpie' && !magpie.length
           ? magpieError
             ? '打开 Magpie 后重试'
@@ -324,7 +332,17 @@ function ModelList({ current, catalog, onPick }: { current: AgentModel; catalog:
   )
 }
 
-function RailButton({ title, selected, onSelect, children }: { title: string; selected: boolean; onSelect: () => void; children: ReactNode }) {
+function RailButton({
+  title,
+  selected,
+  onSelect,
+  children,
+}: {
+  title: string
+  selected: boolean
+  onSelect: () => void
+  children: ReactNode
+}) {
   return (
     <button
       type="button"

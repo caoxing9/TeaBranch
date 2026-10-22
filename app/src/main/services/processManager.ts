@@ -145,12 +145,7 @@ async function startService(
 // MARK: - Command detection
 
 /** Teable splits its dev server into `dev:backend:swc` + `dev:frontend`; anything else runs `dev`. */
-export function detectStartCommands(
-  worktree: string,
-  backendPort: number,
-  socketPort: number,
-  frontendPort: number,
-): StartCommand[] {
+export function detectStartCommands(worktree: string, backendPort: number, socketPort: number, frontendPort: number): StartCommand[] {
   const fallback: StartCommand = {
     label: 'dev',
     command: 'npm run dev',
@@ -412,16 +407,12 @@ async function performStop(branch: string): Promise<void> {
 /** What we recorded at start, else the worktree's env file — the only record for an orphan. */
 async function portsToReclaim(branch: string): Promise<number[]> {
   const environment = state.environment(branch)
-  const recorded = [environment?.port, environment?.backendPort, environment?.socketPort].filter(
-    (port): port is number => !!port,
-  )
+  const recorded = [environment?.port, environment?.backendPort, environment?.socketPort].filter((port): port is number => !!port)
   if (recorded.length) return recorded
   let path = environment?.worktreePath
   if (!path && state.projectPath) path = await git.worktreePath(branch, state.projectPath).catch(() => undefined)
   if (!path) return []
-  return ['PORT', 'SERVER_PORT', 'SOCKET_PORT']
-    .map((key) => envFile.port(key, path))
-    .filter((port): port is number => !!port)
+  return ['PORT', 'SERVER_PORT', 'SOCKET_PORT'].map((key) => envFile.port(key, path)).filter((port): port is number => !!port)
 }
 
 /** Kill everything we started, and everything on a live branch's ports. Called on quit. */

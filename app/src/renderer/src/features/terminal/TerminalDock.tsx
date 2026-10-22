@@ -17,7 +17,8 @@ const clamp = (height: number) => Math.round(Math.min(Math.max(height, MIN_HEIGH
  * issue, or the free-standing chats — has its own terminals, opened where "here" is.
  */
 export function TerminalDock() {
-  const { open, height, terms, active, addRequest, toggleRequest, setOpen, setHeight, add, select, close, closeOthers, move } = useTerminals()
+  const { open, height, terms, active, addRequest, toggleRequest, setOpen, setHeight, add, select, close, closeOthers, move } =
+    useTerminals()
   const selection = useIssues((s) => s.selection)
   const { place } = useHere()
   const group = currentGroup(selection) ?? ''

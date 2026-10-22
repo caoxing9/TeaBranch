@@ -51,9 +51,7 @@ async function ottyOpen(path: string, title: string, command?: string): Promise<
   const cli = ottyCLI()
   if (!cli) throw new TeaBranchError('Otty is not installed.')
   // A cold Otty has no control socket yet, so it gets `open` (a window) instead of `tab new`.
-  const args = (await isRunning('Otty'))
-    ? ['tab', 'new', '--cwd', path, '--title', title]
-    : ['open', path, '--title', title]
+  const args = (await isRunning('Otty')) ? ['tab', 'new', '--cwd', path, '--title', title] : ['open', path, '--title', title]
   if (command) args.push('--command', command)
   const result = await run(cli, args)
   if (!result.ok) throw new TeaBranchError(`Otty refused the request: ${result.stderr.trim()}`)

@@ -7,7 +7,8 @@ import { parseTableURL } from './teable'
 
 describe('parsing', () => {
   it('reads branch-backed worktrees and skips detached ones', () => {
-    const out = 'worktree /r\nHEAD a\nbranch refs/heads/develop\n\nworktree /r-wt/x\nHEAD b\ndetached\n\nworktree /r-wt/y\nbranch refs/heads/feat/y\n'
+    const out =
+      'worktree /r\nHEAD a\nbranch refs/heads/develop\n\nworktree /r-wt/x\nHEAD b\ndetached\n\nworktree /r-wt/y\nbranch refs/heads/feat/y\n'
     expect(parseWorktreeList(out)).toEqual([
       { branch: 'develop', path: '/r' },
       { branch: 'feat/y', path: '/r-wt/y' },

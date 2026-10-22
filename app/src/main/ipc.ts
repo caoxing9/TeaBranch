@@ -250,9 +250,7 @@ const handlers: Api = {
     let filter: unknown
     if (config.onlyMine) {
       const people = fields.filter(teable.isUserField)
-      const assignee = config.assigneeField
-        ? people.find((field) => field.name === config.assigneeField)
-        : guessAssignee(people)
+      const assignee = config.assigneeField ? people.find((field) => field.name === config.assigneeField) : guessAssignee(people)
       if (!assignee) throw new TeaBranchError('“只看我的”需要一个人员字段 — 在 Issue 设置里选“负责人”字段')
       filter = teable.mineFilter(assignee)
     }

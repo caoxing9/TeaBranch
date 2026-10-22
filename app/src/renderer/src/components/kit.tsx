@@ -112,9 +112,7 @@ export function Segmented<T extends string>({
   )
 }
 
-export const Spinner = ({ className }: { className?: string }) => (
-  <Loader2 className={cn('size-3.5 animate-spin', className)} />
-)
+export const Spinner = ({ className }: { className?: string }) => <Loader2 className={cn('size-3.5 animate-spin', className)} />
 
 export function StatusDot({ color, pulse }: { color: string; pulse?: boolean }) {
   return (
@@ -169,12 +167,7 @@ function DropdownEntries({ entries }: { entries: MenuEntry[] }) {
       )
     }
     return (
-      <DropdownMenuItem
-        key={index}
-        disabled={entry.disabled}
-        variant={entry.danger ? 'destructive' : 'default'}
-        onClick={entry.onSelect}
-      >
+      <DropdownMenuItem key={index} disabled={entry.disabled} variant={entry.danger ? 'destructive' : 'default'} onClick={entry.onSelect}>
         {entry.label}
       </DropdownMenuItem>
     )
@@ -297,9 +290,7 @@ export const inputClass =
 export function EmptyState({ icon, title, detail }: { icon: ReactNode; title: ReactNode; detail?: ReactNode }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-      <div className="mb-1 flex size-12 items-center justify-center rounded-xl border bg-card text-muted-foreground shadow-xs">
-        {icon}
-      </div>
+      <div className="mb-1 flex size-12 items-center justify-center rounded-xl border bg-card text-muted-foreground shadow-xs">{icon}</div>
       <div className="text-[14px] font-medium">{title}</div>
       {detail && <div className="max-w-sm text-[13px] text-muted-foreground">{detail}</div>}
     </div>

@@ -54,10 +54,7 @@ export interface WorktreeDbInfo {
   redisURI?: string
 }
 
-export type DbMode =
-  | { kind: 'new' }
-  | { kind: 'clone'; sourceBranch: string }
-  | { kind: 'reuse'; sourceBranch: string }
+export type DbMode = { kind: 'new' } | { kind: 'clone'; sourceBranch: string } | { kind: 'reuse'; sourceBranch: string }
 
 export interface WorktreeProgress {
   step: string
@@ -168,7 +165,11 @@ export interface ClaudeCatalog {
 export type AgentAccess = 'supervised' | 'acceptEdits' | 'auto' | 'fullAccess'
 
 export const agentAccessModes: { value: AgentAccess; label: string; hint: string }[] = [
-  { value: 'supervised', label: 'Supervised', hint: 'Ask before commands and file changes. Unattended runs have no one to ask, so these are denied.' },
+  {
+    value: 'supervised',
+    label: 'Supervised',
+    hint: 'Ask before commands and file changes. Unattended runs have no one to ask, so these are denied.',
+  },
   { value: 'acceptEdits', label: 'Auto-accept edits', hint: 'Auto-approve edits; other actions that need approval are denied.' },
   { value: 'auto', label: 'Auto', hint: 'An AI reviewer can approve or deny actions.' },
   {
@@ -178,8 +179,7 @@ export const agentAccessModes: { value: AgentAccess; label: string; hint: string
   },
 ]
 
-export const agentEffortLabel = (effort?: AgentEffort): string | undefined =>
-  agentEfforts.find((option) => option.value === effort)?.label
+export const agentEffortLabel = (effort?: AgentEffort): string | undefined => agentEfforts.find((option) => option.value === effort)?.label
 
 export const agentModelLabel = (m: AgentModel): string => {
   const name = m.provider === 'claude' ? (m.model ? `Claude · ${m.model}` : 'Claude（默认）') : `Magpie · ${m.model ?? 'default'}`

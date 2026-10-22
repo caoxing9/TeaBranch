@@ -10,5 +10,4 @@ export const log = {
 
 export class TeaBranchError extends Error {}
 
-export const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error)
+export const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error))

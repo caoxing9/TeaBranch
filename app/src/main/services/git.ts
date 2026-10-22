@@ -47,9 +47,7 @@ export async function branches(repo: string, environments: Record<string, Branch
       managed: isManaged(entry.path, repo),
       worktreePath: entry.path,
     }))
-    .sort((a, b) =>
-      a.isCurrent !== b.isCurrent ? (a.isCurrent ? -1 : 1) : a.name.localeCompare(b.name, undefined, { numeric: true }),
-    )
+    .sort((a, b) => (a.isCurrent !== b.isCurrent ? (a.isCurrent ? -1 : 1) : a.name.localeCompare(b.name, undefined, { numeric: true })))
 }
 
 /** Where a branch's worktree lives; the repo itself when the branch is the main checkout's HEAD. */

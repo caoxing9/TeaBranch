@@ -150,7 +150,11 @@ export function branchMenu(branch: Branch, state: ReturnType<typeof useApp.getSt
   const category = categoryOf(state.categories, branch.name)
   return [
     { label: live ? '停止' : '启动', onSelect: () => void state.toggle(branch), disabled: state.busy.has(branch.name) },
-    { label: '打开预览', onSelect: () => void state.run(null, () => api.openPreview(branch.name)), disabled: !branch.environment?.port || !live },
+    {
+      label: '打开预览',
+      onSelect: () => void state.run(null, () => api.openPreview(branch.name)),
+      disabled: !branch.environment?.port || !live,
+    },
     'separator',
     { label: '打开 Agent', onSelect: () => void state.run(null, () => api.openAgent(branch.name)) },
     { label: '在终端打开', onSelect: () => void state.run(null, () => api.openTerminal(branch.name)) },
@@ -210,4 +214,3 @@ function BranchRow({ branch }: { branch: Branch }) {
     </ContextMenuArea>
   )
 }
-

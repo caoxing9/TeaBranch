@@ -82,7 +82,9 @@ export function CreateWorktreeDialog() {
           </select>
         </Field>
       )}
-      <p className="mb-4 text-[12px] text-muted-foreground">创建在后台进行（安装依赖、迁移大约几分钟），进度和日志会显示在这个分支里，你可以继续做别的事。</p>
+      <p className="mb-4 text-[12px] text-muted-foreground">
+        创建在后台进行（安装依赖、迁移大约几分钟），进度和日志会显示在这个分支里，你可以继续做别的事。
+      </p>
       <div className="flex justify-end gap-2">
         <Button onClick={close}>取消</Button>
         <Button tone="accent" disabled={!branch || taken || (mode !== 'new' && !source)} onClick={create}>

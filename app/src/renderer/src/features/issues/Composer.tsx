@@ -109,7 +109,10 @@ export function Composer({
         {pending.length > 0 && (
           <div className="flex flex-wrap gap-2 px-3 pt-2">
             {pending.map((file) => (
-              <span key={file.path} className="group relative flex h-12 items-center gap-2 rounded-lg border bg-muted/50 pr-2 text-[11.5px]">
+              <span
+                key={file.path}
+                className="group relative flex h-12 items-center gap-2 rounded-lg border bg-muted/50 pr-2 text-[11.5px]"
+              >
                 {file.preview ? (
                   <img
                     src={file.preview}
@@ -158,7 +161,17 @@ export function Composer({
             className="size-6"
             onClick={async () => {
               const paths = await api.pickUploads(uploadKey)
-              setPending((current) => [...current, ...paths.map((path) => ({ path, name: path.split('/').pop()?.replace(/^\d{14}-/, '') ?? path }))])
+              setPending((current) => [
+                ...current,
+                ...paths.map((path) => ({
+                  path,
+                  name:
+                    path
+                      .split('/')
+                      .pop()
+                      ?.replace(/^\d{14}-/, '') ?? path,
+                })),
+              ])
             }}
           >
             <Plus className="size-4" />
@@ -195,7 +208,6 @@ export function Composer({
     </div>
   )
 }
-
 
 const compact = (tokens: number): string =>
   tokens >= 1_000_000 ? `${+(tokens / 1_000_000).toFixed(1)}M` : tokens >= 1000 ? `${+(tokens / 1000).toFixed(1)}k` : String(tokens)

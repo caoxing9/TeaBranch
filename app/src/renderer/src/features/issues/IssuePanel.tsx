@@ -83,7 +83,11 @@ function RunTab({ branch: name }: { branch: string }) {
           </Button>
         </div>
         <div className="flex items-center gap-1">
-          <Button icon={<Globe className="size-3.5" />} disabled={!live || !environment?.port} onClick={() => act(() => api.openPreview(name))}>
+          <Button
+            icon={<Globe className="size-3.5" />}
+            disabled={!live || !environment?.port}
+            onClick={() => act(() => api.openPreview(name))}
+          >
             预览{environment?.port && live ? ` :${environment.port}` : ''}
           </Button>
           <IconButton label="在终端打开" onClick={() => act(() => api.openTerminal(name))}>

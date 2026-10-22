@@ -73,9 +73,7 @@ function Info({ branch }: { branch: Branch }) {
                   <span className="tabular-nums">{formatBytes(process.residentBytes)}</span>
                 </div>
               ))}
-              {usage.processes.length > 12 && (
-                <div className="text-[11px] text-fg-3">另有 {usage.processes.length - 12} 个进程</div>
-              )}
+              {usage.processes.length > 12 && <div className="text-[11px] text-fg-3">另有 {usage.processes.length - 12} 个进程</div>}
             </div>
           </>
         ) : (
@@ -125,9 +123,7 @@ function Info({ branch }: { branch: Branch }) {
       </Section>
 
       <Section title="Worktree">
-        <div className="selectable mb-2 font-mono text-[11px] break-all text-fg-2">
-          {environment?.worktreePath ?? branch.worktreePath}
-        </div>
+        <div className="selectable mb-2 font-mono text-[11px] break-all text-fg-2">{environment?.worktreePath ?? branch.worktreePath}</div>
         {environment?.databaseName && <Row label="数据库">{environment.databaseName}</Row>}
         <div className="mt-2 flex flex-wrap gap-1.5">
           <Button
@@ -172,8 +168,7 @@ function EnvEditor({ branch }: { branch: Branch }) {
 
   const dirty = JSON.stringify(entries) !== JSON.stringify(original)
   const shown = entries.filter((entry) => entry.key.toLowerCase().includes(filter.toLowerCase()))
-  const update = (key: string, value: string) =>
-    setEntries(entries.map((entry) => (entry.key === key ? { ...entry, value } : entry)))
+  const update = (key: string, value: string) => setEntries(entries.map((entry) => (entry.key === key ? { ...entry, value } : entry)))
 
   const save = async () => {
     setSaving(true)

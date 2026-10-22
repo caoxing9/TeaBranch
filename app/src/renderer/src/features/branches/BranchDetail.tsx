@@ -17,7 +17,8 @@ export function BranchDetail() {
   const [inspector, setInspector] = useState(true)
   const creating = state.selectedBranch ? state.creating[state.selectedBranch] : undefined
 
-  if (creating && state.selectedBranch && !branch) return <CreatingView branch={state.selectedBranch} step={creating.step} message={creating.message} />
+  if (creating && state.selectedBranch && !branch)
+    return <CreatingView branch={state.selectedBranch} step={creating.step} message={creating.message} />
 
   if (!branch) {
     return (
@@ -147,7 +148,13 @@ function CreationSteps({ step, message }: { step: string; message: string }) {
             index < current ? 'text-foreground' : index === current ? 'font-medium text-brand' : 'text-muted-foreground',
           )}
         >
-          {index < current ? <Check className="size-3.5 text-ok" /> : index === current ? <Spinner className="size-3" /> : <span className="size-1.5 rounded-full bg-current opacity-50" />}
+          {index < current ? (
+            <Check className="size-3.5 text-ok" />
+          ) : index === current ? (
+            <Spinner className="size-3" />
+          ) : (
+            <span className="size-1.5 rounded-full bg-current opacity-50" />
+          )}
           {label}
         </span>
       ))}

@@ -302,8 +302,12 @@ body {
 
 /* MonoCode's "working for 12s" shimmer: a highlight sweeping across muted text. */
 @keyframes shimmer-sweep {
-  from { background-position: 100% 0; }
-  to { background-position: -100% 0; }
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
 }
 .shimmer {
   background: linear-gradient(90deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%);

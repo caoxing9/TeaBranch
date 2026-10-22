@@ -10,7 +10,7 @@ export type SortKey = 'name' | 'status' | 'category'
 const statusRank = { running: 0, building: 1, error: 2, stopped: 3 }
 const categoryRank: Record<DevCategory, number> = { developing: 0, todo: 1, done: 2 }
 
-const stored = <T,>(key: string, fallback: T): T => {
+const stored = <T>(key: string, fallback: T): T => {
   try {
     const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as T) : fallback
@@ -249,8 +249,7 @@ systemDark.addEventListener('change', () => applyTheme(useApp.getState().theme))
 
 export const statusOf = (branch: Branch) => branch.environment?.status ?? 'stopped'
 
-export const categoryOf = (categories: Record<string, DevCategory>, branch: string): DevCategory =>
-  categories[branch] ?? 'todo'
+export const categoryOf = (categories: Record<string, DevCategory>, branch: string): DevCategory => categories[branch] ?? 'todo'
 
 /** Search + sort. */
 export function visibleBranches(state: Pick<AppStore, 'branches' | 'search' | 'sortKey' | 'sortAscending' | 'categories'>) {

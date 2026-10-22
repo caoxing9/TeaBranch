@@ -34,8 +34,7 @@ export function mapping(config: TeableConfig, fields: TeableField[]): Mapping {
     // "T" & autoNumber, and that is the id people use in branch names and PR titles.
     id:
       config.idField ??
-      fields.find((field) => ['issue id', 'issueid', 'issue_id', '编号', 'id'].includes(field.name.toLowerCase()))
-        ?.name ??
+      fields.find((field) => ['issue id', 'issueid', 'issue_id', '编号', 'id'].includes(field.name.toLowerCase()))?.name ??
       fields.find((field) => field.type === 'autoNumber')?.name,
   }
 }
@@ -58,8 +57,10 @@ export const isUserField = (field: TeableField): boolean =>
 export const assigneeGuess = (config: TeableConfig, fields: TeableField[]): string | undefined => {
   const people = fields.filter(isUserField)
   if (config.assigneeField) return people.find((field) => field.name === config.assigneeField)?.name
-  return guess(people, ['负责人', '处理人', '指派', '经办人', '开发', 'assignee', 'owner', 'developer', 'dev']) ??
+  return (
+    guess(people, ['负责人', '处理人', '指派', '经办人', '开发', 'assignee', 'owner', 'developer', 'dev']) ??
     people.find((field) => field.type === 'user')?.name
+  )
 }
 
 export const isApproved = (review: string): boolean => /VERDICT:\s*APPROVE/i.test(review)

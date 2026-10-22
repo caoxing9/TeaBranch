@@ -1,4 +1,17 @@
-import { Check, ChevronDown, ChevronRight, CircleAlert, Copy, FilePen, FileSearch, Search, Settings2, Terminal, Users, Wrench } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  CircleAlert,
+  Copy,
+  FilePen,
+  FileSearch,
+  Search,
+  Settings2,
+  Terminal,
+  Users,
+  Wrench,
+} from 'lucide-react'
 import { type ReactNode, useEffect, useState } from 'react'
 import type { ConversationEntry, EntryChannel } from '@shared/types'
 import { cn } from '@/lib/utils'
@@ -161,9 +174,15 @@ function UserMessage({ entry, layout }: { entry: ConversationEntry; layout: 'doc
   const long = entry.text.length > 280 || entry.text.split('\n').length > 4
   const text = (
     <>
-      <div className={cn('selectable text-[13.5px] leading-relaxed break-words whitespace-pre-wrap', !expanded && 'line-clamp-4')}>{entry.text}</div>
+      <div className={cn('selectable text-[13.5px] leading-relaxed break-words whitespace-pre-wrap', !expanded && 'line-clamp-4')}>
+        {entry.text}
+      </div>
       {long && (
-        <button type="button" onClick={() => setExpanded(!expanded)} className="mt-1 text-[12px] text-muted-foreground hover:text-foreground">
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="mt-1 text-[12px] text-muted-foreground hover:text-foreground"
+        >
           {expanded ? '收起' : '展开'}
         </button>
       )}
@@ -308,17 +327,14 @@ export function ActivityGroup({ steps, live, review }: { steps: ConversationEntr
         <Icon className="size-3.5 shrink-0" />
         <span className={cn('truncate', live && 'shimmer')}>{review ? `Reviewer · ${summary}` : summary}</span>
         {failed && !live && <CircleAlert className="size-3 shrink-0 text-err" />}
-        {!live && <ChevronDown className={cn('size-3.5 shrink-0 opacity-0 transition group-hover:opacity-60', open && 'rotate-180 opacity-60')} />}
+        {!live && (
+          <ChevronDown className={cn('size-3.5 shrink-0 opacity-0 transition group-hover:opacity-60', open && 'rotate-180 opacity-60')} />
+        )}
       </button>
       {expanded && (
         <div className="mt-1.5 ml-[7px]">
           {rows.map((row, index) => (
-            <TreeRow
-              key={row.id}
-              entry={row}
-              output={calls.length ? outputOf(steps, row) : undefined}
-              last={index === rows.length - 1}
-            />
+            <TreeRow key={row.id} entry={row} output={calls.length ? outputOf(steps, row) : undefined} last={index === rows.length - 1} />
           ))}
         </div>
       )}

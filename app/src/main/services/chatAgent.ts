@@ -6,14 +6,7 @@ import type { AgentAccess, AgentModel, Chat, ConversationEntry } from '@shared/t
 import { state } from '../core/appState'
 import { emit } from '../core/events'
 import { TeaBranchError } from '../core/log'
-import {
-  deleteChatTranscript,
-  loadChats,
-  loadChatTranscript,
-  loadTeableConfig,
-  saveChats,
-  saveChatTranscript,
-} from '../core/settingsStore'
+import { deleteChatTranscript, loadChats, loadChatTranscript, loadTeableConfig, saveChats, saveChatTranscript } from '../core/settingsStore'
 import { entry, type Handle, runClaude } from './agentRunner'
 import { uploadsDir } from './issueContext'
 

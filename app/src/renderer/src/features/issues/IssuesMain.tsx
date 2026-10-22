@@ -82,101 +82,105 @@ function LoginView() {
     <div className="flex h-full flex-col">
       <TitleStrip />
       <div className="flex flex-1 flex-col items-center justify-center px-6 pb-[38px]">
-      <div className="no-drag w-[320px]">
-        <TableProperties className="mb-4 size-7 text-fg-2" strokeWidth={1.5} />
-        <h1 className="text-[17px] font-semibold">登录 Teable</h1>
-        <p className="mt-1 text-[12.5px] leading-relaxed text-fg-2">读取你的 issue 表，修复后把 PR 链接写回去。</p>
+        <div className="no-drag w-[320px]">
+          <TableProperties className="mb-4 size-7 text-fg-2" strokeWidth={1.5} />
+          <h1 className="text-[17px] font-semibold">登录 Teable</h1>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-fg-2">读取你的 issue 表，修复后把 PR 链接写回去。</p>
 
-        {deviceLogin ? (
-          <div className="mt-5 rounded-lg border border-border bg-fill p-4">
-            <div className="text-[12px] text-fg-2">在浏览器里粘贴这个验证码并确认（已复制）</div>
-            <div className="selectable mt-2 font-mono text-[26px] font-semibold tracking-[0.18em]">{deviceLogin.userCode}</div>
-            <div className="mt-3 flex items-center gap-2 text-[12px] text-fg-2">
-              <Spinner />
-              等待授权…
-              <div className="flex-1" />
-              <button type="button" className="hover:text-fg" onClick={() => void api.openExternal(deviceLogin.verificationUri)}>
-                重新打开
-              </button>
-              <button type="button" className="hover:text-fg" onClick={() => void cancelDeviceLogin()}>
-                取消
-              </button>
+          {deviceLogin ? (
+            <div className="mt-5 rounded-lg border border-border bg-fill p-4">
+              <div className="text-[12px] text-fg-2">在浏览器里粘贴这个验证码并确认（已复制）</div>
+              <div className="selectable mt-2 font-mono text-[26px] font-semibold tracking-[0.18em]">{deviceLogin.userCode}</div>
+              <div className="mt-3 flex items-center gap-2 text-[12px] text-fg-2">
+                <Spinner />
+                等待授权…
+                <div className="flex-1" />
+                <button type="button" className="hover:text-fg" onClick={() => void api.openExternal(deviceLogin.verificationUri)}>
+                  重新打开
+                </button>
+                <button type="button" className="hover:text-fg" onClick={() => void cancelDeviceLogin()}>
+                  取消
+                </button>
+              </div>
             </div>
-          </div>
-        ) : (
-          <>
-            {oauthReady && (
-              <Button tone="accent" className="mt-5 h-8 w-full justify-center" onClick={() => void startDeviceLogin()}>
-                用 Teable 登录
-              </Button>
-            )}
-            {oauthReady && (
-              <div className="mt-1.5 text-center text-[11px] text-fg-3">{host} · 浏览器里确认即可，无需复制令牌</div>
-            )}
+          ) : (
+            <>
+              {oauthReady && (
+                <Button tone="accent" className="mt-5 h-8 w-full justify-center" onClick={() => void startDeviceLogin()}>
+                  用 Teable 登录
+                </Button>
+              )}
+              {oauthReady && <div className="mt-1.5 text-center text-[11px] text-fg-3">{host} · 浏览器里确认即可，无需复制令牌</div>}
 
-            {oauthReady && (
-              <button type="button" className="mt-5 text-[12px] text-fg-2 hover:text-fg" onClick={() => setMore(!more)}>
-                {more ? '▾' : '▸'} 其他登录方式
-              </button>
-            )}
-            {showMore && (
-              <div className="mt-2 space-y-2 rounded-lg border border-border p-3">
-                <div className="text-[11px] text-fg-3">Teable 地址（自部署时改这里）</div>
-                <input
-                  value={baseURL}
-                  onChange={(e) => setBaseURL(e.target.value)}
-                  onBlur={() => baseURL.trim() !== config?.baseURL && void updateConfig({ baseURL: baseURL.trim() })}
-                  className={inputClass}
-                />
-                <div className="pt-1 text-[11px] text-fg-3">
-                  OAuth 应用 Client ID（需开启 Device Flow）{' '}
-                  <button type="button" className="text-brand hover:underline" onClick={() => void api.openOAuthAppPage()}>
-                    去创建
-                  </button>
-                </div>
-                <div className="flex gap-1.5">
+              {oauthReady && (
+                <button type="button" className="mt-5 text-[12px] text-fg-2 hover:text-fg" onClick={() => setMore(!more)}>
+                  {more ? '▾' : '▸'} 其他登录方式
+                </button>
+              )}
+              {showMore && (
+                <div className="mt-2 space-y-2 rounded-lg border border-border p-3">
+                  <div className="text-[11px] text-fg-3">Teable 地址（自部署时改这里）</div>
                   <input
-                    value={clientId}
-                    onChange={(e) => setClientId(e.target.value.trim())}
-                    placeholder={oauthReady ? '留空用内置应用' : 'Client ID'}
-                    className={`${inputClass} font-mono`}
+                    value={baseURL}
+                    onChange={(e) => setBaseURL(e.target.value)}
+                    onBlur={() => baseURL.trim() !== config?.baseURL && void updateConfig({ baseURL: baseURL.trim() })}
+                    className={inputClass}
                   />
-                  <Button
-                    disabled={!clientId && !oauthReady}
-                    onClick={async () => {
-                      await updateConfig({ oauthClientId: clientId || undefined })
-                      await startDeviceLogin()
-                    }}
-                  >
-                    登录
-                  </Button>
-                </div>
-                <form
-                  className="pt-1"
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    if (token) void signIn(token, baseURL.trim())
-                  }}
-                >
-                  <div className="mb-1 text-[11px] text-fg-3">
-                    或个人访问令牌{' '}
-                    <button type="button" onClick={() => void api.openTokenPage()} className="text-brand hover:underline">
-                      创建
+                  <div className="pt-1 text-[11px] text-fg-3">
+                    OAuth 应用 Client ID（需开启 Device Flow）{' '}
+                    <button type="button" className="text-brand hover:underline" onClick={() => void api.openOAuthAppPage()}>
+                      去创建
                     </button>
                   </div>
                   <div className="flex gap-1.5">
-                    <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Personal access token" className={inputClass} />
-                    <Button type="submit" disabled={!token || signingIn}>
-                      {signingIn ? <Spinner /> : '登录'}
+                    <input
+                      value={clientId}
+                      onChange={(e) => setClientId(e.target.value.trim())}
+                      placeholder={oauthReady ? '留空用内置应用' : 'Client ID'}
+                      className={`${inputClass} font-mono`}
+                    />
+                    <Button
+                      disabled={!clientId && !oauthReady}
+                      onClick={async () => {
+                        await updateConfig({ oauthClientId: clientId || undefined })
+                        await startDeviceLogin()
+                      }}
+                    >
+                      登录
                     </Button>
                   </div>
-                </form>
-              </div>
-            )}
-          </>
-        )}
-        {error && <div className="selectable mt-3 rounded-md bg-err-soft px-3 py-2 text-[12px] text-err">{error}</div>}
-      </div>
+                  <form
+                    className="pt-1"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      if (token) void signIn(token, baseURL.trim())
+                    }}
+                  >
+                    <div className="mb-1 text-[11px] text-fg-3">
+                      或个人访问令牌{' '}
+                      <button type="button" onClick={() => void api.openTokenPage()} className="text-brand hover:underline">
+                        创建
+                      </button>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="password"
+                        value={token}
+                        onChange={(e) => setToken(e.target.value)}
+                        placeholder="Personal access token"
+                        className={inputClass}
+                      />
+                      <Button type="submit" disabled={!token || signingIn}>
+                        {signingIn ? <Spinner /> : '登录'}
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+              )}
+            </>
+          )}
+          {error && <div className="selectable mt-3 rounded-md bg-err-soft px-3 py-2 text-[12px] text-err">{error}</div>}
+        </div>
       </div>
     </div>
   )
@@ -199,27 +203,27 @@ function TablePicker() {
     <div className="flex h-full flex-col">
       <TitleStrip />
       <div className="flex flex-1 flex-col items-center justify-center px-6 pb-[38px]">
-      <div className="no-drag w-[360px]">
-        <TableProperties className="mb-4 size-7 text-fg-2" strokeWidth={1.5} />
-        <h1 className="text-[17px] font-semibold">选择 issue 表</h1>
-        <p className="mt-1 text-[12.5px] leading-relaxed text-fg-2">
-          在浏览器打开放 issue 的那张表，选好视图（比如“待修复”），把地址栏的链接粘贴到这里。
-        </p>
-        <div className="mt-5 flex gap-1.5">
-          <input
-            autoFocus
-            value={url}
-            onChange={(e) => setURL(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && void apply()}
-            placeholder="https://app.teable.ai/base/…/table/…/…"
-            className={inputClass}
-          />
-          <Button tone="accent" disabled={!url} onClick={() => void apply()}>
-            使用
-          </Button>
+        <div className="no-drag w-[360px]">
+          <TableProperties className="mb-4 size-7 text-fg-2" strokeWidth={1.5} />
+          <h1 className="text-[17px] font-semibold">选择 issue 表</h1>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-fg-2">
+            在浏览器打开放 issue 的那张表，选好视图（比如“待修复”），把地址栏的链接粘贴到这里。
+          </p>
+          <div className="mt-5 flex gap-1.5">
+            <input
+              autoFocus
+              value={url}
+              onChange={(e) => setURL(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && void apply()}
+              placeholder="https://app.teable.ai/base/…/table/…/…"
+              className={inputClass}
+            />
+            <Button tone="accent" disabled={!url} onClick={() => void apply()}>
+              使用
+            </Button>
+          </div>
+          {error && <div className="mt-2 text-[12px] text-err">{error}</div>}
         </div>
-        {error && <div className="mt-2 text-[12px] text-err">{error}</div>}
-      </div>
       </div>
     </div>
   )
@@ -249,22 +253,32 @@ function BatchPanel() {
           <div className="flex items-center gap-3">
             <span className="text-[13px]">每批同时修复</span>
             <div className="flex items-center rounded-md bg-bg">
-              <button type="button" className="px-2.5 py-1 hover:bg-fill-hover" onClick={() => void state.updateConfig({ batchSize: Math.max(1, batchSize - 1) })}>
+              <button
+                type="button"
+                className="px-2.5 py-1 hover:bg-fill-hover"
+                onClick={() => void state.updateConfig({ batchSize: Math.max(1, batchSize - 1) })}
+              >
                 −
               </button>
               <span className="w-8 text-center font-semibold tabular-nums">{batchSize}</span>
-              <button type="button" className="px-2.5 py-1 hover:bg-fill-hover" onClick={() => void state.updateConfig({ batchSize: Math.min(10, batchSize + 1) })}>
+              <button
+                type="button"
+                className="px-2.5 py-1 hover:bg-fill-hover"
+                onClick={() => void state.updateConfig({ batchSize: Math.min(10, batchSize + 1) })}
+              >
                 +
               </button>
             </div>
             <span className="text-[13px]">个</span>
           </div>
-          <Toggle checked={autoNext} onChange={(value) => void state.updateConfig({ autoNextBatch: value })} label="一批全部完成后自动开始下一批" />
+          <Toggle
+            checked={autoNext}
+            onChange={(value) => void state.updateConfig({ autoNextBatch: value })}
+            label="一批全部完成后自动开始下一批"
+          />
           <p className="text-[12px] text-fg-2">
             共 {batches} 批。
-            {autoNext
-              ? '一直跑到队列清空，每批结束和全部结束都会发系统通知。'
-              : '每批结束发系统通知并暂停，你审查完点“开始下一批”。'}
+            {autoNext ? '一直跑到队列清空，每批结束和全部结束都会发系统通知。' : '每批结束发系统通知并暂停，你审查完点“开始下一批”。'}
             一批要等每个 issue 都走完修复 → PR → review → 回改（或失败、停止、等你回复）才算结束。
           </p>
         </div>

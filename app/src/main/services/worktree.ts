@@ -18,8 +18,7 @@ export const baseBranch = 'develop'
 
 export const worktreeBase = (repo: string): string => join(dirname(repo), `${basename(repo)}-worktree`)
 
-export const worktreeDirectory = (branch: string, repo: string): string =>
-  join(worktreeBase(repo), branch.replace(/\//g, '-'))
+export const worktreeDirectory = (branch: string, repo: string): string => join(worktreeBase(repo), branch.replace(/\//g, '-'))
 
 /** Run a command to completion, its output streamed into the branch's log as it arrives. */
 async function runLogged(command: string, cwd: string, branch: string): Promise<boolean> {
@@ -79,8 +78,7 @@ export async function create(
     databaseURLOverride = source.databaseURL
     redisURIOverride = source.redisURI
   }
-  const envDatabaseName =
-    (databaseURLOverride && envFile.databaseURL.nameOf(databaseURLOverride)) || branchDbName
+  const envDatabaseName = (databaseURLOverride && envFile.databaseURL.nameOf(databaseURLOverride)) || branchDbName
   writeEnvFile(repo, worktree, slot, envDatabaseName, databaseURLOverride, redisURIOverride)
 
   step('install', 'Installing dependencies (pnpm install)...')
@@ -200,8 +198,7 @@ function writeEnvFile(
   const databaseURL =
     databaseURLOverride ??
     envFile.databaseURL.replacingName(
-      envFile.baseDatabaseURL(repo) ??
-        `postgresql://teable:teable@127.0.0.1:5432/${databaseName}?schema=public&statement_cache_size=1`,
+      envFile.baseDatabaseURL(repo) ?? `postgresql://teable:teable@127.0.0.1:5432/${databaseName}?schema=public&statement_cache_size=1`,
       databaseName,
     )
   const redisURI = redisURIOverride ?? `redis://:teable@127.0.0.1:6379/${slot}`

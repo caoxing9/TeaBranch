@@ -1,5 +1,5 @@
-import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
-import { cn } from "@/lib/utils"
+import { Popover as PopoverPrimitive } from '@base-ui/react/popover'
+import { cn } from '@/lib/utils'
 
 const Popover = PopoverPrimitive.Root
 
@@ -8,14 +8,13 @@ function PopoverTrigger({ ...props }: PopoverPrimitive.Trigger.Props) {
 }
 
 function PopoverContent({
-  align = "start",
+  align = 'start',
   alignOffset = 0,
-  side = "bottom",
+  side = 'bottom',
   sideOffset = 4,
   className,
   ...props
-}: PopoverPrimitive.Popup.Props &
-  Pick<PopoverPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset">) {
+}: PopoverPrimitive.Popup.Props & Pick<PopoverPrimitive.Positioner.Props, 'align' | 'alignOffset' | 'side' | 'sideOffset'>) {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Positioner
@@ -28,7 +27,7 @@ function PopoverContent({
         <PopoverPrimitive.Popup
           data-slot="popover-content"
           className={cn(
-            "z-50 max-h-(--available-height) origin-(--transform-origin) overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+            'z-50 max-h-(--available-height) origin-(--transform-origin) overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
             className,
           )}
           {...props}

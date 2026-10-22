@@ -254,12 +254,20 @@ function Header({
 async function openRecord(issue: Issue): Promise<void> {
   const config = await api.teableConfig()
   const view = config.viewId ? `/${config.viewId}` : ''
-  await api.openExternal(
-    `${config.baseURL.replace(/\/+$/, '')}/base/${config.baseId}/table/${config.tableId}${view}?recordId=${issue.id}`,
-  )
+  await api.openExternal(`${config.baseURL.replace(/\/+$/, '')}/base/${config.baseId}/table/${config.tableId}${view}?recordId=${issue.id}`)
 }
 
-function Chip({ icon, children, title, onClick }: { icon: React.ReactNode; children: React.ReactNode; title?: string; onClick: () => void }) {
+function Chip({
+  icon,
+  children,
+  title,
+  onClick,
+}: {
+  icon: React.ReactNode
+  children: React.ReactNode
+  title?: string
+  onClick: () => void
+}) {
   return (
     <button
       type="button"
@@ -342,7 +350,12 @@ function StartPrompt({ issue }: { issue: Issue }) {
         ))}
       </div>
       <div className="flex items-center gap-4">
-        <Button tone="accent" className="h-8 px-4" icon={<Wand2 className="size-4" />} onClick={() => void perform(() => api.enqueueFix([issue]))}>
+        <Button
+          tone="accent"
+          className="h-8 px-4"
+          icon={<Wand2 className="size-4" />}
+          onClick={() => void perform(() => api.enqueueFix([issue]))}
+        >
           自动修复
         </Button>
         <span title="查是否已被修复、本地复现、判断是不是 bug；不是 bug 就停下等你决定" className="text-fg-2">
@@ -399,12 +412,7 @@ function ReviewCard({ text, hasPR, issue, busy }: { text: string; hasPR: boolean
       <div className="mb-2 flex items-center gap-2">
         <AgentAvatar review />
         <span className="text-[13px] font-semibold">Code review</span>
-        <span
-          className={cx(
-            'rounded-full px-2 py-px text-[11px] font-semibold',
-            approved ? 'bg-ok/15 text-ok' : 'bg-warn/15 text-warn',
-          )}
-        >
+        <span className={cx('rounded-full px-2 py-px text-[11px] font-semibold', approved ? 'bg-ok/15 text-ok' : 'bg-warn/15 text-warn')}>
           {approved ? '通过' : '需要修改'}
         </span>
       </div>
@@ -486,4 +494,3 @@ function IssueCard({ issue, startOpen }: { issue: Issue; startOpen: boolean }) {
     </div>
   )
 }
-

@@ -6,8 +6,7 @@ import { TeaBranchError } from '../core/log'
 
 export const apiBase = (config: TeableConfig): string => config.baseURL.replace(/[/\s]+$/, '')
 
-export const tokenPageURL = (baseURL: string): string =>
-  `${baseURL.replace(/[/\s]+$/, '')}/setting/personal-access-token`
+export const tokenPageURL = (baseURL: string): string => `${baseURL.replace(/[/\s]+$/, '')}/setting/personal-access-token`
 
 /** The record opened in the Teable web app. */
 export function recordURL(config: TeableConfig, recordId: string): string {
@@ -107,9 +106,7 @@ export const isUserField = (field: TeableField): boolean =>
 export const mineFilter = (field: TeableField): unknown => ({
   conjunction: 'and',
   filterSet: [
-    field.isMultiple
-      ? { fieldId: field.id, operator: 'hasAnyOf', value: ['Me'] }
-      : { fieldId: field.id, operator: 'is', value: 'Me' },
+    field.isMultiple ? { fieldId: field.id, operator: 'hasAnyOf', value: ['Me'] } : { fieldId: field.id, operator: 'is', value: 'Me' },
   ],
 })
 
@@ -192,7 +189,11 @@ async function attachRichCells(
   }
 }
 
-function pick<T>(cells: Record<string, unknown> | undefined, names: string[], map: (item: Record<string, unknown>) => T): Record<string, T[]> {
+function pick<T>(
+  cells: Record<string, unknown> | undefined,
+  names: string[],
+  map: (item: Record<string, unknown>) => T,
+): Record<string, T[]> {
   const result: Record<string, T[]> = {}
   for (const name of names) {
     const cell = cells?.[name]
@@ -227,7 +228,12 @@ const toAttachment = (item: Record<string, unknown>): Attachment => ({
 export const isAttachmentField = (field: TeableField): boolean => field.type === 'attachment'
 
 /** One record's attachment cells, fresh — the URLs in a list loaded an hour ago may have expired. */
-export async function recordAttachments(config: TeableConfig, token: string, recordId: string, fieldNames: string[]): Promise<Attachment[]> {
+export async function recordAttachments(
+  config: TeableConfig,
+  token: string,
+  recordId: string,
+  fieldNames: string[],
+): Promise<Attachment[]> {
   if (!fieldNames.length) return []
   const record = (await request(config, token, 'GET', `/api/table/${config.tableId}/record/${recordId}`, {
     fieldKeyType: 'name',
@@ -304,15 +310,17 @@ function render(value: unknown): string {
 }
 
 /** Write cells by field name; `typecast` lets a plain string land in a select or URL field. */
-export async function update(
-  config: TeableConfig,
-  token: string,
-  recordId: string,
-  cells: Record<string, unknown>,
-): Promise<void> {
-  await request(config, token, 'PATCH', `/api/table/${config.tableId}/record/${recordId}`, {}, {
-    fieldKeyType: 'name',
-    typecast: true,
-    record: { fields: cells },
-  })
+export async function update(config: TeableConfig, token: string, recordId: string, cells: Record<string, unknown>): Promise<void> {
+  await request(
+    config,
+    token,
+    'PATCH',
+    `/api/table/${config.tableId}/record/${recordId}`,
+    {},
+    {
+      fieldKeyType: 'name',
+      typecast: true,
+      record: { fields: cells },
+    },
+  )
 }

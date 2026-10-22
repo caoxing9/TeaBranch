@@ -56,8 +56,7 @@ const loadSession = (): OAuthSession | undefined => {
   }
 }
 
-const saveSession = (session: OAuthSession | undefined): void =>
-  writeSecret('teable.oauth', session ? JSON.stringify(session) : undefined)
+const saveSession = (session: OAuthSession | undefined): void => writeSecret('teable.oauth', session ? JSON.stringify(session) : undefined)
 
 export function signOut(): void {
   saveSession(undefined)

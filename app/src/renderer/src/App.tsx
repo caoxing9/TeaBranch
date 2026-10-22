@@ -33,21 +33,21 @@ export function App() {
 
   return (
     <TooltipProvider delay={400}>
-    <div className="flex h-full">
-      <aside
-        style={{ width: sidebarWidth }}
-        className="relative flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar/80 text-sidebar-foreground"
-      >
-        {section === 'branches' ? <BranchSidebar /> : <IssueSidebar />}
-        <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} />
-      </aside>
-      <main className="selectable-area relative flex min-w-0 flex-1 flex-col bg-bg">
-        {section === 'branches' ? <BranchDetail /> : <IssuesMain />}
-        <ErrorToast />
-      </main>
-      <Dialogs />
-      <Lightbox />
-    </div>
+      <div className="flex h-full">
+        <aside
+          style={{ width: sidebarWidth }}
+          className="relative flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar/80 text-sidebar-foreground"
+        >
+          {section === 'branches' ? <BranchSidebar /> : <IssueSidebar />}
+          <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} />
+        </aside>
+        <main className="selectable-area relative flex min-w-0 flex-1 flex-col bg-bg">
+          {section === 'branches' ? <BranchDetail /> : <IssuesMain />}
+          <ErrorToast />
+        </main>
+        <Dialogs />
+        <Lightbox />
+      </div>
     </TooltipProvider>
   )
 }
@@ -97,22 +97,21 @@ function Onboarding() {
     <div className="flex h-full flex-col bg-bg">
       <TitleStrip />
       <div className="flex flex-1 flex-col items-center justify-center gap-6">
-      <GitBranch className="size-12 text-brand" strokeWidth={1.5} />
-      <div className="text-center">
-        <h1 className="text-[34px] font-bold tracking-tight">TeaBranch</h1>
-        <p className="mt-2 max-w-sm text-[14px] text-fg-2">
-          Run every branch in parallel — each with its own worktree, ports and database.
-        </p>
-      </div>
-      <Button tone="accent" className="h-9 px-5" onClick={() => void chooseProject()}>
-        Choose Repository…
-      </Button>
-      {error && <div className="rounded-md bg-err-soft px-3 py-2 text-[13px] text-err">{error}</div>}
+        <GitBranch className="size-12 text-brand" strokeWidth={1.5} />
+        <div className="text-center">
+          <h1 className="text-[34px] font-bold tracking-tight">TeaBranch</h1>
+          <p className="mt-2 max-w-sm text-[14px] text-fg-2">
+            Run every branch in parallel — each with its own worktree, ports and database.
+          </p>
+        </div>
+        <Button tone="accent" className="h-9 px-5" onClick={() => void chooseProject()}>
+          Choose Repository…
+        </Button>
+        {error && <div className="rounded-md bg-err-soft px-3 py-2 text-[13px] text-err">{error}</div>}
       </div>
     </div>
   )
 }
-
 
 const SIDEBAR_KEY = 'teabranch.sidebarWidth'
 const SIDEBAR_MIN = 220

@@ -76,7 +76,10 @@ export function IssueSettingsDialog() {
   if (!config) return null
 
   const update = (patch: Partial<TeableConfig>) => void state.updateConfig(patch)
-  const guessed = mapping({ ...config, titleField: undefined, bodyField: undefined, statusField: undefined, idField: undefined }, state.fields)
+  const guessed = mapping(
+    { ...config, titleField: undefined, bodyField: undefined, statusField: undefined, idField: undefined },
+    state.fields,
+  )
   const statusChoices = state.fields.find((field) => field.name === (config.statusField ?? guessed.status))?.choices ?? []
 
   const fieldSelect = (key: 'titleField' | 'bodyField' | 'statusField' | 'idField' | 'prField', guess?: string, none = '自动') => (
@@ -126,7 +129,11 @@ export function IssueSettingsDialog() {
           label="只看分配给我的 issue（在 Teable 服务端筛选，别人的 issue 不会下载到本机）"
         />
         <Line label="负责人（只看我的）">
-          <select value={config.assigneeField ?? ''} onChange={(e) => update({ assigneeField: e.target.value || undefined })} className={inputClass}>
+          <select
+            value={config.assigneeField ?? ''}
+            onChange={(e) => update({ assigneeField: e.target.value || undefined })}
+            className={inputClass}
+          >
             <option value="">自动（{assigneeGuess({ ...config, assigneeField: undefined }, state.fields) ?? '无'}）</option>
             {state.fields.filter(isUserField).map((field) => (
               <option key={field.id} value={field.name}>
@@ -138,7 +145,11 @@ export function IssueSettingsDialog() {
         <Line label="回写 PR 链接到">{fieldSelect('prField', undefined, '不回写')}</Line>
         {statusChoices.length > 0 && (
           <Line label="提 PR 后状态改为">
-            <select value={config.doneStatus ?? ''} onChange={(e) => update({ doneStatus: e.target.value || undefined })} className={inputClass}>
+            <select
+              value={config.doneStatus ?? ''}
+              onChange={(e) => update({ doneStatus: e.target.value || undefined })}
+              className={inputClass}
+            >
               <option value="">不修改</option>
               {statusChoices.map((choice) => (
                 <option key={choice}>{choice}</option>
@@ -160,7 +171,11 @@ export function IssueSettingsDialog() {
         title="自动模式与限流"
         footer="所有待修复的 issue 进同一个队列，每次取一批同时跑；整批都走完才切下一批。Issue 内容来自共享表格，开启自动模式意味着能编辑这张表的人都能驱动本机 agent（默认带 --dangerously-skip-permissions）。"
       >
-        <Toggle checked={config.autoFix} onChange={(autoFix) => update({ autoFix })} label="自动模式：每 3 分钟读表，自动修复下面这些状态的 issue" />
+        <Toggle
+          checked={config.autoFix}
+          onChange={(autoFix) => update({ autoFix })}
+          label="自动模式：每 3 分钟读表，自动修复下面这些状态的 issue"
+        />
         {statusChoices.length > 0 ? (
           <div className="flex flex-wrap gap-x-4 gap-y-1 pl-5">
             {statusChoices.map((choice) => (
@@ -187,7 +202,11 @@ export function IssueSettingsDialog() {
             className={`${inputClass} w-20`}
           />
         </Line>
-        <Toggle checked={config.autoNextBatch} onChange={(autoNextBatch) => update({ autoNextBatch })} label="一批全部完成后自动开始下一批" />
+        <Toggle
+          checked={config.autoNextBatch}
+          onChange={(autoNextBatch) => update({ autoNextBatch })}
+          label="一批全部完成后自动开始下一批"
+        />
         <Line label="分支前缀">
           <input
             value={config.branchPrefix}

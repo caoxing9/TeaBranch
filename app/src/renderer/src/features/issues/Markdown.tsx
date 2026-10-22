@@ -9,7 +9,11 @@ export function Markdown({ text }: { text: string }) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>,
+          a: ({ href, children }) => (
+            <a href={href} target="_blank" rel="noreferrer">
+              {children}
+            </a>
+          ),
           // Images in descriptions and comments preview in place rather than opening a download.
           img: ({ src, alt }) =>
             typeof src === 'string' ? (
