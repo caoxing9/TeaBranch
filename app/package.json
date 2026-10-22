@@ -9,6 +9,9 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "lint": "oxlint --deny-warnings",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
     "test": "vitest run",
     "dist": "electron-vite build && electron-builder --mac --arm64",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper && scripts/dev-bundle-name.sh"
@@ -35,6 +38,8 @@
     "electron-builder": "26.15.3",
     "electron-vite": "6.0.0",
     "lucide-react": "1.61.0",
+    "oxfmt": "0.72.0",
+    "oxlint": "1.87.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-markdown": "10.1.0",

@@ -1,6 +1,6 @@
 import { CircleAlert, Folder, GitBranch, MessageSquarePlus, MoreHorizontal } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
-import type { Chat } from '@shared/types'
+import type { Chat, ConversationEntry } from '@shared/types'
 import { EmptyState, MenuButton } from '@/components/kit'
 import { api } from '@/lib/api'
 import { useChats } from '@/store/chats'
@@ -14,8 +14,10 @@ import { Markdown } from './Markdown'
 const home = (path: string) => path.replace(/^\/Users\/[^/]+/, '~')
 
 /** A free-standing conversation: same transcript and composer as an issue's, no issue around it. */
+const NO_ENTRIES: ConversationEntry[] = []
+
 export function ChatView({ chat }: { chat: Chat }) {
-  const entries = useChats((s) => s.transcripts[chat.id]) ?? []
+  const entries = useChats((s) => s.transcripts[chat.id]) ?? NO_ENTRIES
   const loadTranscript = useChats((s) => s.loadTranscript)
   const perform = useIssues((s) => s.perform)
   const layout = useTranscriptLayout((s) => s.layout)

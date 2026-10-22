@@ -171,6 +171,7 @@ function NewChatButton() {
   useEffect(() => {
     if (!building) return
     return on('worktreeProgress', ({ progress }) => setBuilding((state) => state && { ...state, message: progress.message }))
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- resubscribe per worktree being built, not per progress message
   }, [building?.key])
 
   const open = (create: () => Promise<Chat>) =>

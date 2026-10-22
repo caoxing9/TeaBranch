@@ -40,12 +40,14 @@ export function TerminalDock() {
     if (open && mine.length) setOpen(false)
     else if (mine.length) setOpen(true)
     else addHere()
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- runs per request, not when what it reads changes
   }, [toggleRequest])
   const lastAdd = useRef(addRequest)
   useEffect(() => {
     if (addRequest === lastAdd.current) return
     lastAdd.current = addRequest
     addHere()
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- runs per request
   }, [addRequest])
 
   if (!mine.length) return null

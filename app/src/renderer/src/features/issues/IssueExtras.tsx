@@ -97,6 +97,7 @@ export function Comments({ comments }: { comments: IssueComment[] }) {
                     <button
                       key={url}
                       type="button"
+                      aria-label={`查看图片 ${index + 1}`}
                       onClick={() =>
                         useLightbox.getState().open(
                           comment.images.map((image) => ({ url: image })),

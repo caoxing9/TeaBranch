@@ -15,6 +15,7 @@ export function sanitize(raw: string): string {
     const segments = text.split('\r').filter((segment) => segment.length > 0)
     text = segments[segments.length - 1] ?? ''
   }
+  // oxlint-disable no-control-regex -- stripping terminal control sequences is the point
   return (
     text
       // OSC (window titles, hyperlinks): ESC ] … BEL | ESC \\

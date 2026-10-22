@@ -125,7 +125,6 @@ export function StatusDot({ color, pulse }: { color: string; pulse?: boolean }) 
 
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: ReactNode }) {
   return (
-    // biome-ignore lint/a11y/noLabelWithoutControl: the checkbox is the control
     <label className="flex cursor-pointer items-center gap-2 text-[13px]">
       <Checkbox checked={checked} onCheckedChange={(value) => onChange(!!value)} />
       {label}

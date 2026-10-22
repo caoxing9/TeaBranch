@@ -140,6 +140,7 @@ function SidebarResizer({ width, onResize }: { width: number; onResize: (width: 
     <div
       role="separator"
       aria-orientation="vertical"
+      aria-label="调整侧栏宽度"
       title="拖动调整宽度，双击还原"
       onDoubleClick={() => {
         onResize(290)

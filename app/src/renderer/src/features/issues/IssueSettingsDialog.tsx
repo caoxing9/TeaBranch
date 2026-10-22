@@ -72,6 +72,7 @@ export function IssueSettingsDialog() {
   const [magpieKey, setMagpieKey] = useState('')
   const close = () => useIssues.setState({ showSettings: false })
 
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- once, when the dialog opens
   useEffect(() => void state.loadMagpieModels(), [])
   if (!config) return null
 

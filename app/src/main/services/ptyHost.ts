@@ -76,7 +76,7 @@ export function kill(id: string): void {
 }
 
 export function killAll(): void {
-  for (const id of [...sessions.keys()]) kill(id)
+  for (const id of sessions.keys()) kill(id)
 }
 
 // The foreground process names the tab (zsh, node, claude, vim…), like Terminal.app's title.

@@ -200,7 +200,6 @@ function FilterEditor() {
                     <ChoiceValue field={field} value={condition.value} onChange={(value) => update(condition.id, { value })} />
                   ) : (
                     <input
-                      // biome-ignore lint/a11y/noAutofocus: a fresh row is where you type next
                       autoFocus={!condition.value.length}
                       value={condition.value[0] ?? ''}
                       onChange={(event) => update(condition.id, { value: [event.target.value] })}

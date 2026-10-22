@@ -225,6 +225,7 @@ function ModelList({ current, catalog, onPick }: { current: AgentModel; catalog:
 
   useEffect(() => {
     if (!magpie.length) void loadMagpieModels()
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- once, when the picker opens
   }, [])
 
   const all = useMemo(() => {
@@ -278,7 +279,6 @@ function ModelList({ current, catalog, onPick }: { current: AgentModel; catalog:
         <label className="flex shrink-0 items-center gap-2 border-b px-3 py-2.5 text-muted-foreground">
           <Search className="size-3.5 shrink-0" />
           <input
-            // biome-ignore lint/a11y/noAutofocus: the flyout opens to search
             autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}

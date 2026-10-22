@@ -88,7 +88,7 @@ class AppState {
   takePIDs(branch: string): number[] {
     const prefix = `${branch}:`
     const taken: number[] = []
-    for (const [key, pid] of [...this.pids]) {
+    for (const [key, pid] of this.pids) {
       if (!key.startsWith(prefix)) continue
       taken.push(pid)
       this.pids.delete(key)

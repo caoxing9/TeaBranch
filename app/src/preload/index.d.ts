@@ -9,4 +9,5 @@ declare global {
   }
 }
 
+// oxlint-disable-next-line unicorn/require-module-specifiers -- makes this file a module, so `declare global` applies
 export {}
