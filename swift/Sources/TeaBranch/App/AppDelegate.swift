@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var model = AppModel()
+    private var issues = IssuesModel()
     private var windowController: MainWindowController!
     private var statusItemController: StatusItemController!
 
@@ -14,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         buildMainMenu()
 
-        windowController = MainWindowController(rootView: RootView().environment(model))
+        windowController = MainWindowController(rootView: RootView().environment(model).environment(issues))
         statusItemController = StatusItemController(
             onToggleWindow: { [weak self] in self?.windowController.toggle(under: $0) },
             onShowWindow: { [weak self] in self?.windowController.show() },
@@ -22,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         model.start()
+        issues.start()
         windowController.show()
 
         ProcessManager.startReconcileLoop()
@@ -66,6 +68,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fileMenuItem.submenu = fileMenu
         mainMenu.addItem(fileMenuItem)
 
+        let viewMenuItem = NSMenuItem()
+        let viewMenu = NSMenu(title: "View")
+        viewMenu.addItem(withTitle: "Branches", action: #selector(showBranches), keyEquivalent: "1").target = self
+        viewMenu.addItem(withTitle: "Issues", action: #selector(showIssues), keyEquivalent: "2").target = self
+        viewMenuItem.submenu = viewMenu
+        mainMenu.addItem(viewMenuItem)
+
         let editMenuItem = NSMenuItem()
         let editMenu = NSMenu(title: "Edit")
         editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
@@ -94,6 +103,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard model.screen == .main else { return }
         windowController.show()
         model.showCreateSheet = true
+    }
+
+    @objc private func showBranches() {
+        windowController.show()
+        model.section = .branches
+    }
+
+    @objc private func showIssues() {
+        windowController.show()
+        model.section = .issues
     }
 
     @objc private func openSettings() {

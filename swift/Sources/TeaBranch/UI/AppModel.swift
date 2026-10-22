@@ -11,6 +11,11 @@ final class AppModel {
         case loading, onboarding, main
     }
 
+    /// Which half of the window is showing: the branch list or the Teable issue table.
+    enum Section: Hashable {
+        case branches, issues
+    }
+
     enum SortKey: String, CaseIterable {
         case name, status, category
 
@@ -25,6 +30,7 @@ final class AppModel {
 
     // Screen / data
     private(set) var screen: Screen = .loading
+    var section: Section = .branches
     private(set) var branches: [Branch] = []
     private(set) var settings = AppSettings()
     var errorMessage: String?
@@ -85,6 +91,18 @@ final class AppModel {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.ngrok = AppState.shared.ngrokTunnel }
+        }
+        // A worktree an issue agent is working in belongs in the "开发中" lane.
+        NotificationCenter.default.addObserver(
+            forName: .issueBranchCreated,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let branch = note.object as? String else { return }
+                self.setCategory(.developing, for: branch)
+                self.refresh()
+            }
         }
     }
 

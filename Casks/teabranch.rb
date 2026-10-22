@@ -29,7 +29,7 @@ cask "teabranch" do
   url "https://github.com/caoxing9/TeaBranch/releases/download/v#{version}/TeaBranch-#{version}-arm64.dmg",
       verified: "github.com/caoxing9/TeaBranch/"
   name "TeaBranch"
-  desc "Run several Teable branches at once, each in its own Git worktree"
+  desc "Run Teable branches in parallel worktrees and fix issues with local agents"
   homepage "https://github.com/caoxing9/TeaBranch"
 
   livecheck do
@@ -37,9 +37,9 @@ cask "teabranch" do
     strategy :github_latest
   end
 
-  # Liquid Glass has no back-deployment path, and there is no Intel slice. A bare symbol already
-  # means ">=" here — `macos=` parses with that comparator — and the string spelling is deprecated.
-  depends_on macos: :tahoe
+  # Electron's own floor; there is no Intel slice. A bare symbol already means ">=" here — `macos=`
+  # parses with that comparator — and the string spelling is deprecated.
+  depends_on macos: :ventura
   depends_on arch: :arm64
 
   app "TeaBranch.app"
@@ -54,6 +54,9 @@ cask "teabranch" do
 
   zap trash: [
     "~/Library/Application Support/com.teabranch.dev",
+    "~/Library/Application Support/TeaBranch",
+    "~/Library/Caches/com.teabranch.dev",
+    "~/Library/Logs/TeaBranch",
     "~/Library/Preferences/com.teabranch.dev.plist",
     "~/Library/Saved Application State/com.teabranch.dev.savedState",
   ]

@@ -34,20 +34,23 @@ struct BranchSidebarView: View {
     // MARK: - Top bar
 
     private var topBar: some View {
-        GlassEffectContainer(spacing: Layout.glassSpacing) {
-            HStack(spacing: Layout.glassSpacing) {
-                searchField
+        VStack(spacing: Layout.glassSpacing) {
+            SectionSwitcher()
+            GlassEffectContainer(spacing: Layout.glassSpacing) {
+                HStack(spacing: Layout.glassSpacing) {
+                    searchField
 
-                PillButton(
-                    title: "",
-                    systemImage: "plus",
-                    tone: .accent,
-                    horizontalPadding: 8,
-                    accessibilityLabel: "New branch"
-                ) {
-                    model.showCreateSheet = true
+                    PillButton(
+                        title: "",
+                        systemImage: "plus",
+                        tone: .accent,
+                        horizontalPadding: 8,
+                        accessibilityLabel: "New branch"
+                    ) {
+                        model.showCreateSheet = true
+                    }
+                    .help("New branch (⌘N)")
                 }
-                .help("New branch (⌘N)")
             }
         }
         .padding(.horizontal, 10)

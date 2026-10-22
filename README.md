@@ -1,49 +1,71 @@
 # TeaBranch
 
-A macOS app for running several branches of [Teable](https://github.com/teableio/teable) at once, each in its own Git worktree with its own dev server, ports, database and environment. Native SwiftUI + AppKit on Liquid Glass — no web view, no Rust, no Node runtime.
+English | [简体中文](README.zh-CN.md)
 
-![Platform](https://img.shields.io/badge/platform-macOS%2026%2B-lightgrey)
+A macOS app for working on [Teable](https://github.com/teableio/teable) in parallel. Every branch lives in its own Git worktree with its own dev server, ports, database and environment. Point it at a Teable issue table and it goes one step further: a local agent triages each issue, fixes it in its own worktree, opens the PR and gets it reviewed. What's left for you is the review.
+
+![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)
 ![Architecture](https://img.shields.io/badge/arch-Apple%20Silicon-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 <p align="center">
-  <img src="docs/screenshot.png" width="900" alt="TeaBranch — sidebar of branches, detail pane with logs, and the inspector" />
+  <img src="docs/screenshot.png" width="900" alt="TeaBranch: the issue list, an issue with its description, and the fix pipeline" />
 </p>
 
 ## What is TeaBranch?
 
-Teable is a large full-stack project, and switching branches means restarting everything. TeaBranch keeps each branch permanently checked out in its own worktree, so switching is a click and nothing has to restart. The window is built around the fact that several of them run at the same time: a sidebar that always shows every branch and what it is doing, a detail pane for the one you are reading, and an inspector for the reference material.
+Teable is a large full-stack project, and switching branches means restarting everything. TeaBranch keeps each branch checked out in its own worktree, so switching is a click and nothing has to restart. With several branches running side by side, issue fixing parallelises as well: each issue gets a worktree named after its ID, with its own agent conversation and its own terminal.
 
-### Features
+The window has two sections: **Branches** (⌘1) and **Issues** (⌘2). The interface is in English or Chinese. It follows macOS by default, and you can switch it in Settings (⌘,).
+
+## Issues: agent-driven fixing
+
+**From the issue table**
+
+- Sign in to Teable (teable.ai by default) and pick your issue table from dropdowns: base → table → view. There are no links to paste. The title, description, status, assignee and ID fields are recognised automatically, and you can remap them.
+- By default it shows **only your issues**, filtered server-side. Teable-style field filters narrow them further.
+- Issues are grouped by where they stand: needs you, awaiting review, in progress, not started. Descriptions, comments and attachments render inline, and images open in a lightbox.
+
+**Fixing**
+
+- **自动修复** creates a worktree whose branch is exactly the issue ID (e.g. `T2312`), then hands the agent the full issue, attachments included.
+- **Triage first** (on by default). Before touching code, the agent checks whether the issue was already fixed (git log, open PRs) and tries to reproduce it locally with a minimal failing test. It then decides whether it's a bug at all. Only a confirmed bug is fixed automatically. Anything else stops with its verdict (already fixed / not a bug / needs info), and you can still press **仍然修复** to fix it anyway.
+- The agent finds the root cause, fixes it, and opens a PR that carries the issue ID.
+- **Review**: Codex, or a local model through Magpie, reviews the PR. Its findings go back to the issue's agent, which addresses them for a configurable number of rounds.
+- **Custom prompts**: the instructions for each stage (triage, fix, review, addressing review) can be rewritten, with placeholders such as `{key}` and `{branch}`. The issue itself is always included, and TeaBranch appends the `TRIAGE:` / `VERDICT:` line on its own, so a custom prompt can't break the pipeline.
+- **Batches**: select several issues (or 全部修复) and they queue up N at a time. A notification arrives when the whole batch is done.
+
+**Conversations**
+
+- Each issue has its own Claude Code conversation, and you can interject at any point. The composer picks the model, effort level and access mode, and takes attachments.
+- **+** opens another chat in the issue's worktree, building the worktree first if there isn't one. Chat tabs are grouped per issue, so switching issues switches tabs. You can also open free-standing chats in any worktree.
+- A built-in terminal dock (⌘J to show or hide, ⌘\` for a new terminal) opens shells in the issue's worktree. Terminals are grouped per issue like the chats.
+- While agents are running, the spark on the menu-bar icon breathes.
+
+**Requirements:** [Claude Code](https://claude.com/claude-code) (`claude`) and the GitHub CLI (`gh`, signed in) on your `PATH`. Codex (`codex`) or Magpie are needed for review.
+
+## Branches: worktrees and dev servers
 
 **Worktrees**
 
-- One-click creation — makes the worktree, generates an isolated `.env.development.local`, installs dependencies, provisions the database and runs migrations
-- Ports are allocated in blocks and reuse the gaps left by deleted worktrees, skipping ports that predictably belong to something else (Postgres, Redis, macOS AirPlay's 5000 and 7000) rather than only ones that happen to be free at that second
-- Databases can be created fresh, cloned from another worktree, or shared with one — a branch cut from `develop` usually just wants develop's data
+- One-click creation (⌘N). It makes the worktree, generates an isolated `.env.development.local`, installs dependencies, provisions the database and runs migrations.
+- Ports are allocated in blocks. Deleted worktrees' gaps are reused, and the allocator skips ports that predictably belong to something else (Postgres, Redis, macOS AirPlay's 5000 and 7000).
+- A database can be created fresh, cloned from another worktree, or shared with one. By default new worktrees share the main checkout's database, which is what a branch cut from `develop` usually wants, and it skips the slowest steps.
 
 **Running them**
 
-- Start and stop each branch independently; different branches never block each other
-- **Stop actually stops.** It kills by process group *and* by port, waits until the ports are genuinely free, and tells you which PID is still holding one when they are not
-- Health watchdog supervises by *port*, not just by PID, so a dev-server wrapper that outlives its crashed inner app gets restarted instead of sitting there looking alive
-- Orphan recovery reattaches to dev servers still running after a force-quit, and reports their resource usage even though it did not start them
-- Per-branch CPU, memory, uptime and process list, from the process group each command leads
-
-**Reading the output**
-
-- A real text console: selection spans lines, ⌘A and ⌘C work, and search highlights in place with ⏎ / ⇧⏎ stepping through hits
-- Per-source tabs (backend, frontend) with ANSI colour, wrapped lines hanging under the message
-- The slow parts of a start — reclaiming ports, `pnpm install`, provisioning the database — narrate themselves instead of leaving you on "Waiting for output…"
+- Each branch starts and stops independently.
+- **Stop actually stops.** It kills by process group *and* by port, waits until the ports are really free, and tells you which PID is still holding one when they're not.
+- A health watchdog supervises by port, not just by PID, so a dev-server wrapper that outlives its crashed inner app gets restarted.
+- Dev servers still running after a force-quit are picked up again. Each branch shows CPU, memory, uptime and its process list.
+- Logs show per source (backend, frontend) with ANSI colour and in-place search.
 
 **Working on them**
 
-- **Agent** opens a terminal tab in the worktree with Claude Code already running
-- **Terminal** and **Code** open the worktree in your terminal or VS Code. With [Otty](https://otty.app) this goes through its control CLI: no Accessibility permission, it can start a command for you, and the sidebar can show which worktrees already have a tab open
-- **Preview** opens the branch on a `<branch>.localhost` subdomain, so each one gets its own cookie jar
-- **Agent Files** opens what Claude Code generated for that worktree
-- Edit any variable in the worktree's env file, not just the ones TeaBranch generates; saving restarts the branch, because a dev server reads its environment once, at exec
-- ngrok tunnel per branch, written back into its env file
+- **Agent**, **Terminal** and **Code** open the worktree in your terminal or VS Code. With [Otty](https://otty.app) no Accessibility permission is needed.
+- **Preview** opens the branch on a `<branch>.localhost` subdomain, so each branch gets its own cookie jar.
+- Edit any variable in the worktree's env file; saving restarts the branch. An ngrok tunnel can be opened per branch.
+- Lanes (developing / todo / done) keep the sidebar organised. Closing the window keeps the app running in the menu bar.
 
 ## Install
 
@@ -55,112 +77,77 @@ brew trust --cask caoxing9/teabranch/teabranch
 brew install --cask teabranch
 ```
 
-The app launches straight away — no right-click → Open, no `xattr` by hand. Upgrades are
-`brew upgrade --cask teabranch`.
+Upgrade with `brew upgrade --cask teabranch`. The tap is added by URL because the cask lives in this repository.
 
-The tap is added by URL because the cask lives in this repository rather than a separate
-`homebrew-tap` repo. `brew trust` is Homebrew declining to run third-party cask code you have not
-vouched for, which is fair of it.
-
-**What the cask does to make that work, and why you should know.** This build is ad-hoc signed, not
-notarized. The DMG arrives marked as downloaded, the app copied out of it inherits that mark, and
-Gatekeeper then refuses the first launch. Homebrew does not fix this on its own — its
-`--no-quarantine` flag no longer exists and its internal quarantine support is switched off, yet
-the attribute still rides in on the downloaded file. So the cask strips it in a `postflight`: the
-same `xattr -dr com.apple.quarantine` the manual instructions below have always asked you to run,
-moved into the install. The consequence is that Gatekeeper does not vet this app on your machine.
-That is a reasonable trade for software you build yourself, and it is the reason to eventually pay
-for a Developer ID and notarize instead — then nothing needs stripping, from any install route.
+The build is ad-hoc signed and not notarized. The cask strips the quarantine attribute in a `postflight`, so the app launches without right-click → Open. As a result, Gatekeeper doesn't vet it on your machine. Notarizing with a paid Developer ID would remove the need for that.
 
 ### Manual
 
-Grab `TeaBranch-<version>-arm64.dmg` from [Releases](https://github.com/caoxing9/TeaBranch/releases) and drag it to Applications.
-
-Requires **macOS 26 or later on Apple Silicon**. The interface is built on Liquid Glass — `glassEffect`, `GlassEffectContainer`, `.buttonStyle(.glass)` — which has no back-deployment path, so there is no Intel build and no older-macOS build.
-
-The build is **ad-hoc signed and not notarized**, so macOS quarantines it on first launch. Either right-click → Open, or:
+Download `TeaBranch-<version>-arm64.dmg` from [Releases](https://github.com/caoxing9/TeaBranch/releases) and drag the app to Applications. Apple Silicon only. Because the build isn't notarized, either right-click → Open the first time, or run:
 
 ```bash
 xattr -d com.apple.quarantine /Applications/TeaBranch.app
 ```
 
-Escaping that step for good — from any install route, with no flags — needs a paid Apple Developer
-ID to sign and notarize with. Until then the quarantine attribute is something every download has
-to shed one way or another.
-
 ## Build from source
+
+The app is Electron + React, in [`app/`](app):
 
 ```bash
 git clone git@github.com:caoxing9/TeaBranch.git
-cd TeaBranch/swift
-./scripts/build_app.sh          # → build/TeaBranch.app
-./scripts/build_app.sh --dmg    # + build/TeaBranch-<version>-arm64.dmg
-open build/TeaBranch.app
+cd TeaBranch/app
+pnpm install
+pnpm dev            # run with hot reload
+pnpm dist           # → dist/TeaBranch-<version>-arm64.dmg
 ```
 
-Requirements: macOS 26+ and a Swift 6.2 toolchain. Command Line Tools are enough — there is no
-Xcode project, and nothing in the build path needs `xcodebuild`.
+Requirements: Node 22 and pnpm 10.
 
-See [swift/README.md](swift/README.md) for the source layout, the terminal-integration matrix, and
-the things worth knowing before touching the process, port or descriptor handling.
+| Command | What it does |
+|---------|--------------|
+| `pnpm lint` | oxlint; warnings fail too |
+| `pnpm format` / `pnpm format:check` | oxfmt |
+| `pnpm typecheck` | TypeScript, main + renderer |
+| `pnpm test` | Vitest |
 
-## Usage
+CI runs all of the above plus a production build on every pull request.
 
-1. **Pick a repository** — on first launch, choose the Teable Git repository
-2. **Create a worktree** — ⌘N. It defaults to reusing `develop`'s database, which is what a branch cut from develop almost always wants and which skips the slowest steps
-3. **Start a branch** — Start spins up its dev servers on its own ports
-4. **Read the logs** — they fill the detail pane; ⌘F filters, and selection crosses lines
-5. **Work on it** — Agent, Terminal or Code open the worktree; Preview opens it in a browser
-6. **Inspect it** — the trailing panel has resources, ports, database and worktree on one tab, and every environment variable on the other
-7. **Organise** — right-click → Move to, to shift a branch between lanes; lane sections fold away
-8. **Delete** — right-click → Delete Worktree. Confirms once, because nothing undoes it
-9. **Menu bar** — closing the window hides it and the app keeps running; the icon shows how many branches are live
+Stack: Electron, electron-vite (Vite), React 19, TypeScript, Tailwind 4, shadcn/ui on Base UI, zustand, xterm.js + node-pty. The main process (`src/main`) owns git, processes, ports, agents and Teable. The renderer (`src/renderer`) talks to it over a single typed IPC channel, whose contract is in `src/shared/types.ts`. Chinese is the source language for UI text, with English in `src/shared/i18n/en/`; a test catches missing translations.
+
+The earlier native build is in [`swift/`](swift).
 
 ## How worktree isolation works
 
-Creating a worktree through TeaBranch:
+Creating a worktree:
 
-1. **Fetches** the latest `origin/develop`
-2. **Creates** a Git worktree in a sibling directory (`<repo>-worktree/<branch-name>`)
-3. **Generates** a `.env.development.local` with a unique port block, a database and a Redis DB index
-4. **Installs** dependencies via `pnpm install`
-5. **Provisions** the database — new, cloned, or shared with another worktree
-6. **Runs** migrations
+1. **Fetches** the latest `origin/develop`.
+2. **Creates** a Git worktree in a sibling directory (`<repo>-worktree/<branch-name>`).
+3. **Generates** a `.env.development.local` with a unique port block, a database and a Redis DB index.
+4. **Installs** dependencies via `pnpm install`.
+5. **Provisions** the database: new, cloned, or shared with another worktree.
+6. **Runs** migrations.
 
-Ports come from a "slot" that fixes the whole block (`3000 + slot*100`). Slot assignment ignores
-the `# WORKTREE_SLOT=` markers and reads the real port values off disk, because the two drift apart
-whenever a derived port was already taken — trusting the marker hands the same port to two
-worktrees, which then kill each other's dev servers. It searches from the first slot rather than
-from `max + 1`, so a deleted worktree's block gets reused instead of the range creeping upward
-forever.
+Ports come from a "slot" that fixes the whole block (`3000 + slot*100`). Slot assignment reads the real port values off disk rather than trusting the `# WORKTREE_SLOT=` markers. The two drift apart whenever a derived port was already taken, and trusting the marker hands the same port to two worktrees, which then kill each other's dev servers. The search starts from the first slot, so a deleted worktree's block gets reused.
 
 ## Configuration
 
-Settings live in `~/Library/Application Support/com.teabranch.dev/settings.json`, and the ones
-worth changing are in the Settings sheet (⌘,).
+Everything lives in `~/Library/Application Support/com.teabranch.dev/`. That's the same directory the earlier builds used, so an existing install keeps its state. Settings are edited in the app: ⌘, for branches, and **Issue 设置…** for issues.
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `projectPath` | — | Root Git repository path |
-| `basePort` | `3001` | Where port allocation starts looking |
-| `defaultStartCommand` | `npm run dev` | Fallback when `package.json` names no dev script |
-| `terminalApp` | Otty, when installed | Terminal to open worktrees in |
-| `agentCommand` | `claude --dangerously-skip-permissions` | What the Agent button runs. Spelled out rather than named: a terminal starts this where your shell aliases do not exist |
+| File | Holds |
+|------|-------|
+| `settings.json` | Repository path, base port, default start command, terminal app, agent command, language |
+| `categories.json` | Lane assignments |
+| `teable.json` | Issue table and field mapping, triage, models, review engine, batch size, custom prompts |
 
-Lane assignments live alongside it in `categories.json`.
+Teable credentials are kept encrypted with the macOS keychain (Electron `safeStorage`), not in these files.
 
 ## Contributing
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes — the repo uses [Conventional Commits](https://www.conventionalcommits.org/); `feat:` and `fix:` drive the release version
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request — CI builds the app, so a compile error can't land
+1. Fork the repository and create a feature branch.
+2. Commit using [Conventional Commits](https://www.conventionalcommits.org/). `feat:` and `fix:` drive the release version.
+3. Open a pull request. CI lints, typechecks, tests and builds the app.
 
-**Title the PR with a Conventional Commits prefix.** Merges here squash, and GitHub uses the *PR
-title* as the commit subject — so a PR called "Rebuild the interface" lands on `main` as a commit
-semantic-release does not recognise, the release job reports success, the build job is skipped,
-and no release is cut. It has caught this repo twice.
+**Title the PR with a Conventional Commits prefix.** Merges are squashed, and GitHub uses the *PR title* as the commit subject. A PR called "Rebuild the interface" lands on `main` as a commit semantic-release doesn't recognise, so no release is cut.
 
 ## License
 

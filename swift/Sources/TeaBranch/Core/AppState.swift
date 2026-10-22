@@ -8,9 +8,9 @@ extension Notification.Name {
 }
 
 enum AppEvents {
-    static func post(_ name: Notification.Name) {
+    static func post(_ name: Notification.Name, object: String? = nil) {
         DispatchQueue.main.async {
-            NotificationCenter.default.post(name: name, object: nil)
+            NotificationCenter.default.post(name: name, object: object)
         }
     }
 }

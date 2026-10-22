@@ -70,7 +70,10 @@ swift/
     │   ├── TerminalService.swift   open a worktree in a terminal tab / VS Code
     │   ├── OttyService.swift       Otty control CLI: open tabs, run the agent, read open cwds
     │   ├── ProcessStats.swift      per-worktree CPU/memory/uptime, grouped by process group
-    │   └── AgentScratchService.swift  locate what Claude Code generated for a worktree
+    │   ├── AgentScratchService.swift  locate what Claude Code generated for a worktree
+    │   ├── TeableService.swift     Teable REST API: user, fields, records, write-back
+    │   ├── AgentRunner.swift       headless `claude -p` (stream-json) and `codex exec` runs
+    │   └── IssueAgentService.swift issue → worktree → agent → PR → review → agent loop
     └── UI/
         ├── Theme.swift             Liquid Glass surfaces, semantic colour, type ramp, motion
         ├── AppModel.swift          main-actor view model
@@ -191,3 +194,31 @@ find Sources/TeaBranch -name '*.swift' ! -path '*/App/main.swift' -print0 \
   | xargs -0 swiftc -o /tmp/verify /path/to/your/harness/main.swift
 /tmp/verify
 ```
+
+## Issues (Teable → PR)
+
+⌘2 switches the window to the Teable issue table (⌘1 back to branches). Sign in with a Teable
+personal access token — it is kept in the login keychain, never in `settings.json`. Table and
+column mapping live in `teable.json`; runs in `issue-runs.json`; each issue's conversation in
+`transcripts/<recordId>.json`, all next to the settings file.
+
+"自动修复" on an issue:
+
+1. creates a `fix/issue-<id>` worktree through the same pipeline as ⌘N (env, `pnpm install`, DB);
+2. runs `<agent command> -p … --output-format stream-json --session-id <uuid>` in it, with the
+   issue's fields as the prompt, instructing it to commit, push and `gh pr create` with the issue id
+   in the title and body;
+3. finds the PR with `gh pr view`, writes its URL (and optionally a status) back to the record;
+4. reviews it — Codex (`codex exec --sandbox read-only`) or Claude Code, either on its own login or
+   pointed at a Magpie gateway (`ANTHROPIC_BASE_URL`) for any model Magpie routes — and, unless the
+   reviewer ends with `VERDICT: APPROVE`, hands the review back to the issue's agent and re-reviews,
+   up to the configured round limit.
+
+Every issue keeps one Claude Code session. Messages typed in the conversation pane, review
+feedback, and "终端继续" (`claude --resume <id>` in a terminal tab) all continue it.
+
+Auto mode re-reads the table every three minutes and queues untouched issues whose status is in the
+chosen set. Issue text comes from a shared table and the agent runs with whatever permissions the
+agent command grants — by default `--dangerously-skip-permissions` — so anyone who can edit the
+table can steer an agent on this machine. The prompt marks issue content as untrusted, which helps
+but is not a sandbox.

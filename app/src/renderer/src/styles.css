@@ -1,0 +1,319 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* shadcn/ui's dark variant: a `.dark` class on <html>, set from the theme preference. */
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * shadcn/ui (Base UI flavour), neutral palette. Components in `components/ui` use these names; the
+ * app's own shorthands below (`fg`, `fill`, `brand`, …) are aliases onto the same variables, so
+ * there is one palette, not two.
+ */
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  --brand: oklch(0.6 0.19 255);
+  --log: oklch(0.985 0 0);
+  --link: oklch(0.5 0.19 255);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+  --brand: oklch(0.68 0.16 255);
+  --log: oklch(0.17 0 0);
+  --link: oklch(0.78 0.12 230);
+}
+
+@theme inline {
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* App shorthands, onto the palette above. */
+  --color-bg: var(--background);
+  --color-panel: var(--popover);
+  --color-content: var(--foreground);
+  --color-fg: var(--foreground);
+  --color-fg-2: var(--muted-foreground);
+  --color-fg-3: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+  --color-fill: color-mix(in oklab, var(--foreground) 4%, transparent);
+  --color-fill-hover: color-mix(in oklab, var(--foreground) 7%, transparent);
+  --color-fill-active: color-mix(in oklab, var(--foreground) 11%, transparent);
+  --color-selection: var(--accent);
+  --color-border-strong: color-mix(in oklab, var(--foreground) 18%, transparent);
+  --color-brand: var(--brand);
+  --color-brand-soft: color-mix(in oklab, var(--brand) 14%, transparent);
+  --color-ok: oklch(0.7 0.15 162);
+  --color-warn: oklch(0.77 0.16 70);
+  --color-err: var(--destructive);
+  --color-err-soft: color-mix(in oklab, var(--destructive) 12%, transparent);
+  --color-agent: oklch(0.65 0.17 295);
+  --color-agent-soft: color-mix(in oklab, oklch(0.65 0.17 295) 8%, transparent);
+  --color-log: var(--log);
+  --color-log-fg: color-mix(in oklab, var(--foreground) 88%, transparent);
+  --color-log-dim: var(--muted-foreground);
+  --color-log-backend: oklch(0.7 0.16 50);
+  --color-log-frontend: oklch(0.68 0.15 250);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* Transparent so the window's sidebar vibrancy shows through the sidebar column. */
+  background: transparent;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: -0.003em;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+/* The draggable title strip; anything interactive inside opts out. */
+.drag {
+  -webkit-app-region: drag;
+}
+.no-drag,
+.drag button,
+.drag input,
+.drag select {
+  -webkit-app-region: no-drag;
+}
+
+/*
+ * Electron resolves drag regions from the DOM regardless of what is painted on top, so a popup
+ * over a drag strip would have its clicks turned into window drags. Every floating layer opts out.
+ */
+[role='dialog'],
+[role='menu'],
+[role='listbox'],
+[role='tooltip'],
+[data-slot='dialog-overlay'],
+[data-slot$='-content'],
+[data-slot$='-popup'] {
+  -webkit-app-region: no-drag;
+}
+
+.selectable {
+  user-select: text;
+  cursor: text;
+}
+
+/* Content reads like a document: titles, fields and messages can be selected and copied. Controls
+   inside it stay unselectable so a double-click on a button doesn't highlight its label. */
+.selectable-area {
+  user-select: text;
+}
+.selectable-area button,
+.selectable-area [role='button'],
+.selectable-area [role='tab'],
+.selectable-area label {
+  user-select: none;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--foreground) 14%, transparent);
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* Markdown prose in conversations. */
+.prose-chat {
+  line-height: 1.65;
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+.prose-chat p {
+  margin: 0.4em 0;
+}
+.prose-chat ul,
+.prose-chat ol {
+  padding-left: 1.4em;
+  margin: 0.4em 0;
+}
+.prose-chat ul {
+  list-style: disc;
+}
+.prose-chat ol {
+  list-style: decimal;
+}
+.prose-chat li {
+  margin: 0.15em 0;
+}
+.prose-chat li::marker {
+  color: var(--muted-foreground);
+}
+.prose-chat img {
+  max-width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.prose-chat hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1em 0;
+}
+.prose-chat code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--muted);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.prose-chat pre {
+  background: var(--log);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+.prose-chat pre code {
+  background: none;
+  padding: 0;
+}
+.prose-chat a {
+  color: var(--link);
+  text-decoration: none;
+}
+.prose-chat a:hover {
+  text-decoration: underline;
+}
+.prose-chat h1,
+.prose-chat h2,
+.prose-chat h3 {
+  font-size: 1.05em;
+  font-weight: 600;
+  margin: 0.8em 0 0.3em;
+}
+.prose-chat table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+}
+.prose-chat th,
+.prose-chat td {
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+}
+.prose-chat blockquote {
+  border-left: 3px solid var(--border);
+  margin: 0.4em 0;
+  padding-left: 10px;
+  color: var(--muted-foreground);
+}
+
+/* MonoCode's "working for 12s" shimmer: a highlight sweeping across muted text. */
+@keyframes shimmer-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+.shimmer {
+  background: linear-gradient(90deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer-sweep 1.6s linear infinite;
+}

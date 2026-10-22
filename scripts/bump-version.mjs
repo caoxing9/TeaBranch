@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Stamp a release version into every file that carries one. Run by @semantic-release/exec.
 //
-// There are only two: package.json, which exists solely as semantic-release's version anchor,
-// and swift/Resources/Info.plist, which is what build_app.sh puts in the bundle and in the DMG
-// filename. Neither is generated, so both have to be written explicitly.
+// package.json is semantic-release's version anchor; app/package.json is what electron-builder puts
+// in the bundle and in the DMG filename; swift/Resources/Info.plist keeps the earlier native build
+// in step. None is generated, so each has to be written explicitly.
 import { readFileSync, writeFileSync } from "node:fs";
 
 const version = process.argv[2];
@@ -38,6 +38,7 @@ function bumpInfoPlist(path) {
 }
 
 bumpJson("package.json");
+bumpJson("app/package.json");
 bumpInfoPlist("swift/Resources/Info.plist");
 
 console.log(`Bumped version to ${version}`);

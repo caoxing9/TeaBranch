@@ -38,9 +38,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Apple Silicon only since the macOS 26 / Liquid Glass rebuild — there is no Intel slice to
-  # build any more. Needs a runner image with the macOS 26 SDK and Swift 6.2; pin `runs-on` to a
-  # specific image if `macos-latest` lags behind.
+  # The Electron app, Apple Silicon only. The tag already carries the version: semantic-release
+  # stamps it into app/package.json, which electron-builder puts in the bundle and the DMG name.
   build:
     needs: release
     if: needs.release.outputs.published == 'true'
@@ -54,16 +53,33 @@ jobs:
           # and enough history to fast-forward onto it.
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
       - name: Build .app and DMG
-        working-directory: swift
-        run: ./scripts/build_app.sh --dmg
+        working-directory: app
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm dist
+        env:
+          # Ad-hoc signed (electron-builder.yml); don't go looking for a Developer ID in the keychain.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Upload DMG to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.release.outputs.version }}
           files: |
-            swift/build/*.dmg
+            app/dist/*.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -73,11 +89,11 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ needs.release.outputs.version }}"
-          DMG="swift/build/TeaBranch-$VERSION-arm64.dmg"
+          DMG="app/dist/TeaBranch-$VERSION-arm64.dmg"
           test -f "$DMG"
           SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
 
-          # The build ran against the tag, in detached HEAD. `swift/build/` is gitignored, so the
+          # The build ran against the tag, in detached HEAD. `app/dist/` is gitignored, so the
           # DMG survives the switch to main.
           git fetch origin main
           git checkout main

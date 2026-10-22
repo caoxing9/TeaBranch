@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(IssuesModel.self) private var issues
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -28,6 +29,9 @@ struct RootView: View {
         }
         .sheet(isPresented: $model.showSettingsSheet) {
             SettingsSheet().environment(model)
+        }
+        .sheet(isPresented: Binding(get: { issues.showSettings }, set: { issues.showSettings = $0 })) {
+            IssueSettingsSheet().environment(issues)
         }
         // Deleting a worktree throws away uncommitted work and a database, and nothing undoes it.
         // That is the bar a confirmation has to clear — everything else here commits on the click.
@@ -59,7 +63,12 @@ struct RootView: View {
         @Bindable var model = model
 
         return NavigationSplitView(columnVisibility: $columnVisibility) {
-            BranchSidebarView()
+            Group {
+                switch model.section {
+                case .branches: BranchSidebarView()
+                case .issues: IssueSidebarView()
+                }
+            }
                 .navigationSplitViewColumnWidth(
                     min: Layout.sidebarMin,
                     ideal: Layout.sidebarIdeal,
@@ -67,7 +76,9 @@ struct RootView: View {
                 )
         } detail: {
             Group {
-                if let branch = model.selectedBranchValue {
+                if model.section == .issues {
+                    IssuesDetailView()
+                } else if let branch = model.selectedBranchValue {
                     BranchDetailView(branch: branch)
                 } else {
                     noSelection
@@ -79,8 +90,11 @@ struct RootView: View {
         // The error banner floats over the detail pane rather than reshaping the layout: a
         // transient problem should not permanently move the content underneath it.
         .overlay(alignment: .bottom) {
-            if let errorMessage = model.errorMessage {
-                errorBanner(errorMessage)
+            if model.section == .issues, issues.isLoggedIn, let message = issues.errorMessage {
+                errorBanner(message) { issues.errorMessage = nil }
+                    .padding(Layout.gutter)
+            } else if let errorMessage = model.errorMessage {
+                errorBanner(errorMessage) { model.errorMessage = nil }
                     .padding(Layout.gutter)
                     .transition(
                         reduceMotion
@@ -109,7 +123,7 @@ struct RootView: View {
 
     /// Errors surface as a dismissible card over the content rather than a bar wedged into the
     /// chrome — a transient problem should not permanently reshape the layout.
-    private func errorBanner(_ message: String) -> some View {
+    private func errorBanner(_ message: String, dismiss: @escaping () -> Void) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: Typography.body))
@@ -126,7 +140,7 @@ struct RootView: View {
                 horizontalPadding: 7,
                 accessibilityLabel: "Dismiss error"
             ) {
-                model.errorMessage = nil
+                dismiss()
             }
         }
         .padding(.horizontal, 12)
