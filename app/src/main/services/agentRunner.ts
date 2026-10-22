@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentAccess, AgentModel, ConversationEntry, EntryChannel, EntryKind } from '@shared/types'
+import { t } from '@shared/i18n'
 import { readSecret } from '../core/secrets'
 import { loadTeableConfig } from '../core/settingsStore'
 import { shellQuote } from '../core/shell'
@@ -167,7 +168,9 @@ class StreamParser {
 
     switch (event.type) {
       case 'system':
-        return event.subtype === 'init' ? [entry('system', this.channel, `会话已连接 · ${String(event.model ?? '?')}`)] : []
+        if (event.subtype !== 'init') return []
+        const model = String(event.model ?? '?')
+        return [{ ...entry('system', this.channel, t('会话已连接 · {model}', { model })), connectedModel: model }]
       case 'assistant': {
         // One API call can arrive as several events (one per content block); report it once.
         const message = event.message as { id?: string; usage?: Record<string, number> } | undefined
@@ -208,8 +211,9 @@ class StreamParser {
         const windows = models.map((model) => model.contextWindow ?? 0).filter(Boolean)
         if (windows.length) this.contextWindow = Math.max(...windows)
         const seconds = Number(event.duration_ms ?? 0) / 1000
-        const summary = `完成 · ${Number(event.num_turns ?? 0)} 轮 · ${seconds.toFixed(0)}s · $${this.cost.toFixed(2)}`
-        return [entry('result', this.channel, summary, this.isError)]
+        const stats = { turns: Number(event.num_turns ?? 0), seconds: Math.round(seconds), costUSD: this.cost }
+        const summary = t('完成 · {turns} 轮 · {seconds}s · ${cost}', { ...stats, cost: this.cost.toFixed(2) })
+        return [{ ...entry('result', this.channel, summary, this.isError), stats }]
       }
       default:
         return []
@@ -233,7 +237,7 @@ function flatten(content: unknown): string {
 
 // MARK: - Codex
 
-const htmlNotice = '（模型服务返回了一个 HTML 错误页，已省略）'
+const htmlNotice = (): string => t('（模型服务返回了一个 HTML 错误页，已省略）')
 const connectionPattern = /Unable to connect|Connection refused|ECONNREFUSED|error sending request|stream disconnected|failed to connect/i
 
 /** `codex exec` in a read-only sandbox: it can read the repo and run git, not edit. */
@@ -264,7 +268,7 @@ export function runCodexReview(options: {
     }
     if (lower.startsWith('<!doctype html') || lower.startsWith('<html')) {
       inHTML = !lower.includes('</html>')
-      options.onEntry(entry('system', 'review', htmlNotice, true))
+      options.onEntry(entry('system', 'review', htmlNotice(), true))
       return
     }
     options.onEntry(entry('system', 'review', truncate(line, 600)))
@@ -284,7 +288,7 @@ export function runCodexReview(options: {
       finalText: text,
       costUSD: 0,
       isError: !isCleanExit(exit) || !text,
-      diagnosis: connectionFailed ? 'Codex 连不上模型服务 — 检查 ~/.codex/config.toml 指向的服务（如 Magpie）是否在运行' : undefined,
+      diagnosis: connectionFailed ? t('Codex 连不上模型服务 — 检查 ~/.codex/config.toml 指向的服务（如 Magpie）是否在运行') : undefined,
     })
   })
   return {
@@ -305,7 +309,7 @@ export async function magpieModels(baseURL: string): Promise<string[]> {
     headers: key ? { Authorization: `Bearer ${key}` } : {},
     signal: AbortSignal.timeout(5000),
   }).catch(() => null)
-  if (!response?.ok) throw new Error(`Magpie at ${baseURL} did not return a model list — is it running?`)
+  if (!response?.ok) throw new Error(t('{url} 上的 Magpie 没有返回模型列表 — 它在运行吗？', { url: baseURL }))
   const payload = (await response.json()) as { data?: { id: string }[] }
   return (payload.data ?? []).map((model) => model.id).sort()
 }

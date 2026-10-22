@@ -1,4 +1,5 @@
 import { AlertTriangle, GitBranch } from 'lucide-react'
+import { t } from '@shared/i18n'
 import { useEffect, useState } from 'react'
 import { Button, IconButton, TitleStrip } from '@/components/kit'
 import { BranchDetail } from '@/features/branches/BranchDetail'
@@ -82,7 +83,7 @@ function ErrorToast() {
       <div className="pointer-events-auto flex max-w-xl items-start gap-2.5 rounded-xl border border-err/30 bg-panel/95 px-3.5 py-2.5 shadow-xl backdrop-blur-xl">
         <AlertTriangle className="mt-0.5 size-4 shrink-0 text-err" />
         <div className="selectable flex-1 text-[13px] whitespace-pre-wrap">{message}</div>
-        <IconButton label="关闭" onClick={dismiss} className="-my-1">
+        <IconButton label={t('关闭')} onClick={dismiss} className="-my-1">
           ✕
         </IconButton>
       </div>
@@ -100,12 +101,10 @@ function Onboarding() {
         <GitBranch className="size-12 text-brand" strokeWidth={1.5} />
         <div className="text-center">
           <h1 className="text-[34px] font-bold tracking-tight">TeaBranch</h1>
-          <p className="mt-2 max-w-sm text-[14px] text-fg-2">
-            Run every branch in parallel — each with its own worktree, ports and database.
-          </p>
+          <p className="mt-2 max-w-sm text-[14px] text-fg-2">{t('并行运行每个分支——各有自己的 worktree、端口和数据库。')}</p>
         </div>
         <Button tone="accent" className="h-9 px-5" onClick={() => void chooseProject()}>
-          Choose Repository…
+          {t('选择仓库…')}
         </Button>
         {error && <div className="rounded-md bg-err-soft px-3 py-2 text-[13px] text-err">{error}</div>}
       </div>
@@ -140,8 +139,8 @@ function SidebarResizer({ width, onResize }: { width: number; onResize: (width: 
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-label="调整侧栏宽度"
-      title="拖动调整宽度，双击还原"
+      aria-label={t('调整侧栏宽度')}
+      title={t('拖动调整宽度，双击还原')}
       onDoubleClick={() => {
         onResize(290)
         save(290)

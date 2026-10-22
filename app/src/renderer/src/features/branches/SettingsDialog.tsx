@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react'
+import type { LanguagePref } from '@shared/i18n'
+import { t } from '@shared/i18n'
 import type { TerminalPreset } from '@shared/types'
 import { Button, Dialog, Field, inputClass, Segmented } from '@/components/kit'
 import { api } from '@/lib/api'
 import { type Theme, useApp } from '@/store/app'
 
 const custom = '__custom__'
+
+/** Main rebuilds its menu itself; the renderer simply reloads into the new language. */
+async function changeLanguage(language: LanguagePref) {
+  await api.updateSettings({ language })
+  location.reload()
+}
 
 export function SettingsDialog() {
   const close = () => useApp.setState({ showSettings: false })
@@ -27,8 +35,8 @@ export function SettingsDialog() {
   }, [presets, isPreset, terminal])
 
   return (
-    <Dialog title="设置" onClose={close} width={480}>
-      <Field label="终端" hint="Otty 能直接在新标签里运行命令，也能告诉我们哪些 worktree 已经开着终端。">
+    <Dialog title={t('设置')} onClose={close} width={480}>
+      <Field label={t('终端')} hint={t('Otty 能直接在新标签里运行命令，也能告诉我们哪些 worktree 已经开着终端。')}>
         <select
           value={selection}
           onChange={(event) => {
@@ -42,40 +50,51 @@ export function SettingsDialog() {
               {preset.label}
             </option>
           ))}
-          <option value={custom}>自定义…</option>
+          <option value={custom}>{t('自定义…')}</option>
         </select>
       </Field>
       {selection === custom && (
-        <Field label="应用名">
+        <Field label={t('应用名')}>
           <div className="flex gap-2">
             <input value={customApp} onChange={(e) => setCustomApp(e.target.value)} placeholder="WezTerm" className={inputClass} />
-            <Button onClick={() => void updateSettings({ terminalApp: customApp.trim() || undefined })}>保存</Button>
+            <Button onClick={() => void updateSettings({ terminalApp: customApp.trim() || undefined })}>{t('保存')}</Button>
           </div>
         </Field>
       )}
-      <Field label="Agent 命令" hint="“Agent” 按钮和 issue 自动修复都用它启动 Claude Code。写完整命令，别用 shell 别名。">
+      <Field label={t('Agent 命令')} hint={t('“Agent” 按钮和 issue 自动修复都用它启动 Claude Code。写完整命令，别用 shell 别名。')}>
         <div className="flex gap-2">
           <input value={agentCommand} onChange={(e) => setAgentCommand(e.target.value)} className={`${inputClass} font-mono`} />
           <Button
             disabled={agentCommand.trim() === settings?.agentCommand}
             onClick={() => void updateSettings({ agentCommand: agentCommand.trim() })}
           >
-            保存
+            {t('保存')}
           </Button>
         </div>
       </Field>
-      <Field label="外观">
+      <Field label={t('外观')}>
         <Segmented<Theme>
           value={theme}
           onChange={setTheme}
           options={[
-            { value: 'system', label: '跟随系统' },
-            { value: 'light', label: '浅色' },
-            { value: 'dark', label: '深色' },
+            { value: 'system', label: t('跟随系统') },
+            { value: 'light', label: t('浅色') },
+            { value: 'dark', label: t('深色') },
           ]}
         />
       </Field>
-      <Field label="仓库">
+      <Field label={t('语言 / Language')}>
+        <Segmented<LanguagePref>
+          value={settings?.language ?? 'system'}
+          onChange={(language) => void changeLanguage(language)}
+          options={[
+            { value: 'system', label: t('跟随系统') },
+            { value: 'zh', label: '中文' }, // i18n-ignore: each language names itself
+            { value: 'en', label: 'English' },
+          ]}
+        />
+      </Field>
+      <Field label={t('仓库')}>
         <div className="selectable truncate font-mono text-[12px] text-fg-2">{settings?.projectPath}</div>
       </Field>
     </Dialog>

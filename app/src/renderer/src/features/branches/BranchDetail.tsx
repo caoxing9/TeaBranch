@@ -1,4 +1,5 @@
 import { Bot, Check, Code2, Globe, MoreHorizontal, PanelRight, Play, Square, Terminal } from 'lucide-react'
+import { t } from '@shared/i18n'
 import { useState } from 'react'
 import { isLive } from '@shared/types'
 import { Button, EmptyState, IconButton, MenuButton, Spinner, StatusDot, TitleStrip } from '@/components/kit'
@@ -9,7 +10,8 @@ import { branchMenu, statusColor } from './BranchSidebar'
 import { Inspector } from './Inspector'
 import { LogPane } from './LogPane'
 
-const statusText = { running: 'Running', building: 'Building', error: 'Error', stopped: 'Stopped' } as const
+const statusText = (status: 'running' | 'building' | 'error' | 'stopped'): string =>
+  ({ running: t('运行中'), building: t('构建中'), error: t('出错'), stopped: t('已停止') })[status]
 
 export function BranchDetail() {
   const state = useApp()
@@ -26,8 +28,8 @@ export function BranchDetail() {
         <TitleStrip />
         <EmptyState
           icon={<PanelRight className="size-9" strokeWidth={1.2} />}
-          title="选择一个分支"
-          detail="从左侧选择，或按 ⌘N 新建 worktree。"
+          title={t('选择一个分支')}
+          detail={t('从左侧选择，或按 ⌘N 新建 worktree。')}
         />
       </div>
     )
@@ -50,11 +52,12 @@ export function BranchDetail() {
           </div>
           <div className="mt-px flex items-center gap-1.5 text-[11.5px] text-fg-2">
             <StatusDot color={statusColor[status]} pulse={status === 'building'} />
-            <span>{statusText[status]}</span>
+            <span>{statusText(status)}</span>
             {port && live && <span>· localhost:{port}</span>}
             {usage && (
               <span className="tabular-nums">
-                · {usage.cpuPercent.toFixed(0)}% CPU · {formatBytes(usage.residentBytes)} · up {formatDuration(usage.uptimeSeconds)}
+                · {usage.cpuPercent.toFixed(0)}% CPU · {formatBytes(usage.residentBytes)} ·{' '}
+                {t('已运行 {duration}', { duration: formatDuration(usage.uptimeSeconds) })}
               </span>
             )}
           </div>
@@ -68,22 +71,22 @@ export function BranchDetail() {
             icon={busy ? <Spinner /> : live ? <Square className="size-3.5" /> : <Play className="size-3.5" />}
             onClick={() => void state.toggle(branch)}
           >
-            {live ? 'Stop' : 'Start'}
+            {live ? t('停止') : t('启动')}
           </Button>
           <Button
             tone="ghost"
             icon={<Globe className="size-3.5" />}
             disabled={!live || !port}
             onClick={() => act(() => api.openPreview(branch.name))}
-            title={port ? `打开 http://<branch>.localhost:${port}` : '启动后可预览'}
+            title={port ? t('打开 {url}', { url: `http://<branch>.localhost:${port}` }) : t('启动后可预览')}
           >
-            Preview
+            {t('预览')}
           </Button>
           <Button
             tone="ghost"
             icon={<Bot className="size-3.5" />}
             onClick={() => act(() => api.openAgent(branch.name))}
-            title={`在终端新标签里运行 ${state.settings?.agentCommand ?? ''}`}
+            title={t('在终端新标签里运行 {command}', { command: state.settings?.agentCommand ?? '' })}
           >
             Agent
           </Button>
@@ -93,19 +96,19 @@ export function BranchDetail() {
             onClick={() => act(() => api.openTerminal(branch.name))}
             className={state.withTerminal.has(branch.name) ? 'text-agent' : undefined}
           >
-            Terminal
+            {t('终端')}
           </Button>
           <Button tone="ghost" icon={<Code2 className="size-3.5" />} onClick={() => act(() => api.openEditor(branch.name))}>
-            Code
+            {t('代码')}
           </Button>
           <IconButton
-            label="端口、数据库和环境变量"
+            label={t('端口、数据库和环境变量')}
             onClick={() => setInspector(!inspector)}
             className={inspector ? 'bg-fill-hover text-fg' : undefined}
           >
             <PanelRight className="size-4" />
           </IconButton>
-          <MenuButton label="更多操作" entries={() => branchMenu(branch, useApp.getState())}>
+          <MenuButton label={t('更多操作')} entries={() => branchMenu(branch, useApp.getState())}>
             <MoreHorizontal className="size-4" />
           </MenuButton>
         </div>
@@ -126,21 +129,23 @@ export function BranchDetail() {
   )
 }
 
-const creationSteps = [
-  ['fetch', '拉取 develop'],
-  ['branch', '创建分支'],
-  ['env', '生成环境'],
-  ['install', '安装依赖'],
-  ['database', '数据库'],
-  ['migrate', '迁移'],
-] as const
+const creationSteps = () =>
+  [
+    ['fetch', t('拉取 develop')],
+    ['branch', t('创建分支')],
+    ['env', t('生成环境')],
+    ['install', t('安装依赖')],
+    ['database', t('数据库')],
+    ['migrate', t('迁移')],
+  ] as const
 
 /** Where a background creation has got to, as a row of steps. */
 function CreationSteps({ step, message }: { step: string; message: string }) {
-  const current = creationSteps.findIndex(([name]) => name === step)
+  const steps = creationSteps()
+  const current = steps.findIndex(([name]) => name === step)
   return (
     <div className="flex shrink-0 items-center gap-3 border-b bg-brand-soft px-4 py-2 text-[12px]">
-      {creationSteps.map(([name, label], index) => (
+      {steps.map(([name, label], index) => (
         <span
           key={name}
           className={cx(
@@ -170,7 +175,7 @@ function CreatingView({ branch, step, message }: { branch: string; step: string;
       <header className="drag flex h-[52px] shrink-0 items-center gap-2 border-b px-4">
         <Spinner className="text-brand" />
         <h1 className="truncate text-[14px] font-semibold">{branch}</h1>
-        <span className="text-[12px] text-muted-foreground">创建中</span>
+        <span className="text-[12px] text-muted-foreground">{t('创建中')}</span>
       </header>
       <CreationSteps step={step} message={message} />
       <div className="min-h-0 flex-1">

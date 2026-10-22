@@ -1,4 +1,5 @@
 import { type NativeImage, nativeImage, nativeTheme, type Tray } from 'electron'
+import { t } from '@shared/i18n'
 
 /**
  * The menu-bar icon while agents work: the leaf stays put and the app icon's four-point spark
@@ -69,7 +70,7 @@ export function trayActivity(tray: Tray, idle: NativeImage) {
   let frame = 0
   return (count: number) => {
     if (count > 0) {
-      tray.setToolTip(`TeaBranch · ${count} 个 agent 在跑`)
+      tray.setToolTip(t('TeaBranch · {count} 个 agent 在跑', { count }))
       if (framesDark !== nativeTheme.shouldUseDarkColors) {
         framesDark = nativeTheme.shouldUseDarkColors
         frames = animatedFrames(idle, framesDark)

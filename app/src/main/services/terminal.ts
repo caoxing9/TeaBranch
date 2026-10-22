@@ -1,3 +1,4 @@
+import { t } from '@shared/i18n'
 import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { shell } from 'electron'
@@ -49,12 +50,12 @@ async function isRunning(app: string): Promise<boolean> {
 
 async function ottyOpen(path: string, title: string, command?: string): Promise<void> {
   const cli = ottyCLI()
-  if (!cli) throw new TeaBranchError('Otty is not installed.')
+  if (!cli) throw new TeaBranchError(t('没有安装 Otty。'))
   // A cold Otty has no control socket yet, so it gets `open` (a window) instead of `tab new`.
   const args = (await isRunning('Otty')) ? ['tab', 'new', '--cwd', path, '--title', title] : ['open', path, '--title', title]
   if (command) args.push('--command', command)
   const result = await run(cli, args)
-  if (!result.ok) throw new TeaBranchError(`Otty refused the request: ${result.stderr.trim()}`)
+  if (!result.ok) throw new TeaBranchError(t('Otty 拒绝了请求：{error}', { error: result.stderr.trim() }))
   await run('open', ['-a', 'Otty'])
 }
 
@@ -92,7 +93,7 @@ export const canRunCommands = (app?: string): boolean =>
   isOtty(app) ? ottyInstalled() : (presets.find((p) => same(p.value, app))?.supportsCommands ?? false)
 
 export async function open(path: string, app: string | undefined, title: string, command?: string): Promise<void> {
-  if (!existsSync(path)) throw new TeaBranchError(`Path does not exist: ${path}`)
+  if (!existsSync(path)) throw new TeaBranchError(t('路径不存在：{path}', { path }))
   if (isOtty(app)) return ottyOpen(path, title, command)
   if (!app) return openSystemTerminal(path, command)
   if (same(app, 'Warp')) {
@@ -102,7 +103,7 @@ export async function open(path: string, app: string | undefined, title: string,
   if (same(app, 'iTerm') || same(app, 'iTerm2')) return openITerm(path, command)
   if (ghosttyFamily.includes(app.toLowerCase())) return openGhosttyLike(app, path, command)
   const result = await run('open', ['-a', app, path])
-  if (!result.ok) throw new TeaBranchError(`Failed to open ${app}: ${result.stderr}`)
+  if (!result.ok) throw new TeaBranchError(t('打开 {app} 失败：{error}', { app, error: result.stderr }))
 }
 
 const cdCommand = (path: string, command?: string): string =>
@@ -114,7 +115,7 @@ async function runAppleScript(script: string, hint: string): Promise<void> {
   const result = await run('osascript', ['-e', script])
   if (!result.ok) {
     throw new TeaBranchError(
-      `Failed to drive ${hint}: ${result.stderr.trim()} (grant Accessibility permission to TeaBranch in System Settings → Privacy & Security)`,
+      t('控制 {hint} 失败：{error}（在 系统设置 → 隐私与安全性 里给 TeaBranch 辅助功能权限）', { hint, error: result.stderr.trim() }),
     )
   }
 }
@@ -154,7 +155,7 @@ function openITerm(path: string, command?: string): Promise<void> {
 async function openGhosttyLike(app: string, path: string, command?: string): Promise<void> {
   if (!(await isRunning(app))) {
     const result = await run('open', ['-na', app, '--args', `--working-directory=${path}`])
-    if (!result.ok) throw new TeaBranchError(`Failed to open ${app}: ${result.stderr}`)
+    if (!result.ok) throw new TeaBranchError(t('打开 {app} 失败：{error}', { app, error: result.stderr }))
     return
   }
   await runAppleScript(
@@ -183,6 +184,6 @@ export async function openInVSCode(path: string): Promise<void> {
   }
   const result = await run('code', ['-n', target])
   if (!result.ok) {
-    throw new TeaBranchError(`Failed to open VS Code: ${result.stderr || 'is the `code` command installed?'}`)
+    throw new TeaBranchError(t('打开 VS Code 失败：{error}', { error: result.stderr || t('装了 `code` 命令吗？') }))
   }
 }

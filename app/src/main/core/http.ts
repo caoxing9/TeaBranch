@@ -1,4 +1,5 @@
 import { net } from 'electron'
+import { t } from '@shared/i18n'
 
 /**
  * HTTP through Chromium's network stack rather than Node's: `net.fetch` honours the system proxy
@@ -21,6 +22,7 @@ export async function httpFetch(url: string | URL, init: RequestInit = {}): Prom
     }
     const cause = (first as { cause?: { code?: string; message?: string } }).cause
     const host = new URL(String(url)).host
-    throw new Error(`连不上 ${host}：${cause?.code ?? cause?.message ?? (first as Error).message}（检查网络或代理）`, { cause: first })
+    const reason = cause?.code ?? cause?.message ?? (first as Error).message
+    throw new Error(t('连不上 {host}：{reason}（检查网络或代理）', { host, reason }), { cause: first })
   }
 }

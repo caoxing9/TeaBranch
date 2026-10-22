@@ -1,4 +1,5 @@
 import { TabBar } from './kit'
+import { t } from '@shared/i18n'
 import { type Section, useApp } from '@/store/app'
 
 /** Branches ⇄ Issues, under the title bar of both sidebars so it never moves. */
@@ -11,7 +12,7 @@ export function SectionSwitcher() {
       onChange={(value) => set({ section: value })}
       options={[
         { value: 'issues', label: 'Issues' },
-        { value: 'branches', label: '分支' },
+        { value: 'branches', label: t('分支') },
       ]}
     />
   )

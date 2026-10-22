@@ -1,4 +1,5 @@
 import { MessageSquare, Plus, X } from 'lucide-react'
+import { t } from '@shared/i18n'
 import { useEffect, useState } from 'react'
 import { type Chat, isActivePhase } from '@shared/types'
 import { ContextMenuArea, Spinner } from '@/components/kit'
@@ -66,9 +67,9 @@ export function IssueTabs() {
             entries={() =>
               tab.chat
                 ? [
-                    { label: '关闭', onSelect: () => close(tab.id, neighbour(tab.id)) },
+                    { label: t('关闭'), onSelect: () => close(tab.id, neighbour(tab.id)) },
                     {
-                      label: '关闭其他对话',
+                      label: t('关闭其他对话'),
                       onSelect: () =>
                         closeOthers(
                           tab.id,
@@ -76,7 +77,7 @@ export function IssueTabs() {
                         ),
                     },
                   ]
-                : [{ label: '关闭所有对话', disabled: !chatTabs.length, onSelect: () => chatTabs.forEach((other) => close(other.id)) }]
+                : [{ label: t('关闭所有对话'), disabled: !chatTabs.length, onSelect: () => chatTabs.forEach((other) => close(other.id)) }]
             }
           >
             <div
@@ -128,7 +129,7 @@ export function IssueTabs() {
               {tab.chat && (
                 <button
                   type="button"
-                  aria-label="关闭"
+                  aria-label={t('关闭')}
                   onClick={(event) => {
                     event.stopPropagation()
                     close(tab.id, neighbour(tab.id))
@@ -186,7 +187,7 @@ function NewChatButton() {
   const here =
     issue && needsWorktree
       ? {
-          label: `${issue.key}（先为它建 worktree）`,
+          label: t('{key}（先为它建 worktree）', { key: issue.key }),
           go: () => {
             setBuilding({ key: issue.key, message: '' })
             open(() => api.createIssueChat(issue).finally(() => setBuilding(null)))
@@ -202,7 +203,14 @@ function NewChatButton() {
     <div className="flex min-w-0 items-center">
       <ContextMenuArea
         entries={() => [
-          ...(main ? [{ label: `主仓库${main.branch ? ` · ${main.branch}` : ''}`, onSelect: () => start(main.cwd, main.branch) }] : []),
+          ...(main
+            ? [
+                {
+                  label: main.branch ? t('主仓库 · {branch}', { branch: main.branch }) : t('主仓库'),
+                  onSelect: () => start(main.cwd, main.branch),
+                },
+              ]
+            : []),
           ...worktrees.map((branch) => ({ label: branch.name, onSelect: () => start(branch.worktreePath as string, branch.name) })),
         ]}
       >
@@ -210,7 +218,7 @@ function NewChatButton() {
           type="button"
           disabled={!here || !!building}
           onClick={() => here?.go()}
-          title={here ? `新对话 · ${here.label}\n右键选择其他位置` : '新对话'}
+          title={here ? `${t('新对话 · {place}', { place: here.label })}\n${t('右键选择其他位置')}` : t('新对话')}
           className="no-drag mb-1 grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
         >
           {building ? <Spinner className="size-3.5" /> : <Plus className="size-4" />}
@@ -218,7 +226,8 @@ function NewChatButton() {
       </ContextMenuArea>
       {building && (
         <span className="mb-1 truncate pl-1 text-[11.5px] text-muted-foreground">
-          正在为 {building.key} 建 worktree{building.message ? ` · ${building.message}` : '…'}
+          {t('正在为 {key} 建 worktree', { key: building.key })}
+          {building.message ? ` · ${building.message}` : '…'}
         </span>
       )}
     </div>

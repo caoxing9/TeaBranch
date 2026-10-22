@@ -1,3 +1,4 @@
+import { t } from '@shared/i18n'
 import { databaseURL } from '../core/envFile'
 import { log, TeaBranchError } from '../core/log'
 import { run } from '../core/shell'
@@ -26,11 +27,11 @@ export async function create(name: string, template: string, baseURL: string): P
   const created = await run('psql', [admin, '-c', `CREATE DATABASE "${name}" TEMPLATE "${template}"`])
   if (!created.ok) {
     if (!created.stderr.includes('being accessed by other users')) {
-      throw new TeaBranchError(`Failed to create database: ${created.stderr}`)
+      throw new TeaBranchError(t('创建数据库失败：{error}', { error: created.stderr }))
     }
     log.info(`Template db '${template}' in use, creating empty database '${name}'`)
     const empty = await run('psql', [admin, '-c', `CREATE DATABASE "${name}"`])
-    if (!empty.ok) throw new TeaBranchError(`Failed to create database: ${empty.stderr}`)
+    if (!empty.ok) throw new TeaBranchError(t('创建数据库失败：{error}', { error: empty.stderr }))
   }
   return databaseURL.replacingName(baseURL, name)
 }
@@ -38,11 +39,11 @@ export async function create(name: string, template: string, baseURL: string): P
 /** Make sure the database a URL names exists, creating it empty if not. */
 export async function ensureExists(url: string): Promise<string> {
   const name = databaseURL.nameOf(url)
-  if (!name) throw new TeaBranchError('Cannot extract database name from URL')
+  if (!name) throw new TeaBranchError(t('无法从 URL 里取出数据库名'))
   const admin = adminURL(url)
   if (await exists(name, admin)) return url
   log.info(`Database '${name}' does not exist, creating empty`)
   const created = await run('psql', [admin, '-c', `CREATE DATABASE "${name}"`])
-  if (!created.ok) throw new TeaBranchError(`Failed to create database '${name}': ${created.stderr}`)
+  if (!created.ok) throw new TeaBranchError(t('创建数据库 {name} 失败：{error}', { name, error: created.stderr }))
   return url
 }

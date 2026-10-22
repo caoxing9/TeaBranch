@@ -1,13 +1,16 @@
 import { ChevronDown, ChevronRight, MoreHorizontal, Plus, Search, Terminal } from 'lucide-react'
 import type { Branch, DevCategory } from '@shared/types'
-import { categoryLabel, isLive } from '@shared/types'
+import { isLive } from '@shared/types'
+import { t } from '@shared/i18n'
 import { SectionSwitcher } from '@/components/SectionSwitcher'
 import { ContextMenuArea, IconButton, type MenuEntry, type MenuItem, MenuButton, Spinner, StatusDot } from '@/components/kit'
 import { api } from '@/lib/api'
-import { cx } from '@/lib/format'
+import { cx, plural } from '@/lib/format'
 import { categoryOf, statusOf, useApp, visibleBranches } from '@/store/app'
 
 const lanes: DevCategory[] = ['developing', 'todo', 'done']
+
+export const laneLabel = (lane: DevCategory): string => ({ developing: t('开发中'), todo: t('待开发'), done: t('已完成') })[lane]
 
 /**
  * The selected row is a raised card, not a tint: over the translucent sidebar a 2% grey
@@ -46,11 +49,11 @@ export function BranchSidebar() {
                 if (event.key === 'Escape') state.set({ search: '' })
                 if (event.key === 'Enter' && visible[0]) state.set({ selectedBranch: visible[0].name })
               }}
-              placeholder="搜索分支"
+              placeholder={t('搜索分支')}
               className="selectable w-full bg-transparent text-[12.5px] outline-none placeholder:text-fg-3"
             />
           </div>
-          <IconButton label="新建分支 (⌘N)" onClick={() => state.set({ showCreate: true })}>
+          <IconButton label={t('新建分支 (⌘N)')} onClick={() => state.set({ showCreate: true })}>
             <Plus className="size-4" />
           </IconButton>
         </div>
@@ -78,10 +81,10 @@ export function BranchSidebar() {
           ))}
         {state.branches.length === 0 && Object.keys(state.creating).length === 0 ? (
           <div className="px-3 py-10 text-center text-[13px] text-fg-2">
-            {state.error ? '读取仓库失败' : '还没有分支，按 ⌘N 新建 worktree。'}
+            {state.error ? t('读取仓库失败') : t('还没有分支，按 ⌘N 新建 worktree。')}
           </div>
         ) : visible.length === 0 ? (
-          <div className="px-3 py-10 text-center text-[13px] text-fg-2">没有匹配的分支</div>
+          <div className="px-3 py-10 text-center text-[13px] text-fg-2">{t('没有匹配的分支')}</div>
         ) : (
           lanes.map((lane) => {
             const branches = visible.filter((branch) => categoryOf(state.categories, branch.name) === lane)
@@ -95,7 +98,7 @@ export function BranchSidebar() {
                   className="flex w-full items-center gap-1 px-2 pt-2 pb-1 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase hover:text-fg-2"
                 >
                   {collapsed ? <ChevronRight className="size-3" /> : <ChevronDown className="size-3" />}
-                  {categoryLabel[lane]}
+                  {laneLabel(lane)}
                   <span className="font-normal text-fg-3">{branches.length}</span>
                 </button>
                 {!collapsed && branches.map((branch) => <BranchRow key={branch.name} branch={branch} />)}
@@ -109,13 +112,13 @@ export function BranchSidebar() {
         {live > 0 ? (
           <span className="flex items-center gap-1.5">
             <StatusDot color="bg-ok" />
-            {live} running
+            {t('{n} 个运行中', { n: live })}
           </span>
         ) : (
-          <span>{state.branches.length} branches</span>
+          <span>{plural(t('{n} 个分支', { n: state.branches.length }))}</span>
         )}
         <div className="flex-1" />
-        <MenuButton label="排序、外观和设置" entries={() => appMenu(state)}>
+        <MenuButton label={t('排序、外观和设置')} entries={() => appMenu(state)}>
           <MoreHorizontal className="size-4" />
         </MenuButton>
       </div>
@@ -130,18 +133,18 @@ function appMenu(state: ReturnType<typeof useApp.getState>): MenuEntry[] {
     onSelect: () => state.set({ sortKey: key, sortAscending: state.sortKey === key ? !state.sortAscending : true }),
   })
   return [
-    { label: '排序', items: [sort('name', '名称'), sort('status', '状态'), sort('category', '分类')] },
+    { label: t('排序'), items: [sort('name', t('名称')), sort('status', t('状态')), sort('category', t('分类'))] },
     {
-      label: '外观',
+      label: t('外观'),
       items: [
-        { label: '跟随系统', checked: state.theme === 'system', onSelect: () => state.setTheme('system') },
-        { label: '浅色', checked: state.theme === 'light', onSelect: () => state.setTheme('light') },
-        { label: '深色', checked: state.theme === 'dark', onSelect: () => state.setTheme('dark') },
+        { label: t('跟随系统'), checked: state.theme === 'system', onSelect: () => state.setTheme('system') },
+        { label: t('浅色'), checked: state.theme === 'light', onSelect: () => state.setTheme('light') },
+        { label: t('深色'), checked: state.theme === 'dark', onSelect: () => state.setTheme('dark') },
       ],
     },
     'separator',
-    { label: '打开仓库…', onSelect: () => void state.chooseProject() },
-    { label: '设置…', onSelect: () => state.set({ showSettings: true }) },
+    { label: t('打开仓库…'), onSelect: () => void state.chooseProject() },
+    { label: t('设置…'), onSelect: () => state.set({ showSettings: true }) },
   ]
 }
 
@@ -149,28 +152,28 @@ export function branchMenu(branch: Branch, state: ReturnType<typeof useApp.getSt
   const live = isLive(statusOf(branch))
   const category = categoryOf(state.categories, branch.name)
   return [
-    { label: live ? '停止' : '启动', onSelect: () => void state.toggle(branch), disabled: state.busy.has(branch.name) },
+    { label: live ? t('停止') : t('启动'), onSelect: () => void state.toggle(branch), disabled: state.busy.has(branch.name) },
     {
-      label: '打开预览',
+      label: t('打开预览'),
       onSelect: () => void state.run(null, () => api.openPreview(branch.name)),
       disabled: !branch.environment?.port || !live,
     },
     'separator',
-    { label: '打开 Agent', onSelect: () => void state.run(null, () => api.openAgent(branch.name)) },
-    { label: '在终端打开', onSelect: () => void state.run(null, () => api.openTerminal(branch.name)) },
-    { label: '在 VS Code 打开', onSelect: () => void state.run(null, () => api.openEditor(branch.name)) },
+    { label: t('打开 Agent'), onSelect: () => void state.run(null, () => api.openAgent(branch.name)) },
+    { label: t('在终端打开'), onSelect: () => void state.run(null, () => api.openTerminal(branch.name)) },
+    { label: t('在 VS Code 打开'), onSelect: () => void state.run(null, () => api.openEditor(branch.name)) },
     'separator',
     {
-      label: '分类',
+      label: t('分类'),
       items: lanes.map((lane) => ({
-        label: categoryLabel[lane],
+        label: laneLabel(lane),
         checked: lane === category,
         onSelect: () => void state.setCategory(branch.name, lane),
       })),
     },
     'separator',
     {
-      label: '删除 Worktree…',
+      label: t('删除 Worktree…'),
       danger: true,
       disabled: !branch.managed || branch.isCurrent,
       onSelect: () => state.set({ pendingDelete: branch.name }),
@@ -204,12 +207,20 @@ function BranchRow({ branch }: { branch: Branch }) {
           </div>
           {(isLive(status) || busy) && (
             <div className="mt-px text-[11px] text-fg-2 tabular-nums">
-              {creating ? creating.message : busy ? 'Working…' : status === 'running' ? 'Running' : status === 'building' ? 'Building' : ''}
+              {creating
+                ? creating.message
+                : busy
+                  ? t('处理中…')
+                  : status === 'running'
+                    ? t('运行中')
+                    : status === 'building'
+                      ? t('构建中')
+                      : ''}
               {port && isLive(status) ? ` · :${port}` : ''}
             </div>
           )}
         </div>
-        {state.withTerminal.has(branch.name) && <Terminal className="size-3.5 text-fg-3" aria-label="终端已打开" />}
+        {state.withTerminal.has(branch.name) && <Terminal className="size-3.5 text-fg-3" aria-label={t('终端已打开')} />}
       </button>
     </ContextMenuArea>
   )

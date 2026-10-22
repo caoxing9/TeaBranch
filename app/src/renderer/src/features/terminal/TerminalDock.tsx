@@ -1,4 +1,5 @@
 import { ChevronDown, Plus, SquareTerminal, X } from 'lucide-react'
+import { t } from '@shared/i18n'
 import { useEffect, useRef, useState } from 'react'
 import { ContextMenuArea } from '@/components/kit'
 import { cn } from '@/lib/utils'
@@ -56,7 +57,7 @@ export function TerminalDock() {
       <div
         role="separator"
         aria-orientation="horizontal"
-        aria-label="调整终端高度"
+        aria-label={t('调整终端高度')}
         className="no-drag absolute inset-x-0 -top-[3px] z-10 h-1.5 cursor-row-resize hover:bg-brand/30"
         onPointerDown={(event) => {
           event.preventDefault()
@@ -79,8 +80,8 @@ export function TerminalDock() {
             <ContextMenuArea
               key={term.id}
               entries={() => [
-                { label: '关闭', onSelect: () => close(term.id) },
-                { label: '关闭其他终端', disabled: mine.length < 2, onSelect: () => closeOthers(term.id) },
+                { label: t('关闭'), onSelect: () => close(term.id) },
+                { label: t('关闭其他终端'), disabled: mine.length < 2, onSelect: () => closeOthers(term.id) },
               ]}
             >
               <div
@@ -123,7 +124,7 @@ export function TerminalDock() {
                 <span className="min-w-0 flex-1 truncate">{term.title}</span>
                 <button
                   type="button"
-                  aria-label="关闭终端"
+                  aria-label={t('关闭终端')}
                   onClick={(event) => {
                     event.stopPropagation()
                     close(term.id)
@@ -141,7 +142,7 @@ export function TerminalDock() {
         })}
         <button
           type="button"
-          title={place ? `新终端 · ${place.label}（⌘\`）` : '新终端'}
+          title={place ? t('新终端 · {place}（⌘`）', { place: place.label }) : t('新终端')}
           disabled={!place}
           onClick={addHere}
           className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
@@ -151,7 +152,7 @@ export function TerminalDock() {
         <div className="flex-1" />
         <button
           type="button"
-          title="隐藏终端（⌘J）"
+          title={t('隐藏终端（⌘J）')}
           onClick={() => setOpen(false)}
           className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
         >
@@ -177,7 +178,7 @@ export function TerminalToggle() {
   return (
     <button
       type="button"
-      title={open ? '隐藏终端（⌘J）' : '终端（⌘J）'}
+      title={open ? t('隐藏终端（⌘J）') : t('终端（⌘J）')}
       onClick={toggle}
       className={cn(
         'no-drag mb-1 grid size-7 shrink-0 place-items-center rounded-lg hover:bg-accent hover:text-foreground',

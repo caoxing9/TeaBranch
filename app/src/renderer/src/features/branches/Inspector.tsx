@@ -1,4 +1,5 @@
 import { FolderOpen, Lock, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { t } from '@shared/i18n'
 import { type ReactNode, useEffect, useState } from 'react'
 import type { Branch, EnvEntry } from '@shared/types'
 import { isLive } from '@shared/types'
@@ -16,8 +17,8 @@ export function Inspector({ branch }: { branch: Branch }) {
           value={tab}
           onChange={setTab}
           options={[
-            { value: 'info', label: '信息' },
-            { value: 'env', label: '环境变量' },
+            { value: 'info', label: t('信息') },
+            { value: 'env', label: t('环境变量') },
           ]}
         />
       </div>
@@ -55,17 +56,17 @@ function Info({ branch }: { branch: Branch }) {
 
   return (
     <>
-      <Section title="资源">
+      <Section title={t('资源')}>
         {usage ? (
           <>
             <Row label="CPU">{usage.cpuPercent.toFixed(1)}%</Row>
-            <Row label="内存">{formatBytes(usage.residentBytes)}</Row>
-            <Row label="运行时长">{formatDuration(usage.uptimeSeconds)}</Row>
+            <Row label={t('内存')}>{formatBytes(usage.residentBytes)}</Row>
+            <Row label={t('运行时长')}>{formatDuration(usage.uptimeSeconds)}</Row>
             <div className="mt-2 space-y-0.5">
               {usage.processes.slice(0, 12).map((process) => (
                 <div
                   key={process.pid}
-                  title={`pid ${process.pid} · up ${formatDuration(process.elapsedSeconds)}`}
+                  title={`pid ${process.pid} · ${t('已运行 {duration}', { duration: formatDuration(process.elapsedSeconds) })}`}
                   className="flex items-center gap-2 text-[11px] text-fg-2"
                 >
                   <span className="w-14 shrink-0 truncate text-fg-3">{process.group}</span>
@@ -73,25 +74,27 @@ function Info({ branch }: { branch: Branch }) {
                   <span className="tabular-nums">{formatBytes(process.residentBytes)}</span>
                 </div>
               ))}
-              {usage.processes.length > 12 && <div className="text-[11px] text-fg-3">另有 {usage.processes.length - 12} 个进程</div>}
+              {usage.processes.length > 12 && (
+                <div className="text-[11px] text-fg-3">{t('另有 {n} 个进程', { n: usage.processes.length - 12 })}</div>
+              )}
             </div>
           </>
         ) : (
-          <div className="text-[12px] text-fg-3">{live ? '采样中…' : '未运行'}</div>
+          <div className="text-[12px] text-fg-3">{live ? t('采样中…') : t('未运行')}</div>
         )}
       </Section>
 
-      <Section title="端口">
+      <Section title={t('端口')}>
         {live && environment ? (
           <>
-            {environment.port && <Row label="前端">:{environment.port}</Row>}
-            {environment.backendPort && <Row label="后端">:{environment.backendPort}</Row>}
+            {environment.port && <Row label={t('前端')}>:{environment.port}</Row>}
+            {environment.backendPort && <Row label={t('后端')}>:{environment.backendPort}</Row>}
             {environment.socketPort && environment.socketPort !== environment.backendPort && (
               <Row label="Socket">:{environment.socketPort}</Row>
             )}
           </>
         ) : (
-          <div className="text-[12px] text-fg-3">未运行</div>
+          <div className="text-[12px] text-fg-3">{t('未运行')}</div>
         )}
         <div className="mt-2 flex items-center gap-2">
           <Button
@@ -109,7 +112,7 @@ function Info({ branch }: { branch: Branch }) {
               }
             }}
           >
-            {tunnelHere ? '关闭 ngrok 隧道' : 'ngrok 隧道'}
+            {tunnelHere ? t('关闭 ngrok 隧道') : t('ngrok 隧道')}
           </Button>
         </div>
         {tunnelHere && (
@@ -124,7 +127,7 @@ function Info({ branch }: { branch: Branch }) {
 
       <Section title="Worktree">
         <div className="selectable mb-2 font-mono text-[11px] break-all text-fg-2">{environment?.worktreePath ?? branch.worktreePath}</div>
-        {environment?.databaseName && <Row label="数据库">{environment.databaseName}</Row>}
+        {environment?.databaseName && <Row label={t('数据库')}>{environment.databaseName}</Row>}
         <div className="mt-2 flex flex-wrap gap-1.5">
           <Button
             className="h-6 text-[12px]"
@@ -136,13 +139,13 @@ function Info({ branch }: { branch: Branch }) {
           <Button
             className="h-6 text-[12px]"
             icon={<Sparkles className="size-3.5" />}
-            title="打开 Claude Code 为这个 worktree 生成的文件"
+            title={t('打开 Claude Code 为这个 worktree 生成的文件')}
             onClick={async () => setHasAgentFiles(await api.revealAgentFiles(branch.name))}
           >
-            Agent Files
+            {t('Agent 文件')}
           </Button>
         </div>
-        {!hasAgentFiles && <div className="mt-1 text-[11px] text-fg-3">这个分支还没有 agent 生成的文件</div>}
+        {!hasAgentFiles && <div className="mt-1 text-[11px] text-fg-3">{t('这个分支还没有 agent 生成的文件')}</div>}
       </Section>
     </>
   )
@@ -164,7 +167,7 @@ function EnvEditor({ branch }: { branch: Branch }) {
     })
   }, [branch.name])
 
-  if (!entries) return <div className="p-4 text-[12px] text-fg-3">读取 .env.development.local…</div>
+  if (!entries) return <div className="p-4 text-[12px] text-fg-3">{t('读取 .env.development.local…')}</div>
 
   const dirty = JSON.stringify(entries) !== JSON.stringify(original)
   const shown = entries.filter((entry) => entry.key.toLowerCase().includes(filter.toLowerCase()))
@@ -185,20 +188,20 @@ function EnvEditor({ branch }: { branch: Branch }) {
 
   return (
     <div className="p-3">
-      <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="筛选变量" className={cx(inputClass, 'mb-2')} />
+      <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t('筛选变量')} className={cx(inputClass, 'mb-2')} />
       <div className="space-y-1.5">
         {shown.map((entry) => (
           <div key={entry.key}>
             <div className="mb-0.5 flex items-center gap-1 font-mono text-[11px] text-fg-2">
               {entry.managed && (
-                <span title="TeaBranch 生成的变量，决定这个 worktree 的隔离">
+                <span title={t('TeaBranch 生成的变量，决定这个 worktree 的隔离')}>
                   <Lock className="size-3 text-brand" />
                 </span>
               )}
               <span className="flex-1 truncate">{entry.key}</span>
               <button
                 type="button"
-                title={`删除 ${entry.key}`}
+                title={t('删除 {name}', { name: entry.key })}
                 onClick={() => setEntries(entries.filter((candidate) => candidate.key !== entry.key))}
                 className="text-fg-3 hover:text-err"
               >
@@ -229,15 +232,15 @@ function EnvEditor({ branch }: { branch: Branch }) {
             setNewKey('')
           }}
         >
-          添加
+          {t('添加')}
         </Button>
       </div>
       {dirty && (
         <div className="sticky bottom-0 mt-3 flex gap-1.5 bg-bg py-2">
           <Button tone="accent" disabled={saving} icon={saving ? <Spinner /> : undefined} onClick={() => void save()}>
-            {isLive(statusOf(branch)) ? '保存并重启' : '保存'}
+            {isLive(statusOf(branch)) ? t('保存并重启') : t('保存')}
           </Button>
-          <Button onClick={() => setEntries(original)}>还原</Button>
+          <Button onClick={() => setEntries(original)}>{t('还原')}</Button>
         </div>
       )}
     </div>

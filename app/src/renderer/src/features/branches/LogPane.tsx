@@ -1,11 +1,12 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { t } from '@shared/i18n'
 import { ArrowDown, ChevronDown, ChevronUp, Search, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LogLine } from '@shared/types'
 import { IconButton, Segmented } from '@/components/kit'
 import { api, on } from '@/lib/api'
 import { renderAnsi, stripAnsi } from '@/lib/ansi'
-import { cx } from '@/lib/format'
+import { cx, plural } from '@/lib/format'
 
 type Tab = 'all' | 'backend' | 'frontend' | 'dev'
 
@@ -109,7 +110,7 @@ export function LogPane({ branch }: { branch: string }) {
   const errors = useMemo(() => shown.reduce((n, line) => n + (line.severity === 'error' ? 1 : 0), 0), [shown])
 
   const tabs: { value: Tab; label: React.ReactNode }[] = [
-    { value: 'all', label: '全部' },
+    { value: 'all', label: t('全部') },
     ...(['backend', 'frontend', 'dev'] as const)
       .filter((source) => counts[source])
       .map((source) => ({
@@ -131,7 +132,7 @@ export function LogPane({ branch }: { branch: string }) {
           <button
             type="button"
             className="rounded-md bg-err-soft px-2 py-0.5 text-[11.5px] font-medium text-err"
-            title="跳到第一个错误"
+            title={t('跳到第一个错误')}
             onClick={() => {
               const index = shown.findIndex((line) => line.severity === 'error')
               if (index >= 0) {
@@ -140,7 +141,7 @@ export function LogPane({ branch }: { branch: string }) {
               }
             }}
           >
-            {errors} 个错误
+            {plural(t('{n} 个错误', { n: errors }))}
           </button>
         )}
         <div className="flex-1" />
@@ -156,7 +157,7 @@ export function LogPane({ branch }: { branch: string }) {
               if (event.key === 'Enter') step(event.shiftKey ? -1 : 1)
               if (event.key === 'Escape') setQuery('')
             }}
-            placeholder="搜索日志"
+            placeholder={t('搜索日志')}
             className="selectable w-full bg-transparent text-[12px] outline-none placeholder:text-fg-3"
           />
           {needle && (
@@ -165,14 +166,14 @@ export function LogPane({ branch }: { branch: string }) {
             </span>
           )}
         </div>
-        <IconButton label="上一个 (⇧⏎)" onClick={() => step(-1)} disabled={!matches.length}>
+        <IconButton label={t('上一个 (⇧⏎)')} onClick={() => step(-1)} disabled={!matches.length}>
           <ChevronUp className="size-4" />
         </IconButton>
-        <IconButton label="下一个 (⏎)" onClick={() => step(1)} disabled={!matches.length}>
+        <IconButton label={t('下一个 (⏎)')} onClick={() => step(1)} disabled={!matches.length}>
           <ChevronDown className="size-4" />
         </IconButton>
         <IconButton
-          label="清空日志"
+          label={t('清空日志')}
           onClick={() => {
             void api.clearLogs(branch)
             setLines([])
@@ -192,8 +193,8 @@ export function LogPane({ branch }: { branch: string }) {
       >
         {shown.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-1 font-sans text-[12.5px] text-muted-foreground">
-            <span>还没有输出</span>
-            <span className="text-[11.5px] opacity-70">启动分支后，dev server 的日志会实时出现在这里</span>
+            <span>{t('还没有输出')}</span>
+            <span className="text-[11.5px] opacity-70">{t('启动分支后，dev server 的日志会实时出现在这里')}</span>
           </div>
         ) : (
           <div style={{ height: virtual.getTotalSize(), position: 'relative' }}>
@@ -232,7 +233,7 @@ export function LogPane({ branch }: { branch: string }) {
             className="sticky bottom-3 left-full mr-3 flex items-center gap-1 rounded-full bg-brand px-3 py-1 font-sans text-[12px] text-white shadow-lg"
           >
             <ArrowDown className="size-3.5" />
-            最新输出
+            {t('最新输出')}
           </button>
         )}
       </div>

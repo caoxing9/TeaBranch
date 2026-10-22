@@ -10,7 +10,11 @@
     "skipLibCheck": true,
     "composite": true,
     "noEmit": true,
-    "paths": { "@/*": ["./src/renderer/src/*"], "@shared/*": ["./src/shared/*"] }
+    "paths": {
+      "@/*": ["./src/renderer/src/*"],
+      "@shared/*": ["./src/shared/*"]
+    }
   },
-  "include": ["src/renderer/src/**/*", "src/shared/**/*", "src/preload/*.d.ts"]
+  "include": ["src/renderer/src/**/*", "src/shared/**/*", "src/preload/*.d.ts"],
+  "exclude": ["src/shared/**/*.test.ts"]
 }

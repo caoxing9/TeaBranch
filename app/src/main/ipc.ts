@@ -3,7 +3,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { Api, Branch, DevCategory, TeableConfig, TeableUser } from '@shared/types'
 import { IPC_INVOKE, isLive } from '@shared/types'
+import { getLocale, t } from '@shared/i18n'
 import { state } from './core/appState'
+import { applyLocale } from './core/locale'
 import * as envFile from './core/envFile'
 import { emit, emitSoon } from './core/events'
 import { TeaBranchError } from './core/log'
@@ -17,6 +19,7 @@ import { claudeCatalog } from './services/claudeCatalog'
 import * as git from './services/git'
 import { issueAgent } from './services/issueAgent'
 import { saveUpload } from './services/issueContext'
+import { defaultPrompts } from './services/prompts'
 import * as ngrok from './services/ngrok'
 import * as processManager from './services/processManager'
 import * as processStats from './services/processStats'
@@ -36,7 +39,7 @@ async function gitIn(cwd: string, args: string[]): Promise<string> {
 }
 
 function requireRepo(): string {
-  if (!state.projectPath) throw new TeaBranchError('No project path set')
+  if (!state.projectPath) throw new TeaBranchError(t('没有设置仓库路径'))
   return state.projectPath
 }
 
@@ -46,7 +49,7 @@ async function worktreeOf(branch: string): Promise<string> {
 
 async function teableToken(): Promise<string> {
   const token = await teableAuth.accessToken()
-  if (!token) throw new TeaBranchError('未登录 Teable')
+  if (!token) throw new TeaBranchError(t('未登录 Teable'))
   return token
 }
 
@@ -56,7 +59,7 @@ async function loadUser(token: string): Promise<TeableUser> {
   } catch {
     // A token scoped to the table may not read the profile; reading the table is what matters.
     await teable.fields(loadTeableConfig(), token)
-    return { id: 'token', name: '已登录（令牌）' }
+    return { id: 'token', name: t('已登录（令牌）') }
   }
 }
 
@@ -79,21 +82,27 @@ export const setCategory = (branch: string, category: DevCategory): void => {
 const handlers: Api = {
   // App
   getSettings: async () => state.settings,
+  locale: async () => getLocale(),
+  defaultPrompts: async () => defaultPrompts(),
   chooseProject: async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory'],
-      message: 'Choose the git repository to manage',
-      buttonLabel: 'Select',
+      message: t('选择要管理的 git 仓库'),
+      buttonLabel: t('选择'),
     })
     const path = result.filePaths[0]
     if (result.canceled || !path) return null
-    if (!existsSync(join(path, '.git'))) throw new TeaBranchError('Not a git repository')
+    if (!existsSync(join(path, '.git'))) throw new TeaBranchError(t('不是 git 仓库'))
     state.clearEnvironments()
     const settings = state.updateSettings({ projectPath: path })
     emitSoon('branchesChanged')
     return settings
   },
-  updateSettings: async (patch) => state.updateSettings(patch),
+  updateSettings: async (patch) => {
+    const settings = state.updateSettings(patch)
+    if ('language' in patch) applyLocale(settings.language)
+    return settings
+  },
   terminalPresets: async () => terminal.presets,
   canRunAgent: async () => terminal.canRunCommands(state.settings.terminalApp),
 
@@ -131,7 +140,7 @@ const handlers: Api = {
   openTerminal: async (branch) => terminal.open(await worktreeOf(branch), state.settings.terminalApp, branch),
   openAgent: async (branch) => {
     const command = state.settings.agentCommand.trim()
-    if (!command) throw new TeaBranchError('No agent command configured — set one in Settings.')
+    if (!command) throw new TeaBranchError(t('没有配置 agent 命令 — 在设置里填一个。'))
     await terminal.open(await worktreeOf(branch), state.settings.terminalApp, branch, command)
   },
   openEditor: async (branch) => terminal.openInVSCode(await worktreeOf(branch)),
@@ -204,7 +213,7 @@ const handlers: Api = {
   openFileInEditor: async (branch, path) => {
     const cwd = await worktreeOf(branch)
     const result = await run('code', ['-g', join(cwd, path)])
-    if (!result.ok) throw new TeaBranchError('Failed to open VS Code: is the `code` command installed?')
+    if (!result.ok) throw new TeaBranchError(t('打开 VS Code 失败：装了 `code` 命令吗？'))
   },
   toggleNgrok: async (branch) => {
     if (state.ngrokTunnel?.branchName === branch) {
@@ -237,9 +246,10 @@ const handlers: Api = {
     if (teableUser) return teableUser
     const token = await teableAuth.accessToken()
     if (!token) return null
-    teableUser = await loadUser(token).catch(() => ({ id: 'token', name: '已登录' }))
+    teableUser = await loadUser(token).catch(() => ({ id: 'token', name: t('已登录') }))
     return teableUser
   },
+  teableBrowse: async (level, parentId) => teable.browse(loadTeableConfig(), await teableToken(), level, parentId),
   teableLoad: async () => {
     const config = loadTeableConfig()
     if (!config.tableId) return { fields: [], records: [] }
@@ -251,7 +261,7 @@ const handlers: Api = {
     if (config.onlyMine) {
       const people = fields.filter(teable.isUserField)
       const assignee = config.assigneeField ? people.find((field) => field.name === config.assigneeField) : guessAssignee(people)
-      if (!assignee) throw new TeaBranchError('“只看我的”需要一个人员字段 — 在 Issue 设置里选“负责人”字段')
+      if (!assignee) throw new TeaBranchError(t('“只看我的”需要一个人员字段 — 在 Issue 设置里选“负责人”字段'))
       filter = teable.mineFilter(assignee)
     }
     const peopleFields = fields.filter(teable.isUserField).map((field) => field.name)
@@ -262,7 +272,7 @@ const handlers: Api = {
   openOAuthAppPage: async () => shell.openExternal(`${teable.apiBase(loadTeableConfig())}/setting/oauth-app`),
   teableDeviceStart: async () => {
     const clientId = teableAuth.clientIdFor(loadTeableConfig())
-    if (!clientId) throw new TeaBranchError('这个 Teable 地址没有内置 OAuth 应用 — 在“其他登录方式”里填 Client ID，或用个人访问令牌')
+    if (!clientId) throw new TeaBranchError(t('这个 Teable 地址没有内置 OAuth 应用 — 在“其他登录方式”里填 Client ID，或用个人访问令牌'))
     const code = await teableAuth.startDeviceLogin(clientId, (error) => {
       if (!error) teableUser = null
       emit('teableSignedIn', { error })
@@ -307,11 +317,11 @@ const handlers: Api = {
   updateChat: async (chatId, patch) => chatAgent.update(chatId, patch),
   saveUpload: async (recordId, name, base64) => {
     const bytes = Buffer.from(base64, 'base64')
-    if (bytes.length > 25 * 1024 * 1024) throw new TeaBranchError('附件超过 25MB')
+    if (bytes.length > 25 * 1024 * 1024) throw new TeaBranchError(t('附件超过 25MB'))
     return saveUpload(recordId, name, bytes)
   },
   pickUploads: async (recordId) => {
-    const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'], message: '附加到这条消息' })
+    const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'], message: t('附加到这条消息') })
     if (result.canceled) return []
     return result.filePaths.map((path) => saveUpload(recordId, basename(path), readFileSync(path)))
   },
@@ -322,7 +332,7 @@ const handlers: Api = {
   resetIssue: async (recordId) => issueAgent.reset(recordId),
   resumeInTerminal: async (recordId) => {
     const target = issueAgent.resumeCommand(recordId)
-    if (!target) throw new TeaBranchError('找不到这个 issue 的 worktree')
+    if (!target) throw new TeaBranchError(t('找不到这个 issue 的 worktree'))
     await terminal.open(target.cwd, state.settings.terminalApp, target.title, target.command)
   },
   magpieModels: async () => magpieModels(loadTeableConfig().magpieURL),
@@ -334,7 +344,8 @@ const handlers: Api = {
 
 /** The person field that most sounds like an assignee. */
 function guessAssignee<T extends { name: string; type: string }>(people: T[]): T | undefined {
-  const names = ['负责人', '处理人', '指派', '经办人', '开发', 'assignee', 'owner', 'developer', 'dev']
+  // Field names as people write them, matched against the table — not UI text.
+  const names = ['负责人', '处理人', '指派', '经办人', '开发', 'assignee', 'owner', 'developer', 'dev'] // i18n-ignore
   for (const name of names) {
     const hit = people.find((field) => field.name.toLowerCase() === name)
     if (hit) return hit

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { t } from '@shared/i18n'
 import type { AppSettings, Branch, BranchUsage, DbMode, DevCategory, NgrokTunnel } from '@shared/types'
 import { isLive } from '@shared/types'
 import { api, messageOf, on } from '@/lib/api'
@@ -93,7 +94,11 @@ export const useApp = create<AppStore>((set, get) => ({
   creating: {},
 
   createWorktree(branch, dbMode) {
-    set({ creating: { ...get().creating, [branch]: { step: 'start', message: '准备中…' } }, selectedBranch: branch, section: 'branches' })
+    set({
+      creating: { ...get().creating, [branch]: { step: 'start', message: t('准备中…') } },
+      selectedBranch: branch,
+      section: 'branches',
+    })
     const finish = () => {
       const creating = { ...get().creating }
       delete creating[branch]
@@ -106,7 +111,7 @@ export const useApp = create<AppStore>((set, get) => ({
         await api.setCategory(branch, 'developing')
         await get().refresh()
       })
-      .catch((error) => set({ error: `创建 ${branch} 失败：${messageOf(error)}` }))
+      .catch((error) => set({ error: t('创建 {branch} 失败：{error}', { branch, error: messageOf(error) }) }))
       .finally(finish)
   },
 

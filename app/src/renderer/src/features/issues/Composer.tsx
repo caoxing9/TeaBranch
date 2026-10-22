@@ -1,4 +1,5 @@
 import { ArrowUp, FileText, Plus, Square } from 'lucide-react'
+import { t } from '@shared/i18n'
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
 import type { ContextUsage } from '@shared/types'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -80,7 +81,7 @@ export function Composer({
 
   const send = () => {
     if (!canSend) return
-    const message = text.trim() || '看一下附件。'
+    const message = text.trim() || t('看一下附件。')
     const attachments = pending.map((file) => file.path)
     setText('')
     setPending([])
@@ -126,7 +127,7 @@ export function Composer({
                 <span className="max-w-36 truncate">{file.name}</span>
                 <button
                   type="button"
-                  title="移除"
+                  title={t('移除')}
                   onClick={() => setPending((current) => current.filter((candidate) => candidate.path !== file.path))}
                   className="absolute -top-1.5 -right-1.5 hidden size-4 items-center justify-center rounded-full bg-foreground text-[10px] text-background group-hover:flex"
                 >
@@ -152,12 +153,12 @@ export function Composer({
             event.preventDefault()
             send()
           }}
-          placeholder={busy ? 'Agent 正在工作，可以先写下一条…' : placeholder}
+          placeholder={busy ? t('Agent 正在工作，可以先写下一条…') : placeholder}
           className="selectable block max-h-40 min-h-[22px] w-full resize-none bg-transparent px-3 py-2 text-[13.5px] leading-[20px] outline-none placeholder:text-muted-foreground"
         />
         <div className="flex items-center gap-1 px-2 pb-2">
           <IconButton
-            label="附加文件"
+            label={t('附加文件')}
             className="size-6"
             onClick={async () => {
               const paths = await api.pickUploads(uploadKey)
@@ -179,11 +180,11 @@ export function Composer({
           {pickers}
           <div className="flex-1" />
           {contextUsage && contextUsage.used > 0 && <ContextRing usage={contextUsage} />}
-          <span className="mr-1 text-[11px] text-muted-foreground">{busy ? '运行中' : '⏎ 发送'}</span>
+          <span className="mr-1 text-[11px] text-muted-foreground">{busy ? t('运行中') : t('⏎ 发送')}</span>
           {busy ? (
             <button
               type="button"
-              title="停止 agent"
+              title={t('停止 agent')}
               onClick={onCancel}
               className="flex size-7 items-center justify-center rounded-lg bg-foreground text-background hover:bg-destructive"
             >
@@ -192,7 +193,7 @@ export function Composer({
           ) : (
             <button
               type="button"
-              title="发送"
+              title={t('发送')}
               disabled={!canSend}
               onClick={send}
               className={cx(
@@ -245,8 +246,9 @@ function ContextRing({ usage }: { usage: ContextUsage }) {
         }
       />
       <TooltipContent>
-        上下文 {compact(usage.used)}
-        {usage.window ? ` / ${compact(usage.window)}` : '（窗口大小在这一轮结束后可知）'}
+        {usage.window
+          ? t('上下文 {used} / {window}', { used: compact(usage.used), window: compact(usage.window) })
+          : t('上下文 {used}（窗口大小在这一轮结束后可知）', { used: compact(usage.used) })}
       </TooltipContent>
     </Tooltip>
   )

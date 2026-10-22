@@ -1,4 +1,5 @@
 import type { Issue } from '@shared/types'
+import { t } from '@shared/i18n'
 import { useApp } from '@/store/app'
 import { useChats } from '@/store/chats'
 import { useIssues } from '@/store/issues'
@@ -27,7 +28,7 @@ export function useHere(): { place: Place | null; issue?: Issue; needsWorktree: 
   const config = useIssues((s) => s.config)
 
   const current = branches.find((branch) => branch.isCurrent)
-  const main = settings?.projectPath ? { cwd: settings.projectPath, branch: current?.name, label: '主仓库' } : null
+  const main = settings?.projectPath ? { cwd: settings.projectPath, branch: current?.name, label: t('主仓库') } : null
   const chat = activeChat ? chats.find((candidate) => candidate.id === activeChat) : undefined
   if (chat) return { place: { cwd: chat.cwd, branch: chat.branch, label: chat.branch ?? chat.cwd }, needsWorktree: false }
 
@@ -37,5 +38,5 @@ export function useHere(): { place: Place | null; issue?: Issue; needsWorktree: 
   const name = runs[issue.id]?.branch ?? `${config?.branchPrefix ?? ''}${issue.key}`
   const worktree = branches.find((branch) => branch.name === name && branch.worktreePath)
   if (worktree) return { place: { cwd: worktree.worktreePath as string, branch: name, label: name }, issue, needsWorktree: false }
-  return { place: main && { ...main, label: `主仓库（${issue.key} 还没有 worktree）` }, issue, needsWorktree: true }
+  return { place: main && { ...main, label: t('主仓库（{key} 还没有 worktree）', { key: issue.key }) }, issue, needsWorktree: true }
 }

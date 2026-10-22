@@ -1,3 +1,5 @@
+import { getLocale } from '@shared/i18n'
+
 export function formatBytes(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   let value = bytes
@@ -19,3 +21,12 @@ export function formatDuration(seconds: number): string {
 }
 
 export const cx = (...classes: (string | false | null | undefined)[]): string => classes.filter(Boolean).join(' ')
+
+/**
+ * English catalog entries are written plural ("{n} files"); this turns "1 files" into "1 file".
+ * Chinese has no plural, so it passes through.
+ */
+export const plural = (text: string): string =>
+  getLocale() === 'en'
+    ? text.replace(/\b1 ([\w-]+?(?:ch|sh|ss|x))es\b|\b1 ([\w-]+?)s\b/g, (_, a?: string, b?: string) => `1 ${a ?? b}`)
+    : text

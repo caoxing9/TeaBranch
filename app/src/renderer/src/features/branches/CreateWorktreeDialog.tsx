@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { t } from '@shared/i18n'
 import type { WorktreeDbInfo } from '@shared/types'
 import { Button, Dialog, Field, inputClass, Segmented } from '@/components/kit'
 import { api } from '@/lib/api'
@@ -40,8 +41,8 @@ export function CreateWorktreeDialog() {
   }
 
   return (
-    <Dialog title="新建 Worktree" onClose={close}>
-      <Field label="分支名（从 origin/develop 切出）" hint={taken ? '已经有这个分支的 worktree 了' : undefined}>
+    <Dialog title={t('新建 Worktree')} onClose={close}>
+      <Field label={t('分支名（从 origin/develop 切出）')} hint={taken ? t('已经有这个分支的 worktree 了') : undefined}>
         <input
           autoFocus
           value={name}
@@ -51,44 +52,44 @@ export function CreateWorktreeDialog() {
           className={inputClass}
         />
       </Field>
-      <Field label="数据库">
+      <Field label={t('数据库')}>
         <Segmented<Mode>
           value={mode}
           onChange={setMode}
           options={[
-            { value: 'reuse', label: '共用' },
-            { value: 'clone', label: '复制' },
-            { value: 'new', label: '新建' },
+            { value: 'reuse', label: t('共用') },
+            { value: 'clone', label: t('复制') },
+            { value: 'new', label: t('新建') },
           ]}
         />
       </Field>
       {mode !== 'new' && (
         <Field
-          label={mode === 'clone' ? '从这个 worktree 的数据库复制一份' : '直接共用这个 worktree 的数据库和 Redis'}
+          label={mode === 'clone' ? t('从这个 worktree 的数据库复制一份') : t('直接共用这个 worktree 的数据库和 Redis')}
           hint={
             sources.length
               ? mode === 'reuse'
-                ? '最快。迁移和数据改动会直接作用在共用的库上。'
+                ? t('最快。迁移和数据改动会直接作用在共用的库上。')
                 : undefined
-              : '没有找到已配置数据库的 worktree'
+              : t('没有找到已配置数据库的 worktree')
           }
         >
           <select value={source} onChange={(event) => setSource(event.target.value)} className={inputClass}>
             {sources.map((info) => (
               <option key={info.branchName} value={info.branchName}>
-                {info.branchName}（{info.databaseName}）
+                {t('{branch}（{database}）', { branch: info.branchName, database: info.databaseName ?? '' })}
               </option>
             ))}
           </select>
         </Field>
       )}
       <p className="mb-4 text-[12px] text-muted-foreground">
-        创建在后台进行（安装依赖、迁移大约几分钟），进度和日志会显示在这个分支里，你可以继续做别的事。
+        {t('创建在后台进行（安装依赖、迁移大约几分钟），进度和日志会显示在这个分支里，你可以继续做别的事。')}
       </p>
       <div className="flex justify-end gap-2">
-        <Button onClick={close}>取消</Button>
+        <Button onClick={close}>{t('取消')}</Button>
         <Button tone="accent" disabled={!branch || taken || (mode !== 'new' && !source)} onClick={create}>
-          创建
+          {t('创建')}
         </Button>
       </div>
     </Dialog>

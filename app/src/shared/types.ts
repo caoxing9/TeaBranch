@@ -1,3 +1,4 @@
+import { type LanguagePref, type Locale, t } from './i18n'
 // Types shared by the main process and the renderer. Everything here crosses IPC, so it is
 // plain data: no classes, no functions, no Dates (timestamps are epoch milliseconds).
 
@@ -26,11 +27,21 @@ export interface Branch {
 
 export type DevCategory = 'developing' | 'todo' | 'done'
 
-export const categoryLabel: Record<DevCategory, string> = {
-  developing: '开发中',
-  todo: '待开发',
-  done: '已完成',
+/**
+ * A label table read like a plain record — `phaseLabel[phase]` — but translated on every read, so
+ * it follows a language switch instead of freezing at module load.
+ */
+function translatedLabels<K extends string>(labels: Record<K, () => string>): Readonly<Record<K, string>> {
+  const table = {} as Record<K, string>
+  for (const key of Object.keys(labels) as K[]) Object.defineProperty(table, key, { get: labels[key], enumerable: true })
+  return table
 }
+
+export const categoryLabel = translatedLabels<DevCategory>({
+  developing: () => t('开发中'),
+  todo: () => t('待开发'),
+  done: () => t('已完成'),
+})
 
 export interface AppSettings {
   projectPath?: string
@@ -39,6 +50,8 @@ export interface AppSettings {
   terminalApp?: string
   /** What the "Agent" action runs. Spelled out, not an alias: terminals run it non-interactively. */
   agentCommand: string
+  /** Interface (and agent report) language; follows macOS when unset. */
+  language?: LanguagePref
 }
 
 export interface NgrokTunnel {
@@ -182,7 +195,7 @@ export const agentAccessModes: { value: AgentAccess; label: string; hint: string
 export const agentEffortLabel = (effort?: AgentEffort): string | undefined => agentEfforts.find((option) => option.value === effort)?.label
 
 export const agentModelLabel = (m: AgentModel): string => {
-  const name = m.provider === 'claude' ? (m.model ? `Claude · ${m.model}` : 'Claude（默认）') : `Magpie · ${m.model ?? 'default'}`
+  const name = m.provider === 'claude' ? (m.model ? `Claude · ${m.model}` : t('Claude（默认）')) : `Magpie · ${m.model ?? 'default'}`
   const effort = agentEffortLabel(m.effort)
   return effort ? `${name} · ${effort}` : name
 }
@@ -221,7 +234,18 @@ export interface TeableConfig {
   magpieURL: string
   /** Client ID of a Teable OAuth app with Device Flow enabled. */
   oauthClientId?: string
+  /** Your own instructions per stage, replacing the defaults; the issue context is always added. */
+  prompts?: Partial<Record<PromptStage, string>>
 }
+
+/**
+ * The stages an issue agent gets instructions for. Each prompt is the issue (fields, comments,
+ * attachments) and the worktree, which TeaBranch always supplies, plus instructions you can
+ * replace. Placeholders: {key} {link} {branch} {base} {round} {language}. The TRIAGE / VERDICT line
+ * a stage must end with is appended by TeaBranch, so a custom prompt can't break the pipeline.
+ */
+export type PromptStage = 'triage' | 'fix' | 'review' | 'reviewFeedback'
+export const promptStages: PromptStage[] = ['triage', 'fix', 'review', 'reviewFeedback']
 
 export interface TeableUser {
   id: string
@@ -255,6 +279,18 @@ export interface Person {
   name: string
   email?: string
   avatar?: string
+}
+
+/** A level of the Teable hierarchy the issue table is picked from: space → base → table → view. */
+export type TeableLevel = 'space' | 'base' | 'table' | 'view'
+
+export interface TeableNode {
+  id: string
+  name: string
+  /** For a table: the view it opens on. */
+  defaultViewId?: string
+  /** For a base: its space's name, when the token may read it. */
+  group?: string
 }
 
 export interface TeableField {
@@ -298,18 +334,18 @@ export type IssuePhase =
   | 'failed'
   | 'cancelled'
 
-export const phaseLabel: Record<IssuePhase, string> = {
-  queued: '排队中',
-  preparing: '创建 worktree',
-  triaging: '验证中',
-  triaged: '验证完成',
-  fixing: '修复中',
-  prOpen: 'PR 待审查',
-  reviewing: 'Review 中',
-  finished: '已结束',
-  failed: '失败',
-  cancelled: '已取消',
-}
+export const phaseLabel = translatedLabels<IssuePhase>({
+  queued: () => t('排队中'),
+  preparing: () => t('创建 worktree'),
+  triaging: () => t('验证中'),
+  triaged: () => t('验证完成'),
+  fixing: () => t('修复中'),
+  prOpen: () => t('PR 待审查'),
+  reviewing: () => t('Review 中'),
+  finished: () => t('已结束'),
+  failed: () => t('失败'),
+  cancelled: () => t('已取消'),
+})
 
 export const isActivePhase = (p: IssuePhase): boolean =>
   p === 'queued' || p === 'preparing' || p === 'triaging' || p === 'fixing' || p === 'reviewing'
@@ -317,12 +353,12 @@ export const isActivePhase = (p: IssuePhase): boolean =>
 /** What the pre-fix check concluded: only a confirmed bug goes on to a fix by itself. */
 export type TriageVerdict = 'bug' | 'fixed' | 'notBug' | 'needsInfo'
 
-export const triageLabel: Record<TriageVerdict, string> = {
-  bug: '确认是 bug',
-  fixed: '已经修复',
-  notBug: '不是 bug',
-  needsInfo: '信息不足',
-}
+export const triageLabel = translatedLabels<TriageVerdict>({
+  bug: () => t('确认是 bug'),
+  fixed: () => t('已经修复'),
+  notBug: () => t('不是 bug'),
+  needsInfo: () => t('信息不足'),
+})
 
 /** The verdict from the check's last TRIAGE line; undefined when there is none. */
 export function triageVerdict(text: string): TriageVerdict | undefined {
@@ -388,6 +424,13 @@ export interface ConversationEntry {
   text: string
   isError?: boolean
   at: number
+  /**
+   * Set on the `system` line Claude Code opens a session with: the model it runs. Read this rather
+   * than parsing `text`, which is in whatever language the app was in.
+   */
+  connectedModel?: string
+  /** Set on a `result` line: the run's numbers, so nothing parses the display text. */
+  stats?: { turns: number; seconds: number; costUSD: number }
 }
 
 export interface QueueState {
@@ -415,6 +458,10 @@ export interface BatchSummary {
 export interface Api {
   // App
   getSettings(): Promise<AppSettings>
+  /** The language in effect: the setting, or macOS's when it follows the system. */
+  locale(): Promise<Locale>
+  /** The built-in instructions per stage, in the current language, for the prompt editor. */
+  defaultPrompts(): Promise<Record<PromptStage, string>>
   chooseProject(): Promise<AppSettings | null>
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   terminalPresets(): Promise<TerminalPreset[]>
@@ -455,6 +502,8 @@ export interface Api {
   teableSignOut(): Promise<void>
   teableSession(): Promise<TeableUser | null>
   teableLoad(): Promise<{ fields: TeableField[]; records: TeableRecord[] }>
+  /** What the signed-in account can see: its bases (all spaces), a base's tables, a table's views. */
+  teableBrowse(level: TeableLevel, parentId?: string): Promise<TeableNode[]>
   openTokenPage(): Promise<void>
   openOAuthAppPage(): Promise<void>
   /** Start a device-flow sign-in: the code is copied and the approval page opened. */

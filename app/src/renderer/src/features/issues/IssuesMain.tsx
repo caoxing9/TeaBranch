@@ -1,6 +1,7 @@
 import { Bug, TableProperties, Wand2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Button, EmptyState, inputClass, Spinner, Toggle, TitleStrip } from '@/components/kit'
+import { getLocale, t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { fixable, useIssues } from '@/store/issues'
 import { PhaseBadge } from './IssueSidebar'
@@ -8,6 +9,7 @@ import { IssueDetail } from './IssueDetail'
 import { IssueTabs } from './IssueTabs'
 import { ChatView } from './ChatView'
 import { TerminalDock } from '../terminal/TerminalDock'
+import { TablePicker } from './TablePicker'
 import { useChats } from '@/store/chats'
 import { currentGroup, useTabs } from '@/store/tabs'
 
@@ -25,7 +27,7 @@ export function IssuesMain() {
 
   if (!checkedSession) return <div className="h-full" />
   if (!user) return <LoginView />
-  if (!config?.tableId) return <TablePicker />
+  if (!config?.tableId) return <TableOnboarding />
   const issue = selection.size === 1 ? issues.find((candidate) => selection.has(candidate.id)) : undefined
   // Only a chat from the group on screen: the selected issue's, or the free-standing ones.
   const chat = chats.find((candidate) => candidate.id === activeChat && (candidate.issueId ?? null) === currentGroup(selection))
@@ -53,8 +55,8 @@ function Empty() {
     <div className="flex h-full flex-col">
       <EmptyState
         icon={<Bug className="size-9" strokeWidth={1.2} />}
-        title="选择一个 issue"
-        detail="点“自动修复”：建 worktree → agent 修复 → 提 PR → 自动 review，你只负责审查。⌘/⇧ 点击可以多选，批量修复。"
+        title={t('选择一个 issue')}
+        detail={t('点“自动修复”：建 worktree → agent 修复 → 提 PR → 自动 review，你只负责审查。⌘/⇧ 点击可以多选，批量修复。')}
       />
     </div>
   )
@@ -84,22 +86,22 @@ function LoginView() {
       <div className="flex flex-1 flex-col items-center justify-center px-6 pb-[38px]">
         <div className="no-drag w-[320px]">
           <TableProperties className="mb-4 size-7 text-fg-2" strokeWidth={1.5} />
-          <h1 className="text-[17px] font-semibold">登录 Teable</h1>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-fg-2">读取你的 issue 表，修复后把 PR 链接写回去。</p>
+          <h1 className="text-[17px] font-semibold">{t('登录 Teable')}</h1>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-fg-2">{t('读取你的 issue 表，修复后把 PR 链接写回去。')}</p>
 
           {deviceLogin ? (
             <div className="mt-5 rounded-lg border border-border bg-fill p-4">
-              <div className="text-[12px] text-fg-2">在浏览器里粘贴这个验证码并确认（已复制）</div>
+              <div className="text-[12px] text-fg-2">{t('在浏览器里粘贴这个验证码并确认（已复制）')}</div>
               <div className="selectable mt-2 font-mono text-[26px] font-semibold tracking-[0.18em]">{deviceLogin.userCode}</div>
               <div className="mt-3 flex items-center gap-2 text-[12px] text-fg-2">
                 <Spinner />
-                等待授权…
+                {t('等待授权…')}
                 <div className="flex-1" />
                 <button type="button" className="hover:text-fg" onClick={() => void api.openExternal(deviceLogin.verificationUri)}>
-                  重新打开
+                  {t('重新打开')}
                 </button>
                 <button type="button" className="hover:text-fg" onClick={() => void cancelDeviceLogin()}>
-                  取消
+                  {t('取消')}
                 </button>
               </div>
             </div>
@@ -107,19 +109,21 @@ function LoginView() {
             <>
               {oauthReady && (
                 <Button tone="accent" className="mt-5 h-8 w-full justify-center" onClick={() => void startDeviceLogin()}>
-                  用 Teable 登录
+                  {t('用 Teable 登录')}
                 </Button>
               )}
-              {oauthReady && <div className="mt-1.5 text-center text-[11px] text-fg-3">{host} · 浏览器里确认即可，无需复制令牌</div>}
+              {oauthReady && (
+                <div className="mt-1.5 text-center text-[11px] text-fg-3">{t('{host} · 浏览器里确认即可，无需复制令牌', { host })}</div>
+              )}
 
               {oauthReady && (
                 <button type="button" className="mt-5 text-[12px] text-fg-2 hover:text-fg" onClick={() => setMore(!more)}>
-                  {more ? '▾' : '▸'} 其他登录方式
+                  {more ? '▾' : '▸'} {t('其他登录方式')}
                 </button>
               )}
               {showMore && (
                 <div className="mt-2 space-y-2 rounded-lg border border-border p-3">
-                  <div className="text-[11px] text-fg-3">Teable 地址（自部署时改这里）</div>
+                  <div className="text-[11px] text-fg-3">{t('Teable 地址（自部署时改这里）')}</div>
                   <input
                     value={baseURL}
                     onChange={(e) => setBaseURL(e.target.value)}
@@ -127,16 +131,16 @@ function LoginView() {
                     className={inputClass}
                   />
                   <div className="pt-1 text-[11px] text-fg-3">
-                    OAuth 应用 Client ID（需开启 Device Flow）{' '}
+                    {t('OAuth 应用 Client ID（需开启 Device Flow）')}{' '}
                     <button type="button" className="text-brand hover:underline" onClick={() => void api.openOAuthAppPage()}>
-                      去创建
+                      {t('去创建')}
                     </button>
                   </div>
                   <div className="flex gap-1.5">
                     <input
                       value={clientId}
                       onChange={(e) => setClientId(e.target.value.trim())}
-                      placeholder={oauthReady ? '留空用内置应用' : 'Client ID'}
+                      placeholder={oauthReady ? t('留空用内置应用') : 'Client ID'}
                       className={`${inputClass} font-mono`}
                     />
                     <Button
@@ -146,7 +150,7 @@ function LoginView() {
                         await startDeviceLogin()
                       }}
                     >
-                      登录
+                      {t('登录')}
                     </Button>
                   </div>
                   <form
@@ -157,9 +161,9 @@ function LoginView() {
                     }}
                   >
                     <div className="mb-1 text-[11px] text-fg-3">
-                      或个人访问令牌{' '}
+                      {t('或个人访问令牌')}{' '}
                       <button type="button" onClick={() => void api.openTokenPage()} className="text-brand hover:underline">
-                        创建
+                        {t('创建')}
                       </button>
                     </div>
                     <div className="flex gap-1.5">
@@ -171,7 +175,7 @@ function LoginView() {
                         className={inputClass}
                       />
                       <Button type="submit" disabled={!token || signingIn}>
-                        {signingIn ? <Spinner /> : '登录'}
+                        {signingIn ? <Spinner /> : t('登录')}
                       </Button>
                     </div>
                   </form>
@@ -187,42 +191,26 @@ function LoginView() {
 }
 
 /** Signed in, no table yet: pick the view that holds your issues. */
-function TablePicker() {
+function TableOnboarding() {
   const updateConfig = useIssues((s) => s.updateConfig)
   const reload = useIssues((s) => s.reload)
-  const [url, setURL] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const apply = async () => {
-    const match = /\/base\/([^/]+)\/table\/([^/?]+)(?:\/([^/?]+))?/.exec(url)
-    if (!match) return setError('需要形如 …/base/bse…/table/tbl…/viw… 的视图链接')
-    setError(null)
-    await updateConfig({ baseURL: new URL(url.trim()).origin, baseId: match[1], tableId: match[2], viewId: match[3] })
-    await reload()
-  }
   return (
     <div className="flex h-full flex-col">
       <TitleStrip />
       <div className="flex flex-1 flex-col items-center justify-center px-6 pb-[38px]">
-        <div className="no-drag w-[360px]">
+        <div className="no-drag w-[400px]">
           <TableProperties className="mb-4 size-7 text-fg-2" strokeWidth={1.5} />
-          <h1 className="text-[17px] font-semibold">选择 issue 表</h1>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-fg-2">
-            在浏览器打开放 issue 的那张表，选好视图（比如“待修复”），把地址栏的链接粘贴到这里。
+          <h1 className="text-[17px] font-semibold">{t('选择 issue 表')}</h1>
+          <p className="mt-1 mb-5 text-[12.5px] leading-relaxed text-fg-2">
+            {t('选出放 issue 的那张表；视图可以缩小范围，比如“待修复”。')}
           </p>
-          <div className="mt-5 flex gap-1.5">
-            <input
-              autoFocus
-              value={url}
-              onChange={(e) => setURL(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && void apply()}
-              placeholder="https://app.teable.ai/base/…/table/…/…"
-              className={inputClass}
-            />
-            <Button tone="accent" disabled={!url} onClick={() => void apply()}>
-              使用
-            </Button>
-          </div>
-          {error && <div className="mt-2 text-[12px] text-err">{error}</div>}
+          <TablePicker
+            confirm
+            onPick={async (pick) => {
+              await updateConfig({ baseId: pick.baseId, tableId: pick.tableId, viewId: pick.viewId })
+              await reload()
+            }}
+          />
         </div>
       </div>
     </div>
@@ -237,21 +225,25 @@ function BatchPanel() {
   const batchSize = Math.max(1, state.config?.batchSize ?? 3)
   const batches = Math.ceil(ready.length / batchSize)
   const autoNext = state.config?.autoNextBatch ?? false
+  const gap = getLocale() === 'en' ? ' ' : ''
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="drag h-10" />
       <div className="mx-auto max-w-2xl px-8 pb-8">
-        <h1 className="text-[22px] font-bold">已选 {selected.length} 个 issue</h1>
+        <h1 className="text-[22px] font-bold">{t('已选 {n} 个 issue', { n: selected.length })}</h1>
         <p className="mt-1 text-[13px] text-fg-2">
           {ready.length === selected.length
-            ? '全部可以加入修复队列。'
-            : `${ready.length} 个可以修复，另外 ${selected.length - ready.length} 个已经在处理或已有结果。`}
+            ? t('全部可以加入修复队列。')
+            : t('{ready} 个可以修复，另外 {other} 个已经在处理或已有结果。', {
+                ready: ready.length,
+                other: selected.length - ready.length,
+              })}
         </p>
 
         <div className="mt-5 space-y-3 rounded-xl bg-fill p-4">
           <div className="flex items-center gap-3">
-            <span className="text-[13px]">每批同时修复</span>
+            <span className="text-[13px]">{t('每批同时修复')}</span>
             <div className="flex items-center rounded-md bg-bg">
               <button
                 type="button"
@@ -269,17 +261,19 @@ function BatchPanel() {
                 +
               </button>
             </div>
-            <span className="text-[13px]">个</span>
+            <span className="text-[13px]">{t('个')}</span>
           </div>
           <Toggle
             checked={autoNext}
             onChange={(value) => void state.updateConfig({ autoNextBatch: value })}
-            label="一批全部完成后自动开始下一批"
+            label={t('一批全部完成后自动开始下一批')}
           />
           <p className="text-[12px] text-fg-2">
-            共 {batches} 批。
-            {autoNext ? '一直跑到队列清空，每批结束和全部结束都会发系统通知。' : '每批结束发系统通知并暂停，你审查完点“开始下一批”。'}
-            一批要等每个 issue 都走完修复 → PR → review → 回改（或失败、停止、等你回复）才算结束。
+            {t('共 {n} 批。', { n: batches })}
+            {gap}
+            {autoNext ? t('一直跑到队列清空，每批结束和全部结束都会发系统通知。') : t('每批结束发系统通知并暂停，你审查完点“开始下一批”。')}
+            {gap}
+            {t('一批要等每个 issue 都走完修复 → PR → review → 回改（或失败、停止、等你回复）才算结束。')}
           </p>
         </div>
 
@@ -294,10 +288,10 @@ function BatchPanel() {
               state.setChecked(new Set())
             }}
           >
-            全部修复（{ready.length}）
+            {t('全部修复（{n}）', { n: ready.length })}
           </Button>
           <Button className="h-8" onClick={() => state.setChecked(new Set())}>
-            取消选择
+            {t('取消选择')}
           </Button>
         </div>
 

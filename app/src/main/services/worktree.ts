@@ -1,3 +1,4 @@
+import { t } from '@shared/i18n'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { DbMode, WorktreeDbInfo, WorktreeProgress } from '@shared/types'
@@ -28,7 +29,7 @@ async function runLogged(command: string, cwd: string, branch: string): Promise<
 
 async function sourceInfo(branch: string, repo: string): Promise<WorktreeDbInfo> {
   const info = (await gitService.worktreeDbInfo(repo)).find((candidate) => candidate.branchName === branch)
-  if (!info) throw new TeaBranchError(`Source branch '${branch}' not found or has no worktree`)
+  if (!info) throw new TeaBranchError(t('找不到源分支 {branch}，或它没有 worktree', { branch }))
   return info
 }
 
@@ -53,20 +54,20 @@ export async function create(
     logs.append(branch, `[dev] \u001B[36m▸\u001B[0m ${message}`)
   }
 
-  step('fetch', `Fetching origin/${baseBranch}...`)
+  step('fetch', t('拉取 origin/{base}…', { base: baseBranch }))
   const fetch = await git(['fetch', 'origin', baseBranch], repo)
-  if (!fetch.ok) throw new TeaBranchError(`git fetch failed: ${fetch.stderr}`)
+  if (!fetch.ok) throw new TeaBranchError(t('git fetch 失败：{error}', { error: fetch.stderr }))
 
-  step('branch', `Creating branch ${branch}...`)
+  step('branch', t('创建分支 {branch}…', { branch }))
   const add = await git(['worktree', 'add', '-b', branch, worktree, `origin/${baseBranch}`, '--no-track'], repo)
   if (!add.ok) {
-    if (!add.stderr.includes('already exists')) throw new TeaBranchError(`git worktree add failed: ${add.stderr}`)
+    if (!add.stderr.includes('already exists')) throw new TeaBranchError(t('git worktree add 失败：{error}', { error: add.stderr }))
     // The branch is already there — check it out into the worktree as is.
     const retry = await git(['worktree', 'add', worktree, branch], repo)
-    if (!retry.ok) throw new TeaBranchError(`git worktree add failed: ${retry.stderr}`)
+    if (!retry.ok) throw new TeaBranchError(t('git worktree add 失败：{error}', { error: retry.stderr }))
   }
 
-  step('env', 'Setting up environment...')
+  step('env', t('配置环境…'))
   gitService.forgetManaged(worktree)
   const slot = await assignSlot(repo)
   const branchDbName = envFile.databaseURL.forBranch(branch)
@@ -81,15 +82,15 @@ export async function create(
   const envDatabaseName = (databaseURLOverride && envFile.databaseURL.nameOf(databaseURLOverride)) || branchDbName
   writeEnvFile(repo, worktree, slot, envDatabaseName, databaseURLOverride, redisURIOverride)
 
-  step('install', 'Installing dependencies (pnpm install)...')
+  step('install', t('安装依赖（pnpm install）…'))
   if (!(await runLogged('pnpm install', worktree, branch))) {
-    throw new TeaBranchError('pnpm install failed — see the branch log for details')
+    throw new TeaBranchError(t('pnpm install 失败 — 详情见分支日志'))
   }
 
   if (dbMode.kind === 'reuse') {
-    step('database', 'Reusing existing database (no creation needed)')
+    step('database', t('复用已有数据库（无需创建）'))
   } else {
-    step('database', 'Setting up database...')
+    step('database', t('配置数据库…'))
     const baseURL = envFile.baseDatabaseURL(repo)
     if (baseURL) {
       const template =
@@ -108,10 +109,10 @@ export async function create(
 
   // Prisma client + migrations. Always: the client lives in node_modules, and `migrate deploy` is
   // idempotent, so this is safe even when reusing a database.
-  step('migrate', 'Running database migration (make postgres.mode)...')
+  step('migrate', t('运行数据库迁移（make postgres.mode）…'))
   if (!(await runLogged('make postgres.mode', worktree, branch))) log.warn('migration may have failed')
 
-  step('done', 'Worktree ready!', true)
+  step('done', t('Worktree 已就绪！'), true)
   return worktree
 }
 
@@ -237,12 +238,12 @@ export async function remove(branch: string, repo: string): Promise<void> {
       rmSync(path, { recursive: true, force: true })
       return
     }
-    throw new TeaBranchError(`git worktree remove failed: ${result.stderr}`)
+    throw new TeaBranchError(t('git worktree remove 失败：{error}', { error: result.stderr }))
   }
   // Created by hand elsewhere: ask git where it lives.
   const entry = (await gitService.worktrees(repo)).find((candidate) => candidate.branch === branch)
   if (entry) {
     const result = await git(['worktree', 'remove', '--force', entry.path], repo)
-    if (!result.ok) throw new TeaBranchError(`git worktree remove failed: ${result.stderr}`)
+    if (!result.ok) throw new TeaBranchError(t('git worktree remove 失败：{error}', { error: result.stderr }))
   }
 }

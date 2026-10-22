@@ -1,6 +1,7 @@
 import { ChevronsUpDown, Filter, Plus, Trash2, X } from 'lucide-react'
 import type { ReactNode, SelectHTMLAttributes } from 'react'
 import type { TeableField } from '@shared/types'
+import { getLocale, t } from '@shared/i18n'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cx } from '@/lib/format'
 import { type FilterCondition, type FilterOperator, type IssueFilterSet, isComplete, newConditionId, useIssues } from '@/store/issues'
@@ -10,14 +11,15 @@ import { type FilterCondition, type FilterOperator, type IssueFilterSet, isCompl
  * a popover off the funnel button, 12px controls, native pop-up menus for every choice.
  */
 
-const operatorLabel: Record<FilterOperator, string> = {
-  is: '是',
-  isNot: '不是',
-  contains: '包含',
-  doesNotContain: '不包含',
-  isEmpty: '为空',
-  isNotEmpty: '不为空',
-}
+const operatorLabel = (operator: FilterOperator): string =>
+  ({
+    is: t('是'),
+    isNot: t('不是'),
+    contains: t('包含'),
+    doesNotContain: t('不包含'),
+    isEmpty: t('为空'),
+    isNotEmpty: t('不为空'),
+  })[operator]
 
 const hasChoices = (field?: TeableField): boolean => !!field && field.choices.length > 0
 
@@ -48,10 +50,10 @@ function PopUp({ className, children, ...props }: SelectHTMLAttributes<HTMLSelec
 export function filterSummary(filter: IssueFilterSet): string | null {
   const active = filter.conditions.filter(isComplete)
   if (!active.length) return null
-  if (active.length > 1) return `${active.length} 个筛选条件`
+  if (active.length > 1) return t('{n} 个筛选条件', { n: active.length })
   const [condition] = active
-  const value = needsValue(condition.operator) ? ` ${condition.value.filter(Boolean).join('、')}` : ''
-  return `${condition.field} ${operatorLabel[condition.operator]}${value}`
+  const value = needsValue(condition.operator) ? ` ${condition.value.filter(Boolean).join(getLocale() === 'en' ? ', ' : '、')}` : ''
+  return `${condition.field} ${operatorLabel(condition.operator)}${value}`
 }
 
 export function IssueFilterButton() {
@@ -63,8 +65,8 @@ export function IssueFilterButton() {
         render={
           <button
             type="button"
-            title="筛选"
-            aria-label="筛选"
+            title={t('筛选')}
+            aria-label={t('筛选')}
             className={cx(
               'relative flex size-[26px] shrink-0 items-center justify-center rounded-md transition-colors',
               count ? 'bg-brand-soft text-brand' : 'text-fg-2 hover:bg-foreground/[0.07] hover:text-fg',
@@ -122,8 +124,8 @@ function FilterEditor() {
       }}
     >
       <div className="flex h-8 items-center gap-2 border-b border-border/70 px-3">
-        <span className="font-semibold text-fg">筛选</span>
-        <span className="text-fg-3">只作用于已加载的 issue</span>
+        <span className="font-semibold text-fg">{t('筛选')}</span>
+        <span className="text-fg-3">{t('只作用于已加载的 issue')}</span>
         <div className="flex-1" />
         {filter.conditions.length > 0 && (
           <button
@@ -131,40 +133,40 @@ function FilterEditor() {
             className="rounded px-1.5 py-0.5 text-fg-2 hover:bg-foreground/[0.07] hover:text-fg"
             onClick={() => setFilter({ ...filter, conditions: [] })}
           >
-            清除
+            {t('清除')}
           </button>
         )}
       </div>
 
       <div className="space-y-1 p-2">
-        {filter.conditions.length === 0 && <div className="px-1 py-2 text-fg-3">还没有筛选条件</div>}
+        {filter.conditions.length === 0 && <div className="px-1 py-2 text-fg-3">{t('还没有筛选条件')}</div>}
         {filter.conditions.map((condition, index) => {
           const field = fields.find((candidate) => candidate.name === condition.field)
           return (
             <div key={condition.id} className="group flex items-center gap-1">
               <span className="flex w-11 shrink-0 justify-end pr-1 text-fg-2">
                 {index === 0 ? (
-                  '当'
+                  t('当')
                 ) : index === 1 ? (
                   <PopUp
                     className="w-11"
                     value={filter.conjunction}
-                    aria-label="条件之间的关系"
+                    aria-label={t('条件之间的关系')}
                     onChange={(event) => setFilter({ ...filter, conjunction: event.target.value as 'and' | 'or' })}
                   >
-                    <option value="and">且</option>
-                    <option value="or">或</option>
+                    <option value="and">{t('且')}</option>
+                    <option value="or">{t('或')}</option>
                   </PopUp>
                 ) : filter.conjunction === 'and' ? (
-                  '且'
+                  t('且')
                 ) : (
-                  '或'
+                  t('或')
                 )}
               </span>
               <PopUp
                 className="w-28 shrink-0"
                 value={condition.field}
-                aria-label="字段"
+                aria-label={t('字段')}
                 onChange={(event) => {
                   const next = fields.find((candidate) => candidate.name === event.target.value)
                   const operators = operatorsFor(next)
@@ -180,17 +182,17 @@ function FilterEditor() {
                     {option.name}
                   </option>
                 ))}
-                {!field && <option value={condition.field}>{condition.field}（已不存在）</option>}
+                {!field && <option value={condition.field}>{t('{field}（已不存在）', { field: condition.field })}</option>}
               </PopUp>
               <PopUp
                 className="w-[70px] shrink-0"
                 value={condition.operator}
-                aria-label="条件"
+                aria-label={t('条件')}
                 onChange={(event) => update(condition.id, { operator: event.target.value as FilterOperator })}
               >
                 {operatorsFor(field).map((operator) => (
                   <option key={operator} value={operator}>
-                    {operatorLabel[operator]}
+                    {operatorLabel(operator)}
                   </option>
                 ))}
               </PopUp>
@@ -203,15 +205,15 @@ function FilterEditor() {
                       autoFocus={!condition.value.length}
                       value={condition.value[0] ?? ''}
                       onChange={(event) => update(condition.id, { value: [event.target.value] })}
-                      placeholder="输入值"
+                      placeholder={t('输入值')}
                       className="selectable h-6 w-full min-w-0 rounded-md bg-fill px-2 text-[12px] outline-none placeholder:text-fg-3 hover:bg-foreground/[0.09] focus:bg-background focus:ring-2 focus:ring-ring/40"
                     />
                   ))}
               </div>
               <button
                 type="button"
-                title="删除条件"
-                aria-label="删除条件"
+                title={t('删除条件')}
+                aria-label={t('删除条件')}
                 onClick={() => remove(condition.id)}
                 className="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-3 opacity-60 group-hover:opacity-100 hover:bg-foreground/[0.07] hover:text-err"
               >
@@ -230,10 +232,10 @@ function FilterEditor() {
           className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-fg-2 hover:bg-foreground/[0.07] hover:text-fg disabled:opacity-40"
         >
           <Plus className="size-3.5" />
-          添加条件
+          {t('添加条件')}
         </button>
         <div className="flex-1" />
-        <span className="pr-1 text-[11px] text-fg-3">⏎ 添加 · Esc 关闭</span>
+        <span className="pr-1 text-[11px] text-fg-3">{t('⏎ 添加 · Esc 关闭')}</span>
       </div>
     </div>
   )
@@ -252,7 +254,7 @@ function ChoiceValue({ field, value, onChange }: { field: TeableField; value: st
           <span className="max-w-24 truncate">{choice}</span>
           <button
             type="button"
-            aria-label={`移除 ${choice}`}
+            aria-label={t('移除 {choice}', { choice })}
             onClick={() => onChange(value.filter((v) => v !== choice))}
             className="flex size-3.5 items-center justify-center rounded-sm text-fg-3 hover:bg-foreground/10 hover:text-fg"
           >
@@ -263,11 +265,11 @@ function ChoiceValue({ field, value, onChange }: { field: TeableField; value: st
       {remaining.length > 0 && (
         <select
           value=""
-          aria-label="添加值"
+          aria-label={t('添加值')}
           onChange={(event) => event.target.value && onChange([...value, event.target.value])}
           className="h-5 min-w-0 flex-1 cursor-default appearance-none bg-transparent px-1 text-[12px] text-fg-3 outline-none hover:text-fg"
         >
-          <option value="">{value.length ? '+' : '选择值…'}</option>
+          <option value="">{value.length ? '+' : t('选择值…')}</option>
           {remaining.map((choice) => (
             <option key={choice} value={choice}>
               {choice}

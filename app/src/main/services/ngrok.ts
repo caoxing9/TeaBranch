@@ -1,3 +1,4 @@
+import { t } from '@shared/i18n'
 import type { NgrokTunnel } from '@shared/types'
 import { state } from '../core/appState'
 import * as envFile from '../core/envFile'
@@ -23,7 +24,7 @@ export function publicURLFromLog(line: string): string | undefined {
  */
 export async function start(branch: string): Promise<NgrokTunnel> {
   const repo = state.projectPath
-  if (!repo) throw new TeaBranchError('No project path set')
+  if (!repo) throw new TeaBranchError(t('没有设置仓库路径'))
   if (state.ngrokPID) {
     killGroup(state.ngrokPID)
     state.ngrokPID = undefined
@@ -32,7 +33,7 @@ export async function start(branch: string): Promise<NgrokTunnel> {
 
   const worktree = await git.worktreePath(branch, repo)
   const port = envFile.port('SERVER_PORT', worktree)
-  if (!port) throw new TeaBranchError('SERVER_PORT not found in worktree env file')
+  if (!port) throw new TeaBranchError(t('worktree 的 env 文件里没有 SERVER_PORT'))
 
   ngrokLogs.clear(key)
   let deliver: (url: string) => void = () => undefined
@@ -49,7 +50,7 @@ export async function start(branch: string): Promise<NgrokTunnel> {
   const publicURL = await Promise.race([urlArrived, new Promise<null>((r) => setTimeout(() => r(null), 25_000))])
   if (!publicURL) {
     killGroup(child.pid)
-    throw new TeaBranchError('Timed out waiting for ngrok tunnel')
+    throw new TeaBranchError(t('等待 ngrok 隧道超时'))
   }
 
   try {

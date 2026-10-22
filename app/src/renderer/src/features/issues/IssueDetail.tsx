@@ -23,6 +23,7 @@ import { AccessPicker, ModelPicker } from './AgentPickers'
 import { Composer } from './Composer'
 import { ActivityGroup, buildTurns, type Item, TurnView } from './Transcript'
 import { useTranscriptLayout } from '@/store/tabs'
+import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { cx } from '@/lib/format'
 import { isApproved } from '@/lib/issues'
@@ -68,7 +69,7 @@ export function IssueDetail({ issue }: { issue: Issue }) {
               uploadKey={issue.id}
               busy={busy}
               contextUsage={run.context}
-              placeholder={`给 ${issue.key} 的 agent 发消息，可粘贴或拖入截图`}
+              placeholder={t('给 {key} 的 agent 发消息，可粘贴或拖入截图', { key: issue.key })}
               context={
                 <>
                   <GitBranch className="size-3" />
@@ -131,7 +132,7 @@ function Header({
               <PhaseBadge phase={run.phase} />
               <Chip
                 icon={<GitBranch className="size-3" />}
-                title="在分支页打开：dev server、预览"
+                title={t('在分支页打开：dev server、预览')}
                 onClick={() => setApp({ section: 'branches', selectedBranch: run.branch })}
               >
                 {run.branch}
@@ -142,7 +143,7 @@ function Header({
                 </Chip>
               )}
               {run.costUSD > 0 && (
-                <span className="text-fg-3 tabular-nums" title="Claude 报告的累计花费">
+                <span className="text-fg-3 tabular-nums" title={t('Claude 报告的累计花费')}>
                   ${run.costUSD.toFixed(2)}
                 </span>
               )}
@@ -150,9 +151,9 @@ function Header({
               {run.triage && (
                 <span
                   className={cx('truncate', run.triage.verdict === 'bug' ? 'text-fg-3' : 'text-warn')}
-                  title="修复前验证的结论；理由在对话里"
+                  title={t('修复前验证的结论；理由在对话里')}
                 >
-                  验证：{triageLabel[run.triage.verdict]}
+                  {t('验证：{verdict}', { verdict: triageLabel[run.triage.verdict] })}
                 </span>
               )}
             </>
@@ -165,34 +166,34 @@ function Header({
       <div className="flex items-center gap-1">
         {busy ? (
           <Button tone="danger" icon={<Square className="size-3" />} onClick={() => void perform(() => api.cancelIssue(issue.id))}>
-            停止
+            {t('停止')}
           </Button>
         ) : (
           <>
             {(run?.phase === 'failed' || run?.phase === 'cancelled') && (
               <Button tone="accent" icon={<RotateCw className="size-3.5" />} onClick={() => void perform(() => api.enqueueFix([issue]))}>
-                重试
+                {t('重试')}
               </Button>
             )}
             {run?.phase === 'triaged' && (
               <Button
                 tone="accent"
                 icon={<Wand2 className="size-3.5" />}
-                title="验证认为不用修；看过理由后仍要修，就在同一个会话里接着修"
+                title={t('验证认为不用修；看过理由后仍要修，就在同一个会话里接着修')}
                 onClick={() => void perform(() => api.fixAnyway(issue))}
               >
-                仍然修复
+                {t('仍然修复')}
               </Button>
             )}
           </>
         )}
         {run && (
           <>
-            <IconButton label="Review 当前分支" disabled={busy} onClick={() => void perform(() => api.review(issue))}>
+            <IconButton label={t('Review 当前分支')} disabled={busy} onClick={() => void perform(() => api.review(issue))}>
               <BadgeCheck className="size-4" />
             </IconButton>
             <IconButton
-              label="在终端里继续这个会话（claude --resume）"
+              label={t('在终端里继续这个会话（claude --resume）')}
               disabled={busy}
               onClick={() => void perform(() => api.resumeInTerminal(issue.id))}
             >
@@ -209,20 +210,20 @@ function Header({
             ))}
           </span>
         )}
-        <IconButton label="在 Teable 打开" onClick={() => void perform(() => openRecord(issue))}>
+        <IconButton label={t('在 Teable 打开')} onClick={() => void perform(() => openRecord(issue))}>
           <Globe className="size-4" />
         </IconButton>
-        <IconButton label="运行、改动和详情" onClick={onTogglePanel} className={panel ? 'bg-accent text-foreground' : undefined}>
+        <IconButton label={t('运行、改动和详情')} onClick={onTogglePanel} className={panel ? 'bg-accent text-foreground' : undefined}>
           <PanelRight className="size-4" />
         </IconButton>
         <MenuButton
-          label="更多"
+          label={t('更多')}
           entries={() => [
-            { label: 'Issue 设置…', onSelect: () => useIssues.setState({ showSettings: true }) },
+            { label: t('Issue 设置…'), onSelect: () => useIssues.setState({ showSettings: true }) },
             {
-              label: '对话布局',
+              label: t('对话布局'),
               items: (['document', 'chat'] as const).map((value) => ({
-                label: value === 'document' ? '文档（MonoCode 默认）' : '聊天气泡',
+                label: value === 'document' ? t('文档（MonoCode 默认）') : t('聊天气泡'),
                 checked: useTranscriptLayout.getState().layout === value,
                 onSelect: () => useTranscriptLayout.getState().setLayout(value),
               })),
@@ -230,12 +231,12 @@ function Header({
             ...(run
               ? [
                   {
-                    label: '复制会话恢复命令',
+                    label: t('复制会话恢复命令'),
                     onSelect: () => void navigator.clipboard.writeText(`claude --resume ${run.sessionId}`),
                   },
                   'separator' as const,
                   {
-                    label: '重置会话记录',
+                    label: t('重置会话记录'),
                     danger: true,
                     disabled: busy,
                     onSelect: () => void perform(() => api.resetIssue(issue.id)),
@@ -332,10 +333,10 @@ function StartPrompt({ issue }: { issue: Issue }) {
   const updateConfig = useIssues((s) => s.updateConfig)
   // The pipeline as a row of short steps; the detail lives in tooltips, not a paragraph.
   const steps = [
-    { label: '验证', hint: '查是否已被修复、本地复现、判断是不是 bug；确认是 bug 才往下修', off: !triage },
-    { label: '修复', hint: `在 ${issue.key} 的 worktree 里定位根因并修复` },
-    { label: '提 PR', hint: `PR 标题带 ${issue.key}` },
-    { label: 'Review', hint: '自动 review，结论回到这里' },
+    { label: t('验证'), hint: t('查是否已被修复、本地复现、判断是不是 bug；确认是 bug 才往下修'), off: !triage },
+    { label: t('修复'), hint: t('在 {key} 的 worktree 里定位根因并修复', { key: issue.key }) },
+    { label: t('提 PR'), hint: t('PR 标题带 {key}', { key: issue.key }) },
+    { label: 'Review', hint: t('自动 review，结论回到这里') },
   ].filter((step) => !step.off)
   return (
     <div className="flex flex-col items-center gap-4 py-10">
@@ -356,10 +357,10 @@ function StartPrompt({ issue }: { issue: Issue }) {
           icon={<Wand2 className="size-4" />}
           onClick={() => void perform(() => api.enqueueFix([issue]))}
         >
-          自动修复
+          {t('自动修复')}
         </Button>
-        <span title="查是否已被修复、本地复现、判断是不是 bug；不是 bug 就停下等你决定" className="text-fg-2">
-          <Toggle checked={triage} onChange={(value) => void updateConfig({ triage: value })} label="先验证" />
+        <span title={t('查是否已被修复、本地复现、判断是不是 bug；不是 bug 就停下等你决定')} className="text-fg-2">
+          <Toggle checked={triage} onChange={(value) => void updateConfig({ triage: value })} label={t('先验证')} />
         </span>
       </div>
     </div>
@@ -413,7 +414,7 @@ function ReviewCard({ text, hasPR, issue, busy }: { text: string; hasPR: boolean
         <AgentAvatar review />
         <span className="text-[13px] font-semibold">Code review</span>
         <span className={cx('rounded-full px-2 py-px text-[11px] font-semibold', approved ? 'bg-ok/15 text-ok' : 'bg-warn/15 text-warn')}>
-          {approved ? '通过' : '需要修改'}
+          {approved ? t('通过') : t('需要修改')}
         </span>
       </div>
       <div className="text-[13px]">
@@ -423,10 +424,10 @@ function ReviewCard({ text, hasPR, issue, busy }: { text: string; hasPR: boolean
         <div className="mt-3 flex gap-2">
           {!approved && (
             <Button disabled={busy} onClick={() => void perform(() => api.sendLatestReview(issue))}>
-              发给 agent 修改
+              {t('发给 agent 修改')}
             </Button>
           )}
-          {hasPR && <Button onClick={() => void perform(() => api.postLatestReview(issue.id))}>发布到 PR</Button>}
+          {hasPR && <Button onClick={() => void perform(() => api.postLatestReview(issue.id))}>{t('发布到 PR')}</Button>}
         </div>
       )}
     </div>
@@ -448,7 +449,7 @@ function IssueCard({ issue, startOpen }: { issue: Issue; startOpen: boolean }) {
       <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center gap-2 text-left text-[12px] text-fg-2">
         {open ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}
         <FileText className="size-3.5 shrink-0" />
-        <span className="shrink-0 font-semibold whitespace-nowrap">Issue 描述</span>
+        <span className="shrink-0 font-semibold whitespace-nowrap">{t('Issue 描述')}</span>
         {!open && issue.body && <span className="min-w-0 truncate text-fg-3">{issue.body.replace(/\n/g, ' ').replace(/[#*`>]/g, '')}</span>}
         {!open && attachments.length > 0 && (
           <span className="ml-auto shrink-0">

@@ -1,4 +1,5 @@
 import { CircleAlert, Folder, GitBranch, MessageSquarePlus, MoreHorizontal } from 'lucide-react'
+import { t } from '@shared/i18n'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import type { Chat, ConversationEntry } from '@shared/types'
 import { EmptyState, MenuButton } from '@/components/kit'
@@ -44,15 +45,15 @@ export function ChatView({ chat }: { chat: Chat }) {
         </div>
         <div className="no-drag">
           <MenuButton
-            label="更多"
+            label={t('更多')}
             entries={() => [
               {
-                label: '复制会话恢复命令',
+                label: t('复制会话恢复命令'),
                 onSelect: () => void navigator.clipboard.writeText(`cd ${chat.cwd} && claude --resume ${chat.sessionId}`),
               },
               'separator',
               {
-                label: '删除对话',
+                label: t('删除对话'),
                 danger: true,
                 onSelect: () => {
                   useTabs.getState().close(`chat:${chat.id}`)
@@ -78,8 +79,8 @@ export function ChatView({ chat }: { chat: Chat }) {
             <div className="pt-16">
               <EmptyState
                 icon={<MessageSquarePlus className="size-8" strokeWidth={1.4} />}
-                title="新对话"
-                detail={`Claude Code 会在 ${chat.branch ?? home(chat.cwd)} 里工作。问问题、改代码、查日志都行。`}
+                title={t('新对话')}
+                detail={t('Claude Code 会在 {place} 里工作。问问题、改代码、查日志都行。', { place: chat.branch ?? home(chat.cwd) })}
               />
             </div>
           )}
@@ -92,7 +93,7 @@ export function ChatView({ chat }: { chat: Chat }) {
         uploadKey={`chat-${chat.id}`}
         busy={chat.running}
         contextUsage={chat.context}
-        placeholder="问点什么，或让它改代码；可粘贴或拖入截图"
+        placeholder={t('问点什么，或让它改代码；可粘贴或拖入截图')}
         context={
           <>
             {chat.branch ? <GitBranch className="size-3" /> : <Folder className="size-3" />}

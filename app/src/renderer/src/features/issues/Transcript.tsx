@@ -13,7 +13,9 @@ import {
   Wrench,
 } from 'lucide-react'
 import { type ReactNode, useEffect, useState } from 'react'
+import { t } from '@shared/i18n'
 import type { ConversationEntry, EntryChannel } from '@shared/types'
+import { plural } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { ClaudeMark, modelDisplayName, useCatalog } from './AgentPickers'
 import { Markdown } from './Markdown'
@@ -31,7 +33,13 @@ export type Item =
 
 export const itemId = (item: Item): string => (item.kind === 'work' ? item.id : item.entry.id)
 
-const CONNECTED = '会话已连接 · '
+/** Main writes "会话已连接 · <model>" (or its English form) when a session starts. */
+const CONNECTED = /^(?:会话已连接|Session connected) · / // i18n-ignore: parses main's output in either language
+/** The model a "session connected" line names: the structured field, or parsed from older transcripts. */
+const connectedModel = (entry: ConversationEntry): string | undefined =>
+  entry.kind !== 'system'
+    ? undefined
+    : (entry.connectedModel ?? (CONNECTED.test(entry.text) ? entry.text.replace(CONNECTED, '') : undefined))
 
 /** Fold every run of tool calls, tool output and progress lines into one `work` item. */
 export function buildItems(entries: ConversationEntry[], live: boolean): Item[] {
@@ -43,7 +51,7 @@ export function buildItems(entries: ConversationEntry[], live: boolean): Item[] 
   }
   for (const entry of entries) {
     // "Session connected" only names the model, which the turn header already shows.
-    if (entry.kind === 'system' && entry.text.startsWith(CONNECTED)) continue
+    if (connectedModel(entry) !== undefined) continue
     if (entry.kind === 'tool' || entry.kind === 'toolResult' || entry.kind === 'system') {
       // The fixer's work and the reviewer's are different stories even when adjacent.
       if (pending.length && pending[pending.length - 1].channel !== entry.channel) flush()
@@ -92,7 +100,7 @@ export function buildTurns(entries: ConversationEntry[], live: boolean): Turn[] 
     const body = user ? segment.slice(1) : segment
     const resultAt = body.findIndex((entry) => entry.kind === 'result' && entry.channel === 'agent')
     const before = resultAt < 0 ? body : body.slice(0, resultAt)
-    const model = before.find((entry) => entry.kind === 'system' && entry.text.startsWith(CONNECTED))?.text.slice(CONNECTED.length)
+    const model = before.map(connectedModel).find((name) => name !== undefined)
     const isLast = index === segments.length - 1
     const turn: Turn = {
       id: segment[0].id,
@@ -183,7 +191,7 @@ function UserMessage({ entry, layout }: { entry: ConversationEntry; layout: 'doc
           onClick={() => setExpanded(!expanded)}
           className="mt-1 text-[12px] text-muted-foreground hover:text-foreground"
         >
-          {expanded ? '收起' : '展开'}
+          {expanded ? t('收起') : t('展开')}
         </button>
       )}
     </>
@@ -213,26 +221,29 @@ function WorkingLine({ startedAt, model }: { startedAt: number; model?: string }
 }
 
 function workedFor(model: string | undefined, ms: number | null, done: boolean): string {
-  const verb = done ? (model ? 'worked' : 'Worked') : model ? 'working' : 'Working'
-  const head = model ? `${model} ${verb}` : verb
-  if (ms == null || ms <= 0) return done ? head : `${head}…`
+  if (ms == null || ms <= 0) {
+    if (done) return model ? t('{model} 工作完成', { model }) : t('工作完成')
+    return model ? t('{model} 工作中…', { model }) : t('工作中…')
+  }
   const seconds = Math.max(1, Math.round(ms / 1000))
   const elapsed = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m${seconds % 60 ? ` ${seconds % 60}s` : ''}`
-  return `${head} for ${elapsed}`
+  if (done) return model ? t('{model} 工作了 {elapsed}', { model, elapsed }) : t('工作了 {elapsed}', { elapsed })
+  return model ? t('{model} 已工作 {elapsed}', { model, elapsed }) : t('已工作 {elapsed}', { elapsed })
 }
 
-/** Copy, then what the turn cost and when it landed. Parsed from "完成 · 58 轮 · 454s · $2.32". */
+/** Copy, then what the turn cost and when it landed. Parsed from "完成 · 58 轮 · 454s · $2.32" or "Done · 58 turns · …". */
 function TurnFooter({ answer, result }: { answer?: ConversationEntry; result: ConversationEntry }) {
   const [copied, setCopied] = useState(false)
-  const turns = /(\d+) 轮/.exec(result.text)?.[1]
-  const cost = /\$[\d.]+/.exec(result.text)?.[0]
+  // Structured stats when main recorded them; older transcripts only have the text.
+  const turns = result.stats?.turns ?? /(\d+) (?:轮|turns?)\b/.exec(result.text)?.[1] // i18n-ignore: parses main's output in either language
+  const cost = result.stats ? `$${result.stats.costUSD.toFixed(2)}` : /\$[\d.]+/.exec(result.text)?.[0]
   const time = new Date(result.at ?? Date.now()).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
   return (
     <div className="-mt-1 flex items-center gap-1 text-[12px] text-muted-foreground">
       {answer && (
         <button
           type="button"
-          title="复制回答"
+          title={t('复制回答')}
           onClick={() => {
             void navigator.clipboard.writeText(answer.text)
             setCopied(true)
@@ -246,11 +257,11 @@ function TurnFooter({ answer, result }: { answer?: ConversationEntry; result: Co
       {result.isError && (
         <span className="flex items-center gap-1 text-err">
           <CircleAlert className="size-3" />
-          出错结束
+          {t('出错结束')}
         </span>
       )}
       <span className="flex items-center gap-1.5 px-1 tabular-nums">
-        {[turns && `${turns} 轮`, cost, time].filter(Boolean).join(' · ')}
+        {[turns && plural(t('{n} 轮', { n: turns })), cost, time].filter(Boolean).join(' · ')}
       </span>
     </div>
   )
@@ -284,18 +295,19 @@ const kindIcon: Record<WorkKind, typeof Terminal> = {
   other: Wrench,
 }
 
-/** One clause per kind, present tense while live: "正在运行 3 条命令" → "运行了 3 条命令 · 查看了 2 个文件". */
+/** One clause per kind, present tense while live: "Running 3 commands" → "Ran 3 commands · Read 2 files". */
 function clause(kind: WorkKind, n: number, live: boolean): string {
-  const [doing, done, unit] = {
-    read: ['正在查看', '查看了', '个文件'],
-    search: ['正在搜索', '搜索了', '次项目'],
-    edit: ['正在编辑', '编辑了', '个文件'],
-    run: ['正在运行', '运行了', '条命令'],
-    agent: ['正在运行', '运行了', '个子 agent'],
-    setup: ['正在准备', '完成了', '个步骤'],
-    other: ['正在使用', '使用了', '个工具'],
+  const vars = { n }
+  const [doing, done] = {
+    read: [t('正在查看 {n} 个文件', vars), t('查看了 {n} 个文件', vars)],
+    search: [t('正在搜索 {n} 次项目', vars), t('搜索了 {n} 次项目', vars)],
+    edit: [t('正在编辑 {n} 个文件', vars), t('编辑了 {n} 个文件', vars)],
+    run: [t('正在运行 {n} 条命令', vars), t('运行了 {n} 条命令', vars)],
+    agent: [t('正在运行 {n} 个子 agent', vars), t('运行了 {n} 个子 agent', vars)],
+    setup: [t('正在准备 {n} 个步骤', vars), t('完成了 {n} 个步骤', vars)],
+    other: [t('正在使用 {n} 个工具', vars), t('使用了 {n} 个工具', vars)],
   }[kind]
-  return `${live ? doing : done} ${n} ${unit}`
+  return plural(live ? doing : done)
 }
 
 /** A stretch of tool calls: a summary line, and while live (or opened) the calls as a tree. */
@@ -325,7 +337,7 @@ export function ActivityGroup({ steps, live, review }: { steps: ConversationEntr
         className="group flex max-w-full items-center gap-2 text-left text-muted-foreground enabled:hover:text-foreground"
       >
         <Icon className="size-3.5 shrink-0" />
-        <span className={cn('truncate', live && 'shimmer')}>{review ? `Reviewer · ${summary}` : summary}</span>
+        <span className={cn('truncate', live && 'shimmer')}>{review ? t('评审 · {summary}', { summary }) : summary}</span>
         {failed && !live && <CircleAlert className="size-3 shrink-0 text-err" />}
         {!live && (
           <ChevronDown className={cn('size-3.5 shrink-0 opacity-0 transition group-hover:opacity-60', open && 'rotate-180 opacity-60')} />

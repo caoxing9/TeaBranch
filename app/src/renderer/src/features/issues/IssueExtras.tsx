@@ -1,5 +1,6 @@
 import { FileText, MessageSquare, Paperclip } from 'lucide-react'
 import type { Attachment, IssueComment } from '@shared/types'
+import { getLocale, t } from '@shared/i18n'
 import { PersonAvatar } from '@/components/person'
 import { useLightbox } from '@/components/Lightbox'
 import { api } from '@/lib/api'
@@ -60,13 +61,18 @@ export function AttachmentsLabel({ count }: { count: number }) {
   return (
     <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
       <Paperclip className="size-3" />
-      {count} 个附件
+      {t('{n} 个附件', { n: count })}
     </span>
   )
 }
 
 const when = (time: number): string =>
-  new Date(time).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  new Date(time).toLocaleString(getLocale() === 'en' ? 'en-US' : 'zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 
 /** The record's comment thread — often where the reproduction steps really are. */
 export function Comments({ comments }: { comments: IssueComment[] }) {
@@ -75,7 +81,7 @@ export function Comments({ comments }: { comments: IssueComment[] }) {
     <div className="rounded-xl border bg-card shadow-xs">
       <div className="flex items-center gap-2 border-b px-4 py-2.5 text-[12px] font-semibold text-muted-foreground">
         <MessageSquare className="size-3.5" />
-        评论 {comments.length}
+        {t('评论 {n}', { n: comments.length })}
       </div>
       <div className="divide-y">
         {comments.map((comment) => (
@@ -97,7 +103,7 @@ export function Comments({ comments }: { comments: IssueComment[] }) {
                     <button
                       key={url}
                       type="button"
-                      aria-label={`查看图片 ${index + 1}`}
+                      aria-label={t('查看图片 {n}', { n: index + 1 })}
                       onClick={() =>
                         useLightbox.getState().open(
                           comment.images.map((image) => ({ url: image })),

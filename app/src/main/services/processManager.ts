@@ -1,3 +1,4 @@
+import { t } from '@shared/i18n'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { isLive } from '@shared/types'
@@ -40,15 +41,15 @@ export const start = (branch: string): Promise<void> => withBranchLock(branch, (
 
 async function performStart(branch: string): Promise<void> {
   const repo = state.projectPath
-  if (!repo) throw new TeaBranchError('No project path set')
-  if (isLive(state.environment(branch)?.status ?? 'stopped')) throw new TeaBranchError('Branch is already running')
+  if (!repo) throw new TeaBranchError(t('没有设置仓库路径'))
+  if (isLive(state.environment(branch)?.status ?? 'stopped')) throw new TeaBranchError(t('分支已经在运行'))
 
   const worktree = await git.worktreePath(branch, repo)
 
   // Ports from the worktree's own env file when it has them — that file is the contract the dev
   // servers read. Allocation is only the fallback, and it happens under the lock.
   const allocated = await allocationLock.run(async () => {
-    if (isLive(state.environment(branch)?.status ?? 'stopped')) throw new TeaBranchError('Branch is already running')
+    if (isLive(state.environment(branch)?.status ?? 'stopped')) throw new TeaBranchError(t('分支已经在运行'))
     const used = state.portsInUse()
     const backendPort = envFile.port('SERVER_PORT', worktree) ?? (await ports.findAvailable(state.settings.basePort, used))
     used.add(backendPort)
@@ -201,7 +202,7 @@ async function ensureDependencies(worktree: string, branch: string): Promise<voi
   note(branch, 'Installing dependencies — first run for this worktree, expect several minutes')
   const child = spawnShell(`${manager} install`, worktree, {}, (line) => logs.append(branch, `[dev] ${line}`))
   if (!isCleanExit(await child.exited)) {
-    throw new TeaBranchError(`Dependency install failed — see the log for what ${manager} said.`)
+    throw new TeaBranchError(t('依赖安装失败 — 看日志里 {manager} 的输出。', { manager }))
   }
 }
 
@@ -388,7 +389,7 @@ async function performStop(branch: string): Promise<void> {
       // Leave the status: the server really is up. What was missing was anyone saying why.
       logs.append(branch, `[dev] ⛔️ TeaBranch: stop failed — still listening on ${detail} after SIGTERM and SIGKILL`)
       emitSoon('branchesChanged')
-      throw new TeaBranchError(`Stop failed — still listening on ${detail}.`)
+      throw new TeaBranchError(t('停止失败 — 仍在监听 {detail}。', { detail }))
     }
 
     state.mutateEnvironment(branch, (environment) => {

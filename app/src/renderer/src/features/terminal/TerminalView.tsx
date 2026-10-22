@@ -1,4 +1,5 @@
 import { FitAddon } from '@xterm/addon-fit'
+import { t } from '@shared/i18n'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { type ITheme, Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
@@ -120,7 +121,7 @@ export function TerminalView({ id, cwd, active }: { id: string; cwd: string; act
       else if (event.seq > attached) term.write(event.data)
     })
     const offExit = on('terminalExit', (event) => {
-      if (event.id === id && !closed) term.write('\r\n\x1b[2m[进程已退出]\x1b[0m\r\n')
+      if (event.id === id && !closed) term.write(`\r\n\x1b[2m[${t('进程已退出')}]\x1b[0m\r\n`)
     })
 
     let lastCols = 0
@@ -144,7 +145,7 @@ export function TerminalView({ id, cwd, active }: { id: string; cwd: string; act
         attached = seq
         for (const event of early) if (event.seq > seq) term.write(event.data)
         early.length = 0
-        if (exited) term.write('\r\n\x1b[2m[进程已退出]\x1b[0m\r\n')
+        if (exited) term.write(`\r\n\x1b[2m[${t('进程已退出')}]\x1b[0m\r\n`)
       })
       .catch((error) => term.write(`\x1b[31m${String(error)}\x1b[0m\r\n`))
 

@@ -1,4 +1,5 @@
 import { Popover } from '@base-ui/react/popover'
+import { t } from '@shared/i18n'
 import { Check, ChevronDown, ChevronRight, Cpu, Lock, Pencil, Search, Shield, Sparkles, Star } from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { create } from 'zustand'
@@ -115,7 +116,7 @@ export function ModelPicker({ model, onChange }: { model?: AgentModel; onChange:
         if (!next) setFly(null)
       }}
     >
-      <Popover.Trigger className={pillClass} title="模型与思考等级">
+      <Popover.Trigger className={pillClass} title={t('模型与思考等级')}>
         <ProviderIcon provider={current.provider} />
         <span className="whitespace-nowrap">{nameOf(current, catalog)}</span>
         {shownEffort && <span className="text-muted-foreground">{agentEffortLabel(shownEffort)}</span>}
@@ -127,13 +128,13 @@ export function ModelPicker({ model, onChange }: { model?: AgentModel; onChange:
             <MenuRow
               active={fly === 'effort'}
               onEnter={() => setFly('effort')}
-              label="Effort"
-              value={agentEffortLabel(shownEffort) ?? '默认'}
+              label={t('思考等级')}
+              value={agentEffortLabel(shownEffort) ?? t('默认')}
             />
             <MenuRow
               active={fly === 'model'}
               onEnter={() => setFly('model')}
-              label="Model"
+              label={t('模型')}
               value={
                 <>
                   <ProviderIcon provider={current.provider} />
@@ -150,7 +151,7 @@ export function ModelPicker({ model, onChange }: { model?: AgentModel; onChange:
                   onClick={() => choose(null)}
                   className="flex h-8 w-full items-center rounded-lg px-2 text-left text-[12.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
                 >
-                  恢复默认
+                  {t('恢复默认')}
                 </button>
               </>
             )}
@@ -253,19 +254,19 @@ function ModelList({ current, catalog, onPick }: { current: AgentModel; catalog:
 
   const empty =
     tab === 'favorites' && !needle
-      ? '还没有收藏的模型'
+      ? t('还没有收藏的模型')
       : tab === 'claude' && !catalog
-        ? (catalogError ?? '正在读取 Claude 模型…')
+        ? (catalogError ?? t('正在读取 Claude 模型…'))
         : tab === 'magpie' && !magpie.length
           ? magpieError
-            ? '打开 Magpie 后重试'
-            : '正在读取 Magpie 模型…'
-          : '没有匹配的模型'
+            ? t('打开 Magpie 后重试')
+            : t('正在读取 Magpie 模型…')
+          : t('没有匹配的模型')
 
   return (
     <div className="flex h-[360px] min-h-0 overflow-hidden rounded-xl">
       <nav className="flex w-11 shrink-0 flex-col items-center gap-1 border-r p-1.5">
-        <RailButton title="收藏" selected={tab === 'favorites'} onSelect={() => setTab('favorites')}>
+        <RailButton title={t('收藏夹')} selected={tab === 'favorites'} onSelect={() => setTab('favorites')}>
           <Star className="size-4" fill={tab === 'favorites' ? 'currentColor' : 'none'} />
         </RailButton>
         <RailButton title="Claude" selected={tab === 'claude'} onSelect={() => setTab('claude')}>
@@ -285,7 +286,7 @@ function ModelList({ current, catalog, onPick }: { current: AgentModel; catalog:
             onKeyDown={(event) => {
               if (event.key === 'Enter' && rows[0]) onPick(rows[0].model)
             }}
-            placeholder="Search models"
+            placeholder={t('搜索模型')}
             className="selectable min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
           />
         </label>
@@ -309,7 +310,7 @@ function ModelList({ current, catalog, onPick }: { current: AgentModel; catalog:
                 {(tab === 'favorites' || needle) && <span className="shrink-0 px-1 text-[10px] text-muted-foreground">{row.source}</span>}
                 <button
                   type="button"
-                  title={favorited ? '取消收藏' : '收藏'}
+                  title={favorited ? t('取消收藏') : t('收藏')}
                   onClick={() => toggleFavorite(key)}
                   className={cn(
                     'grid size-6 shrink-0 place-items-center rounded-md',
@@ -410,7 +411,7 @@ export function AccessPicker({ access, onChange }: { access?: AgentAccess; onCha
                 </button>
               )
             })}
-            <p className="px-2 pt-1 pb-1.5 text-[11px] leading-4 text-muted-foreground">从下一条消息开始生效。</p>
+            <p className="px-2 pt-1 pb-1.5 text-[11px] leading-4 text-muted-foreground">{t('从下一条消息开始生效。')}</p>
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

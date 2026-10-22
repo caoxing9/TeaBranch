@@ -1,3 +1,4 @@
+import { t } from '@shared/i18n'
 import type { TeableConfig } from '@shared/types'
 import { httpFetch } from '../core/http'
 import { log, TeaBranchError } from '../core/log'
@@ -133,11 +134,11 @@ export async function startDeviceLogin(clientId: string, onDone: (error?: string
           continue
         }
         pending = null
-        onDone(code === 'access_denied' ? '你在浏览器里拒绝了授权' : String((error as Error).message))
+        onDone(code === 'access_denied' ? t('你在浏览器里拒绝了授权') : String((error as Error).message))
         return
       }
     }
-    if (!attempt.cancelled) onDone('验证码已过期，请重新登录')
+    if (!attempt.cancelled) onDone(t('验证码已过期，请重新登录'))
   })()
 
   return {
@@ -183,7 +184,7 @@ function toSession(body: Record<string, unknown>, clientId: string, previousRefr
 const oauthError = (body: Record<string, unknown>, status: number): string => {
   const code = String(body.error ?? '')
   const description = String(body.error_description ?? body.message ?? '')
-  if (code === 'invalid_client') return 'Teable 不认识这个 Client ID — 检查 OAuth 应用设置'
-  if (code === 'unauthorized_client') return '这个 OAuth 应用没有开启 Device Flow — 在 Teable 的 OAuth 应用设置里打开它'
-  return `${description || code || 'OAuth 请求失败'} (${status})`
+  if (code === 'invalid_client') return t('Teable 不认识这个 Client ID — 检查 OAuth 应用设置')
+  if (code === 'unauthorized_client') return t('这个 OAuth 应用没有开启 Device Flow — 在 Teable 的 OAuth 应用设置里打开它')
+  return `${description || code || t('OAuth 请求失败')} (${status})`
 }

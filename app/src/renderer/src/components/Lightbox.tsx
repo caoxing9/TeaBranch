@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, ExternalLink, X } from 'lucide-react'
+import { t } from '@shared/i18n'
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { create } from 'zustand'
@@ -56,7 +57,7 @@ export function Lightbox() {
     // role=dialog also makes it a no-drag layer over the title bar (styles.css).
     <div
       role="dialog"
-      aria-label={image.name ?? '图片预览'}
+      aria-label={image.name ?? t('图片预览')}
       className="no-drag fixed inset-0 z-[100] flex flex-col bg-black/80 backdrop-blur-sm animate-in fade-in-0 duration-150"
       onClick={close}
     >
@@ -69,13 +70,18 @@ export function Lightbox() {
         )}
         <button
           type="button"
-          title="在浏览器打开"
+          title={t('在浏览器打开')}
           onClick={() => void api.openExternal(image.url)}
           className="grid size-8 place-items-center rounded-md hover:bg-white/10"
         >
           <ExternalLink className="size-4" />
         </button>
-        <button type="button" title="关闭（Esc）" onClick={close} className="grid size-8 place-items-center rounded-md hover:bg-white/10">
+        <button
+          type="button"
+          title={t('关闭（Esc）')}
+          onClick={close}
+          className="grid size-8 place-items-center rounded-md hover:bg-white/10"
+        >
           <X className="size-4" />
         </button>
       </div>

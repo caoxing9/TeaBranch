@@ -1,3 +1,4 @@
+import { t } from '@shared/i18n'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { TeaBranchError } from './log'
@@ -96,7 +97,7 @@ export function entries(worktree: string): { key: string; value: string }[] {
  */
 export function writeEntries(updated: { key: string; value: string }[], worktree: string): void {
   const target = writableFile(worktree)
-  if (!target) throw new TeaBranchError('No .env.development.local found in worktree')
+  if (!target) throw new TeaBranchError(t('worktree 里没有 .env.development.local'))
   const lines = readFileSync(target, 'utf8').split('\n')
   const values = new Map(updated.map((entry) => [entry.key, entry.value]))
 
@@ -127,7 +128,7 @@ export function writeEntries(updated: { key: string; value: string }[], worktree
 /** Rewrite owned keys in place, appending any that were missing. Every other line is preserved. */
 export function writeOverrides(overrides: Record<string, string>, worktree: string): void {
   const target = writableFile(worktree)
-  if (!target) throw new TeaBranchError('No .env.development.local found in worktree')
+  if (!target) throw new TeaBranchError(t('worktree 里没有 .env.development.local'))
   const replaced = new Set<string>()
   const output = readFileSync(target, 'utf8')
     .split('\n')

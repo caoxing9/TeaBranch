@@ -4,6 +4,7 @@ import type { Issue, IssuePhase, IssueRun, Person } from '@shared/types'
 import { isActivePhase, phaseLabel } from '@shared/types'
 import { SectionSwitcher } from '@/components/SectionSwitcher'
 import { Button, IconButton, MenuButton, Spinner, StatusDot } from '@/components/kit'
+import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { selectedRow } from '../branches/BranchSidebar'
 import { issuePeople } from '@/lib/people'
@@ -100,13 +101,15 @@ export function IssueSidebar() {
             <input
               value={state.search}
               onChange={(event) => useIssues.setState({ search: event.target.value })}
-              placeholder="搜索 issue"
+              placeholder={t('搜索 issue')}
               className="selectable w-full min-w-0 bg-transparent text-[12.5px] outline-none placeholder:text-fg-3"
             />
             <span
               className={cx('shrink-0 text-[11px] tabular-nums', visible.length < state.issues.length ? 'text-brand' : 'text-fg-3')}
               title={
-                visible.length < state.issues.length ? `筛选后 ${visible.length} 个，共 ${state.issues.length} 个` : '当前列表里的 issue 数'
+                visible.length < state.issues.length
+                  ? t('筛选后 {n} 个，共 {total} 个', { n: visible.length, total: state.issues.length })
+                  : t('当前列表里的 issue 数')
               }
             >
               {visible.length < state.issues.length ? `${visible.length} / ${state.issues.length}` : visible.length}
@@ -116,7 +119,7 @@ export function IssueSidebar() {
           <button
             type="button"
             aria-pressed={showBatchBar}
-            title="勾选多个 issue 批量修复（⌘/⇧ 点击也能勾选）"
+            title={t('勾选多个 issue 批量修复（⌘/⇧ 点击也能勾选）')}
             onClick={() => {
               if (showBatchBar) {
                 setSelectMode(false)
@@ -138,8 +141,8 @@ export function IssueSidebar() {
                 <span className="truncate">{summary}</span>
                 <button
                   type="button"
-                  aria-label="清除筛选"
-                  title="清除筛选"
+                  aria-label={t('清除筛选')}
+                  title={t('清除筛选')}
                   onClick={() =>
                     state.setIssueFilter({
                       ...state.issueFilter,
@@ -158,7 +161,7 @@ export function IssueSidebar() {
           <div className="mt-1.5 flex h-6 items-center gap-2 rounded-md bg-fill px-1.5 text-[11.5px] text-fg-2">
             <input
               type="checkbox"
-              title="全选当前列表（⌘A）"
+              title={t('全选当前列表（⌘A）')}
               className="size-3.5 accent-brand"
               disabled={!visible.length}
               checked={allChecked}
@@ -167,12 +170,16 @@ export function IssueSidebar() {
               }}
               onChange={() => state.setChecked(allChecked ? new Set() : new Set([...state.checked, ...visibleIds]))}
             />
-            {state.checked.size > 0 ? <span className="text-fg">已选 {state.checked.size}</span> : <span className="text-fg-3">全选</span>}
+            {state.checked.size > 0 ? (
+              <span className="text-fg">{t('已选 {n}', { n: state.checked.size })}</span>
+            ) : (
+              <span className="text-fg-3">{t('全选')}</span>
+            )}
             <div className="flex-1" />
             <button
               type="button"
               className="rounded px-1 hover:bg-foreground/[0.07] hover:text-fg disabled:opacity-40"
-              title="当前列表里没勾的勾上、勾了的取消"
+              title={t('当前列表里没勾的勾上、勾了的取消')}
               disabled={!visible.length}
               onClick={() => {
                 const next = new Set(state.checked)
@@ -183,7 +190,7 @@ export function IssueSidebar() {
                 state.setChecked(next)
               }}
             >
-              反选
+              {t('反选')}
             </button>
             <button
               type="button"
@@ -191,7 +198,7 @@ export function IssueSidebar() {
               disabled={!state.checked.size}
               onClick={() => state.setChecked(new Set())}
             >
-              清空
+              {t('清空')}
             </button>
           </div>
         )}
@@ -199,9 +206,9 @@ export function IssueSidebar() {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" tabIndex={-1}>
         {!state.user ? (
-          <div className="px-3 py-10 text-center text-[13px] text-fg-2">未登录 Teable</div>
+          <div className="px-3 py-10 text-center text-[13px] text-fg-2">{t('未登录 Teable')}</div>
         ) : visible.length === 0 ? (
-          <div className="px-3 py-10 text-center text-[13px] text-fg-2">{state.loading ? '加载中…' : '没有 issue'}</div>
+          <div className="px-3 py-10 text-center text-[13px] text-fg-2">{state.loading ? t('加载中…') : t('没有 issue')}</div>
         ) : (
           <IssueGroups visible={visible} click={click} toggleChecked={toggleChecked} selectMode={showBatchBar} />
         )}
@@ -209,10 +216,10 @@ export function IssueSidebar() {
 
       {state.checked.size > 0 && (
         <div className="flex h-10 shrink-0 items-center gap-2 border-t border-border bg-brand-soft px-3 text-[12px]">
-          <span className="font-medium">已选 {state.checked.size} 个</span>
+          <span className="font-medium">{t('已选 {n} 个', { n: state.checked.size })}</span>
           <div className="flex-1" />
           <Button tone="accent" className="h-6 px-2 text-[11.5px]" onClick={() => state.select(new Set())}>
-            批量修复…
+            {t('批量修复…')}
           </Button>
         </div>
       )}
@@ -228,31 +235,31 @@ export function IssueSidebar() {
             }}
           />
         )}
-        <span className="truncate font-medium text-fg">{state.user?.name ?? '未登录'}</span>
-        {active > 0 && <span className="text-agent">· {active} 进行中</span>}
+        <span className="truncate font-medium text-fg">{state.user?.name ?? t('未登录')}</span>
+        {active > 0 && <span className="text-agent">· {t('{n} 进行中', { n: active })}</span>}
         <div className="flex-1" />
-        <IconButton label="刷新" disabled={!state.user || state.loading} onClick={() => void state.reload()}>
+        <IconButton label={t('刷新')} disabled={!state.user || state.loading} onClick={() => void state.reload()}>
           <RefreshCw className={cx('size-3.5', state.loading && 'animate-spin')} />
         </IconButton>
         <MenuButton
-          label="更多"
+          label={t('更多')}
           entries={() => {
             const queueable = fixable(visible, state.runs).filter((issue) => !state.runs[issue.id])
             return [
               {
-                label: `把列表里 ${queueable.length} 个未处理的加入队列`,
+                label: t('把列表里 {n} 个未处理的加入队列', { n: queueable.length }),
                 disabled: !queueable.length,
                 onSelect: () => void state.perform(() => api.enqueueFix(queueable)),
               },
               'separator',
               {
-                label: 'Issue 设置…',
+                label: t('Issue 设置…'),
                 onSelect: () => useIssues.setState({ showSettings: true }),
               },
               ...(state.user
                 ? [
                     {
-                      label: '退出 Teable',
+                      label: t('退出 Teable'),
                       onSelect: () => void state.signOut(),
                     },
                   ]
@@ -269,12 +276,13 @@ export function IssueSidebar() {
 
 type Group = 'active' | 'review' | 'attention' | 'untouched'
 
-const groupLabel: Record<Group, string> = {
-  active: '进行中',
-  review: '待审查',
-  attention: '需要你处理',
-  untouched: '未开始',
-}
+const groupLabel = (group: Group): string =>
+  ({
+    active: t('进行中'),
+    review: t('待审查'),
+    attention: t('需要你处理'),
+    untouched: t('未开始'),
+  })[group]
 
 /** Where an issue sits in the issue-driven flow: what needs you now comes first. */
 function groupOf(run: IssueRun | undefined, queued: boolean): Group {
@@ -325,7 +333,7 @@ function IssueGroups({
               className="flex w-full items-center gap-1 rounded-md px-2 pt-2 pb-1 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase outline-none hover:text-fg-2 focus-visible:text-fg-2"
             >
               {collapsed.includes(group) ? <ChevronRight className="size-3" /> : <ChevronDown className="size-3" />}
-              {groupLabel[group]}
+              {groupLabel(group)}
               <span className="font-normal">{issues.length}</span>
             </button>
             {!collapsed.includes(group) &&
@@ -397,7 +405,7 @@ function IssueRow({
           checked={checked}
           onClick={(event) => event.stopPropagation()}
           onChange={onToggleCheck}
-          aria-label={`勾选 ${issue.key}`}
+          aria-label={t('勾选 {key}', { key: issue.key })}
           className={cx('size-3.5 cursor-pointer accent-brand', checked || checking ? 'opacity-100' : 'opacity-50 group-hover:opacity-100')}
         />
       </span>
@@ -424,7 +432,7 @@ function IssueRow({
               </>
             )}
             <div className="flex-1" />
-            {queuePosition ? <span>排队第 {queuePosition}</span> : run ? <PhaseBadge phase={run.phase} /> : null}
+            {queuePosition ? <span>{t('排队第 {n}', { n: queuePosition })}</span> : run ? <PhaseBadge phase={run.phase} /> : null}
           </div>
         )}
       </div>
@@ -443,15 +451,18 @@ function QueueBar() {
       {queue.awaitingNextBatch ? (
         <>
           <Pause className="size-3.5 text-warn" />
-          <span className="flex-1">本批已完成，等你审查</span>
+          <span className="flex-1">{t('本批已完成，等你审查')}</span>
           <Button
             tone="accent"
             className="h-6 px-2 text-[11px]"
             icon={<Play className="size-3" />}
-            title={`从排队的 ${queue.waiting.length} 个里取下一批 ${Math.min(queue.waiting.length, batchSize)} 个`}
+            title={t('从排队的 {waiting} 个里取下一批 {n} 个', {
+              waiting: queue.waiting.length,
+              n: Math.min(queue.waiting.length, batchSize),
+            })}
             onClick={() => void perform(() => api.startNextBatch())}
           >
-            开始下一批
+            {t('开始下一批')}
           </Button>
         </>
       ) : (
@@ -459,13 +470,11 @@ function QueueBar() {
           {queue.batch.length > 0 && (
             <>
               <StatusDot color="bg-agent" pulse />
-              <span>
-                本批 {queue.settled}/{queue.batch.length} 完成
-              </span>
+              <span>{t('本批 {done}/{total} 完成', { done: queue.settled, total: queue.batch.length })}</span>
             </>
           )}
           <div className="flex-1" />
-          {queue.waiting.length > 0 && <span>排队 {queue.waiting.length}</span>}
+          {queue.waiting.length > 0 && <span>{t('排队 {n}', { n: queue.waiting.length })}</span>}
         </>
       )}
     </div>

@@ -1,4 +1,15 @@
-import type { Attachment, IssueComment, Person, TeableConfig, TeableField, TeableRecord, TeableUser } from '@shared/types'
+import { t } from '@shared/i18n'
+import type {
+  Attachment,
+  IssueComment,
+  Person,
+  TeableConfig,
+  TeableField,
+  TeableLevel,
+  TeableNode,
+  TeableRecord,
+  TeableUser,
+} from '@shared/types'
 import { httpFetch } from '../core/http'
 import { TeaBranchError } from '../core/log'
 
@@ -66,17 +77,53 @@ async function request(
       // Not JSON.
     }
     if (response.status === 401 || response.status === 403) {
-      throw new TeaBranchError(`Teable rejected the token (${response.status}): ${detail}`)
+      throw new TeaBranchError(t('Teable 拒绝了这个令牌（{status}）：{detail}', { status: response.status, detail }))
     }
-    throw new TeaBranchError(`Teable ${method} ${path} failed (${response.status}): ${detail}`)
+    throw new TeaBranchError(t('Teable {method} {path} 失败（{status}）：{detail}', { method, path, status: response.status, detail }))
   }
   return text ? JSON.parse(text) : {}
 }
 
 export async function me(config: TeableConfig, token: string): Promise<TeableUser> {
   const user = (await request(config, token, 'GET', '/api/auth/user/me')) as Partial<TeableUser>
-  if (!user.id) throw new TeaBranchError('Teable returned an unexpected user payload')
+  if (!user.id) throw new TeaBranchError(t('Teable 返回的用户信息格式不对'))
   return { id: user.id, name: user.name ?? user.id, email: user.email, avatar: user.avatar ?? undefined }
+}
+
+const browsePaths: Record<Exclude<TeableLevel, 'base'>, (parentId: string) => string> = {
+  space: () => '/api/space',
+  table: (baseId) => `/api/base/${baseId}/table`,
+  view: (tableId) => `/api/table/${tableId}/view`,
+}
+
+/**
+ * One level of the hierarchy the issue table is picked from, as the token's user sees it. Bases
+ * come from every space at once, grouped by space where the token may read space names.
+ */
+export async function browse(config: TeableConfig, token: string, level: TeableLevel, parentId = ''): Promise<TeableNode[]> {
+  if (level === 'base') return bases(config, token)
+  if (level !== 'space' && !parentId) return []
+  const list = (await request(config, token, 'GET', browsePaths[level](parentId))) as {
+    id: string
+    name: string
+    defaultViewId?: string
+  }[]
+  return list.map((node) => ({ id: node.id, name: node.name, defaultViewId: node.defaultViewId }))
+}
+
+async function bases(config: TeableConfig, token: string): Promise<TeableNode[]> {
+  const list = (await request(config, token, 'GET', '/api/base/access/all')) as { id: string; name: string; spaceId: string }[]
+  // Listing spaces needs a scope many tokens lack; without it the bases just aren't grouped.
+  const spaces = new Map<string, string>()
+  try {
+    for (const space of (await request(config, token, 'GET', '/api/space')) as { id: string; name: string }[])
+      spaces.set(space.id, space.name)
+  } catch {
+    // Ungrouped.
+  }
+  return list
+    .map((base) => ({ id: base.id, name: base.name, group: spaces.get(base.spaceId) }))
+    .sort((a, b) => (a.group ?? '').localeCompare(b.group ?? '') || a.name.localeCompare(b.name))
 }
 
 export async function fields(config: TeableConfig, token: string): Promise<TeableField[]> {

@@ -1,5 +1,7 @@
 # TeaBranch
 
+English | [简体中文](README.zh-CN.md)
+
 A macOS app for working on [Teable](https://github.com/teableio/teable) in parallel. Every branch lives in its own Git worktree with its own dev server, ports, database and environment. Point it at a Teable issue table and it goes one step further: a local agent triages each issue, fixes it in its own worktree, opens the PR and gets it reviewed. What's left for you is the review.
 
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)
@@ -14,13 +16,13 @@ A macOS app for working on [Teable](https://github.com/teableio/teable) in paral
 
 Teable is a large full-stack project, and switching branches means restarting everything. TeaBranch keeps each branch checked out in its own worktree, so switching is a click and nothing has to restart. With several branches running side by side, issue fixing parallelises as well: each issue gets a worktree named after its ID, with its own agent conversation and its own terminal.
 
-The window has two sections: **Branches** (⌘1) and **Issues** (⌘2).
+The window has two sections: **Branches** (⌘1) and **Issues** (⌘2). The interface is in English or Chinese. It follows macOS by default, and you can switch it in Settings (⌘,).
 
 ## Issues: agent-driven fixing
 
 **From the issue table**
 
-- Sign in to Teable (teable.ai by default) and point TeaBranch at your issue table. It maps the title, description, status, assignee and ID fields.
+- Sign in to Teable (teable.ai by default) and pick your issue table from dropdowns: base → table → view. There are no links to paste. The title, description, status, assignee and ID fields are recognised automatically, and you can remap them.
 - By default it shows **only your issues**, filtered server-side. Teable-style field filters narrow them further.
 - Issues are grouped by where they stand: needs you, awaiting review, in progress, not started. Descriptions, comments and attachments render inline, and images open in a lightbox.
 
@@ -30,6 +32,7 @@ The window has two sections: **Branches** (⌘1) and **Issues** (⌘2).
 - **Triage first** (on by default). Before touching code, the agent checks whether the issue was already fixed (git log, open PRs) and tries to reproduce it locally with a minimal failing test. It then decides whether it's a bug at all. Only a confirmed bug is fixed automatically. Anything else stops with its verdict (already fixed / not a bug / needs info), and you can still press **仍然修复** to fix it anyway.
 - The agent finds the root cause, fixes it, and opens a PR that carries the issue ID.
 - **Review**: Codex, or a local model through Magpie, reviews the PR. Its findings go back to the issue's agent, which addresses them for a configurable number of rounds.
+- **Custom prompts**: the instructions for each stage (triage, fix, review, addressing review) can be rewritten, with placeholders such as `{key}` and `{branch}`. The issue itself is always included, and TeaBranch appends the `TRIAGE:` / `VERDICT:` line on its own, so a custom prompt can't break the pipeline.
 - **Batches**: select several issues (or 全部修复) and they queue up N at a time. A notification arrives when the whole batch is done.
 
 **Conversations**
@@ -37,7 +40,7 @@ The window has two sections: **Branches** (⌘1) and **Issues** (⌘2).
 - Each issue has its own Claude Code conversation, and you can interject at any point. The composer picks the model, effort level and access mode, and takes attachments.
 - **+** opens another chat in the issue's worktree, building the worktree first if there isn't one. Chat tabs are grouped per issue, so switching issues switches tabs. You can also open free-standing chats in any worktree.
 - A built-in terminal dock (⌘J to show or hide, ⌘\` for a new terminal) opens shells in the issue's worktree. Terminals are grouped per issue like the chats.
-- The menu-bar icon animates while agents are running.
+- While agents are running, the spark on the menu-bar icon breathes.
 
 **Requirements:** [Claude Code](https://claude.com/claude-code) (`claude`) and the GitHub CLI (`gh`, signed in) on your `PATH`. Codex (`codex`) or Magpie are needed for review.
 
@@ -109,7 +112,7 @@ Requirements: Node 22 and pnpm 10.
 
 CI runs all of the above plus a production build on every pull request.
 
-Stack: Electron, electron-vite (Vite), React 19, TypeScript, Tailwind 4, shadcn/ui on Base UI, zustand, xterm.js + node-pty. The main process (`src/main`) owns git, processes, ports, agents and Teable. The renderer (`src/renderer`) talks to it over a single typed IPC channel, whose contract is in `src/shared/types.ts`.
+Stack: Electron, electron-vite (Vite), React 19, TypeScript, Tailwind 4, shadcn/ui on Base UI, zustand, xterm.js + node-pty. The main process (`src/main`) owns git, processes, ports, agents and Teable. The renderer (`src/renderer`) talks to it over a single typed IPC channel, whose contract is in `src/shared/types.ts`. Chinese is the source language for UI text, with English in `src/shared/i18n/en/`; a test catches missing translations.
 
 The earlier native build is in [`swift/`](swift).
 
@@ -132,9 +135,9 @@ Everything lives in `~/Library/Application Support/com.teabranch.dev/`. That's t
 
 | File | Holds |
 |------|-------|
-| `settings.json` | Repository path, base port, default start command, terminal app, agent command |
+| `settings.json` | Repository path, base port, default start command, terminal app, agent command, language |
 | `categories.json` | Lane assignments |
-| `teable.json` | Issue table and field mapping, triage, models, review engine, batch size |
+| `teable.json` | Issue table and field mapping, triage, models, review engine, batch size, custom prompts |
 
 Teable credentials are kept encrypted with the macOS keychain (Electron `safeStorage`), not in these files.
 

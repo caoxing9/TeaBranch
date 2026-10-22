@@ -1,4 +1,5 @@
 import { Button, Dialog } from '@/components/kit'
+import { t } from '@shared/i18n'
 import { useApp } from '@/store/app'
 
 /**
@@ -9,10 +10,10 @@ export function DeleteDialog({ branch }: { branch: string }) {
   const close = () => useApp.setState({ pendingDelete: null })
   const remove = useApp((s) => s.remove)
   return (
-    <Dialog title={`删除 “${branch}” 的 worktree？`} onClose={close} width={420}>
-      <p className="mb-4 text-[13px] text-fg-2">worktree 目录会被删除，正在运行的服务会先停止。这个操作无法撤销。</p>
+    <Dialog title={t('删除 “{branch}” 的 worktree？', { branch })} onClose={close} width={420}>
+      <p className="mb-4 text-[13px] text-fg-2">{t('worktree 目录会被删除，正在运行的服务会先停止。这个操作无法撤销。')}</p>
       <div className="flex justify-end gap-2">
-        <Button onClick={close}>取消</Button>
+        <Button onClick={close}>{t('取消')}</Button>
         <Button
           tone="danger"
           onClick={() => {
@@ -20,7 +21,7 @@ export function DeleteDialog({ branch }: { branch: string }) {
             void remove(branch)
           }}
         >
-          删除
+          {t('删除')}
         </Button>
       </div>
     </Dialog>

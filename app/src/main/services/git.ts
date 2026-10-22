@@ -1,3 +1,4 @@
+import { t } from '@shared/i18n'
 import { readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { Branch, BranchEnvironment, WorktreeDbInfo } from '@shared/types'
@@ -37,7 +38,7 @@ export async function currentBranch(repo: string): Promise<string | undefined> {
 /** One per worktree, current first, then natural order. */
 export async function branches(repo: string, environments: Record<string, BranchEnvironment>): Promise<Branch[]> {
   const result = await git(['worktree', 'list', '--porcelain'], repo)
-  if (!result.ok) throw new TeaBranchError(`git worktree list failed: ${result.stderr.trim()}`)
+  if (!result.ok) throw new TeaBranchError(t('git worktree list 失败：{error}', { error: result.stderr.trim() }))
   const head = await currentBranch(repo)
   return parseWorktreeList(result.stdout)
     .map((entry) => ({
@@ -55,7 +56,7 @@ export async function worktreePath(branch: string, repo: string): Promise<string
   const entry = (await worktrees(repo)).find((candidate) => candidate.branch === branch)
   if (entry) return entry.path
   if ((await currentBranch(repo)) === branch) return repo
-  throw new TeaBranchError(`No worktree found for branch '${branch}'. Create one first with \`git worktree add\`.`)
+  throw new TeaBranchError(t('分支 {branch} 没有 worktree，先用 `git worktree add` 创建一个。', { branch }))
 }
 
 /** Memoised: the answer is fixed at creation time, and branch refreshes ask it constantly. */

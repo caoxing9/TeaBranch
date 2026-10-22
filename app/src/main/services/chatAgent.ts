@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { t } from '@shared/i18n'
 import type { AgentAccess, AgentModel, Chat, ConversationEntry } from '@shared/types'
 import { state } from '../core/appState'
 import { emit } from '../core/events'
@@ -42,11 +43,11 @@ class ChatAgent {
   }
 
   create(workspace: { cwd: string; branch?: string; issueId?: string }): Chat {
-    if (!existsSync(workspace.cwd)) throw new TeaBranchError(`找不到目录 ${workspace.cwd}`)
+    if (!existsSync(workspace.cwd)) throw new TeaBranchError(t('找不到目录 {path}', { path: workspace.cwd }))
     const now = Date.now()
     const chat: Chat = {
       id: randomUUID(),
-      title: '新对话',
+      title: t('新对话'),
       cwd: workspace.cwd,
       branch: workspace.branch,
       issueId: workspace.issueId,
@@ -71,10 +72,10 @@ class ChatAgent {
 
   send(id: string, message: string, attachments: string[] = []): void {
     const chat = this.get(id)
-    if (this.handles.has(id)) throw new TeaBranchError('这个对话还在运行，等它结束或先停止')
+    if (this.handles.has(id)) throw new TeaBranchError(t('这个对话还在运行，等它结束或先停止'))
     const files = attachments.length ? `\n\n<attachments>\n${attachments.join('\n')}\n</attachments>` : ''
     this.append(id, entry('user', 'agent', message))
-    if (chat.title === '新对话') chat.title = message.replace(/\s+/g, ' ').slice(0, 40)
+    if (untitled.has(chat.title)) chat.title = message.replace(/\s+/g, ' ').slice(0, 40)
     chat.running = true
     chat.updatedAt = Date.now()
     this.changed()
@@ -105,8 +106,8 @@ class ChatAgent {
         current.costUSD += outcome.costUSD
         if (outcome.contextWindow) current.context = { used: current.context?.used ?? 0, window: outcome.contextWindow }
         current.updatedAt = Date.now()
-        if (outcome.cancelled) this.append(id, entry('system', 'agent', '已停止'))
-        else if (outcome.isError && !outcome.finalText) this.append(id, entry('error', 'agent', outcome.diagnosis ?? 'agent 异常退出'))
+        if (outcome.cancelled) this.append(id, entry('system', 'agent', t('已停止')))
+        else if (outcome.isError && !outcome.finalText) this.append(id, entry('error', 'agent', outcome.diagnosis ?? t('agent 异常退出')))
         this.changed()
       },
     })
@@ -134,7 +135,7 @@ class ChatAgent {
 
   private get(id: string): Chat {
     const chat = this.chats[id]
-    if (!chat) throw new TeaBranchError('找不到这个对话')
+    if (!chat) throw new TeaBranchError(t('找不到这个对话'))
     return chat
   }
 
@@ -153,6 +154,9 @@ class ChatAgent {
     emit('chatsChanged', undefined)
   }
 }
+
+/** A new chat's placeholder title, in either language: the first message replaces it. */
+const untitled = new Set(['新对话', 'New Chat', 'New chat']) // i18n-ignore
 
 function sessionExists(sessionId: string, cwd: string): boolean {
   let resolved = cwd

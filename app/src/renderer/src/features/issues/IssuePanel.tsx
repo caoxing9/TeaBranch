@@ -4,6 +4,7 @@ import type { BranchChanges, Issue, IssueRun } from '@shared/types'
 import { isLive } from '@shared/types'
 import { Button, IconButton, Segmented, Spinner, StatusDot } from '@/components/kit'
 import { PersonAvatar } from '@/components/person'
+import { t } from '@shared/i18n'
 import { api, messageOf } from '@/lib/api'
 import { formatBytes, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -28,9 +29,9 @@ export function IssuePanel({ issue, run }: { issue: Issue; run?: IssueRun }) {
           value={tab}
           onChange={setTab}
           options={[
-            { value: 'run', label: '运行' },
-            { value: 'changes', label: '改动' },
-            { value: 'details', label: '详情' },
+            { value: 'run', label: t('运行') },
+            { value: 'changes', label: t('改动') },
+            { value: 'details', label: t('详情') },
           ]}
         />
       </div>
@@ -38,7 +39,7 @@ export function IssuePanel({ issue, run }: { issue: Issue; run?: IssueRun }) {
         {tab === 'details' ? (
           <Details issue={issue} />
         ) : !run ? (
-          <div className="p-6 text-center text-[12.5px] text-muted-foreground">开始修复后，这里可以运行它的分支、查看改动。</div>
+          <div className="p-6 text-center text-[12.5px] text-muted-foreground">{t('开始修复后，这里可以运行它的分支、查看改动。')}</div>
         ) : tab === 'run' ? (
           <RunTab branch={run.branch} />
         ) : (
@@ -52,7 +53,7 @@ export function IssuePanel({ issue, run }: { issue: Issue; run?: IssueRun }) {
 function RunTab({ branch: name }: { branch: string }) {
   const app = useApp()
   const branch = app.branches.find((candidate) => candidate.name === name)
-  if (!branch) return <div className="p-6 text-center text-[12.5px] text-muted-foreground">worktree 还在创建中…</div>
+  if (!branch) return <div className="p-6 text-center text-[12.5px] text-muted-foreground">{t('worktree 还在创建中…')}</div>
 
   const status = statusOf(branch)
   const live = isLive(status)
@@ -66,7 +67,7 @@ function RunTab({ branch: name }: { branch: string }) {
       <div className="shrink-0 space-y-3 border-b p-3">
         <div className="flex items-center gap-2">
           <StatusDot color={statusColor[status]} pulse={status === 'building'} />
-          <span className="text-[13px] font-medium">{live ? (status === 'building' ? '启动中' : '运行中') : '未运行'}</span>
+          <span className="text-[13px] font-medium">{live ? (status === 'building' ? t('启动中') : t('运行中')) : t('未运行')}</span>
           {usage && (
             <span className="text-[11.5px] text-muted-foreground tabular-nums">
               {usage.cpuPercent.toFixed(0)}% · {formatBytes(usage.residentBytes)} · {formatDuration(usage.uptimeSeconds)}
@@ -79,7 +80,7 @@ function RunTab({ branch: name }: { branch: string }) {
             icon={busy ? <Spinner /> : live ? <Square className="size-3" /> : <Play className="size-3.5" />}
             onClick={() => void app.toggle(branch)}
           >
-            {live ? '停止' : '启动'}
+            {live ? t('停止') : t('启动')}
           </Button>
         </div>
         <div className="flex items-center gap-1">
@@ -88,12 +89,13 @@ function RunTab({ branch: name }: { branch: string }) {
             disabled={!live || !environment?.port}
             onClick={() => act(() => api.openPreview(name))}
           >
-            预览{environment?.port && live ? ` :${environment.port}` : ''}
+            {t('预览')}
+            {environment?.port && live ? ` :${environment.port}` : ''}
           </Button>
-          <IconButton label="在终端打开" onClick={() => act(() => api.openTerminal(name))}>
+          <IconButton label={t('在终端打开')} onClick={() => act(() => api.openTerminal(name))}>
             <Terminal className="size-4" />
           </IconButton>
-          <IconButton label="在 VS Code 打开" onClick={() => act(() => api.openEditor(name))}>
+          <IconButton label={t('在 VS Code 打开')} onClick={() => act(() => api.openEditor(name))}>
             <Code2 className="size-4" />
           </IconButton>
         </div>
@@ -131,7 +133,7 @@ function ChangesTab({ branch, prURL }: { branch: string; prURL?: string }) {
     <div className="h-full overflow-y-auto">
       <div className="flex items-center gap-2 border-b px-3 py-2 text-[12px]">
         <FileDiff className="size-3.5 text-muted-foreground" />
-        <span className="font-medium">{changes?.files.length ?? 0} 个文件</span>
+        <span className="font-medium">{t('{n} 个文件', { n: changes?.files.length ?? 0 })}</span>
         <span className="font-mono text-ok">+{added}</span>
         <span className="font-mono text-err">−{removed}</span>
         <span className="text-muted-foreground">vs {changes?.base ?? 'develop'}</span>
@@ -141,25 +143,25 @@ function ChangesTab({ branch, prURL }: { branch: string; prURL?: string }) {
             PR #{prURL.split('/').pop()}
           </Button>
         )}
-        <IconButton label="刷新" onClick={() => void load()}>
+        <IconButton label={t('刷新')} onClick={() => void load()}>
           <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
         </IconButton>
       </div>
       {error && <div className="m-3 rounded-md bg-err-soft px-3 py-2 text-[12px] text-err">{error}</div>}
       {changes && changes.dirty.length > 0 && (
         <div className="mx-3 mt-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[12px]">
-          还有 {changes.dirty.length} 个未提交的改动 —— agent 可能还没 commit。
+          {t('还有 {n} 个未提交的改动 —— agent 可能还没 commit。', { n: changes.dirty.length })}
         </div>
       )}
       {changes && (
         <>
-          <div className="px-3 pt-3 pb-1 text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">文件</div>
-          {changes.files.length === 0 && <div className="px-3 py-2 text-[12px] text-muted-foreground">还没有提交的改动</div>}
+          <div className="px-3 pt-3 pb-1 text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">{t('文件')}</div>
+          {changes.files.length === 0 && <div className="px-3 py-2 text-[12px] text-muted-foreground">{t('还没有提交的改动')}</div>}
           {changes.files.map((file) => (
             <button
               key={file.path}
               type="button"
-              title="在 VS Code 打开"
+              title={t('在 VS Code 打开')}
               onClick={() => void api.openFileInEditor(branch, file.path)}
               className="flex w-full items-center gap-2 px-3 py-1 text-left text-[12px] hover:bg-accent"
             >
@@ -173,7 +175,7 @@ function ChangesTab({ branch, prURL }: { branch: string; prURL?: string }) {
           ))}
           {changes.commits.length > 0 && (
             <>
-              <div className="px-3 pt-4 pb-1 text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">提交</div>
+              <div className="px-3 pt-4 pb-1 text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">{t('提交')}</div>
               {changes.commits.map((commit) => (
                 <div key={commit.hash} className="flex items-start gap-2 px-3 py-1 text-[12px]">
                   <GitCommitHorizontal className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />

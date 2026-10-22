@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 const initials = (name: string): string => {
   const trimmed = name.trim()
   if (!trimmed) return '?'
-  if (/[一-鿿]/.test(trimmed[0])) return trimmed[0]
+  if (/[一-鿿]/.test(trimmed[0])) return trimmed[0] // i18n-ignore: detects CJK names
   const parts = trimmed.split(/\s+/)
   return (parts.length > 1 ? parts[0][0] + parts[1][0] : trimmed.slice(0, 2)).toUpperCase()
 }
