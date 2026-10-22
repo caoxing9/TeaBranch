@@ -1,3 +1,10 @@
+# [0.11.0](https://github.com/caoxing9/TeaBranch/compare/v0.10.2...v0.11.0) (2026-10-22)
+
+
+### Features
+
+* Electron app with issue-driven fixing ([#7](https://github.com/caoxing9/TeaBranch/issues/7)) ([2945578](https://github.com/caoxing9/TeaBranch/commit/2945578413b04363fe7e396f204f17de92a7942d))
+
 ## [0.10.2](https://github.com/caoxing9/TeaBranch/compare/v0.10.1...v0.10.2) (2026-08-25)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "teabranch-app",
-  "version": "0.10.2",
+  "version": "0.11.0",
   "private": true,
   "description": "Parallel branch development environment manager",
   "license": "MIT",
