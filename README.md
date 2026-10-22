@@ -6,6 +6,10 @@ A macOS app for working on [Teable](https://github.com/teableio/teable) in paral
 ![Architecture](https://img.shields.io/badge/arch-Apple%20Silicon-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+<p align="center">
+  <img src="docs/screenshot.png" width="900" alt="TeaBranch: the issue list, an issue with its description, and the fix pipeline" />
+</p>
+
 ## What is TeaBranch?
 
 Teable is a large full-stack project, and switching branches means restarting everything. TeaBranch keeps each branch checked out in its own worktree, so switching is a click and nothing has to restart. With several branches running side by side, issue fixing parallelises as well: each issue gets a worktree named after its ID, with its own agent conversation and its own terminal.
