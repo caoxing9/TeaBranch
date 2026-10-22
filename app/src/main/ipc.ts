@@ -12,12 +12,15 @@ import { logs } from './core/logStore'
 import { writeSecret } from './core/secrets'
 import { loadCategories, loadTeableConfig, saveCategories, saveTeableConfig } from './core/settingsStore'
 import { magpieModels } from './services/agentRunner'
+import { chatAgent } from './services/chatAgent'
+import { claudeCatalog } from './services/claudeCatalog'
 import * as git from './services/git'
 import { issueAgent } from './services/issueAgent'
 import { saveUpload } from './services/issueContext'
 import * as ngrok from './services/ngrok'
 import * as processManager from './services/processManager'
 import * as processStats from './services/processStats'
+import * as ptyHost from './services/ptyHost'
 import { scratchRoot } from './services/scratch'
 import * as teable from './services/teable'
 import * as teableAuth from './services/teableAuth'
@@ -285,6 +288,25 @@ const handlers: Api = {
   restoreQueue: async (issues) => issueAgent.restoreQueue(issues),
   sendToAgent: (issue, message, attachments) => issueAgent.send(issue, message, attachments),
   setIssueModel: async (recordId, model) => issueAgent.setModel(recordId, model),
+  setIssueAccess: async (recordId, access) => issueAgent.setAccess(recordId, access),
+  claudeCatalog: async () => claudeCatalog(state.settings.agentCommand),
+  listChats: async () => chatAgent.list(),
+  createChat: async (workspace) => chatAgent.create(workspace),
+  terminalOpen: async (id, cwd, cols, rows) => ptyHost.open(id, cwd, cols, rows),
+  terminalWrite: async (id, data) => ptyHost.write(id, data),
+  terminalResize: async (id, cols, rows) => ptyHost.resize(id, cols, rows),
+  terminalKill: async (id) => ptyHost.kill(id),
+  fixAnyway: async (issue) => issueAgent.fixAnyway(issue),
+  createIssueChat: async (issue) => {
+    const workspace = await issueAgent.issueWorktree(issue, (branch, progress) => emit('worktreeProgress', { branch, progress }))
+    emitSoon('branchesChanged')
+    return chatAgent.create({ ...workspace, issueId: issue.id })
+  },
+  chatTranscript: async (chatId) => chatAgent.transcript(chatId),
+  sendChat: async (chatId, message, attachments) => chatAgent.send(chatId, message, attachments),
+  cancelChat: async (chatId) => chatAgent.cancel(chatId),
+  deleteChat: async (chatId) => chatAgent.delete(chatId),
+  updateChat: async (chatId, patch) => chatAgent.update(chatId, patch),
   saveUpload: async (recordId, name, base64) => {
     const bytes = Buffer.from(base64, 'base64')
     if (bytes.length > 25 * 1024 * 1024) throw new TeaBranchError('附件超过 25MB')

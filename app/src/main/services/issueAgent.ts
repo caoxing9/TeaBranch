@@ -4,6 +4,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Notification } from 'electron'
 import type {
+  AgentAccess,
   AgentModel,
   BatchSummary,
   ConversationEntry,
@@ -13,8 +14,9 @@ import type {
   QueueState,
   ReviewRecord,
   TeableConfig,
+  WorktreeProgress,
 } from '@shared/types'
-import { agentModelLabel, isActivePhase } from '@shared/types'
+import { agentModelLabel, isActivePhase, triageLabel, triageVerdict } from '@shared/types'
 import { state } from '../core/appState'
 import { emit, emitSoon } from '../core/events'
 import { errorMessage, TeaBranchError } from '../core/log'
@@ -28,6 +30,7 @@ import {
   type Outcome,
   runClaude,
   runCodexReview,
+  sessionContextUsed,
   truncate,
 } from './agentRunner'
 import { worktreeDbInfo } from './git'
@@ -70,6 +73,10 @@ class IssueAgent {
         run.phase = 'failed'
         run.lastError = 'TeaBranch quit while this was running'
       }
+      if (!run.context) {
+        const used = sessionContextUsed(run.sessionId)
+        if (used) run.context = { used }
+      }
     }
   }
 
@@ -77,6 +84,8 @@ class IssueAgent {
 
   allRuns = (): Record<string, IssueRun> => this.runs
   isRunning = (recordId: string): boolean => this.handles.has(recordId)
+  /** Agent and reviewer processes alive right now. */
+  runningCount = (): number => this.handles.size
 
   transcript(recordId: string): ConversationEntry[] {
     let list = this.transcripts.get(recordId)
@@ -151,7 +160,15 @@ class IssueAgent {
   }
 
   /** Send a message to the issue's own agent, resuming its session. */
-  async send(issue: Issue, message: string, attachments: string[] = []): Promise<void> {
+  /** The check said it needn't be fixed; you've read why and want the fix anyway. */
+  async fixAnyway(issue: Issue): Promise<void> {
+    const run = this.runs[issue.id]
+    if (!run) throw new TeaBranchError('这个 issue 还没有 agent 会话，先点“自动修复”。')
+    await this.send(issue, fixAfterTriagePrompt(issue, run.branch, true), [], '验证结论我看过了，仍然按 bug 修复。')
+  }
+
+  /** `display` replaces the message in the transcript when the prompt itself is boilerplate. */
+  async send(issue: Issue, message: string, attachments: string[] = [], display?: string): Promise<void> {
     const run = this.runs[issue.id]
     if (!run) throw new TeaBranchError('这个 issue 还没有 agent 会话，先点“自动修复”。')
     if (this.isRunning(issue.id)) throw new TeaBranchError('Agent 正在运行，等它结束或先停止。')
@@ -161,7 +178,8 @@ class IssueAgent {
     const files = attachments.length
       ? `\n\n<attachments>\n${attachments.map((path) => `- ${path}`).join('\n')}\n</attachments>\nOpen these with the Read tool.`
       : ''
-    this.append(issue.id, entry('user', 'agent', attachments.length ? `${message}\n\n📎 ${attachments.map((path) => path.split('/').pop()).join(', ')}` : message))
+    const shown = display ?? message
+    this.append(issue.id, entry('user', 'agent', attachments.length ? `${shown}\n\n📎 ${attachments.map((path) => path.split('/').pop()).join(', ')}` : shown))
     message = message + files
     this.update(issue.id, (r) => {
       r.phase = 'fixing'
@@ -184,6 +202,12 @@ class IssueAgent {
     const review = this.runs[issue.id]?.reviews.at(-1)
     if (!review) throw new TeaBranchError('还没有 review 结果。')
     await this.send(issue, reviewFeedbackPrompt(review))
+  }
+
+  setAccess(recordId: string, access: AgentAccess | null): void {
+    this.update(recordId, (run) => {
+      run.access = access ?? undefined
+    })
   }
 
   setModel(recordId: string, model: AgentModel | null): void {
@@ -243,6 +267,26 @@ class IssueAgent {
     return { cwd, command: env ? `env ${env} ${command}` : command, title: run.branch }
   }
 
+  /**
+   * The issue's worktree for a chat about it, built first when there is none yet — same branch and
+   * shared database a fix would use, so a later fix picks it up as is.
+   */
+  async issueWorktree(
+    issue: Issue,
+    onProgress: (branch: string, progress: WorktreeProgress) => void,
+  ): Promise<{ cwd: string; branch: string }> {
+    const repo = state.projectPath
+    if (!repo) throw new TeaBranchError('没有设置仓库路径')
+    const branch = this.runs[issue.id]?.branch ?? branchName(issue, loadTeableConfig().branchPrefix)
+    const existed = existsSync(worktrees.worktreeDirectory(branch, repo))
+    // Under the branch lock even when it exists: a fix may be building it right now.
+    const cwd = await withBranchLock(branch, async () =>
+      worktrees.create(branch, repo, await defaultDbMode(repo), (progress) => onProgress(branch, progress)),
+    )
+    if (!existed) onBranchCreated(branch)
+    return { cwd, branch }
+  }
+
   worktreePath(run: IssueRun): string | undefined {
     const repo = state.projectPath
     if (!repo) return undefined
@@ -287,6 +331,7 @@ class IssueAgent {
       approved: finished.filter((run) => run.prURL && run.reviews.at(-1)?.approved).length,
       failed: finished.filter((run) => run.phase === 'failed').length,
       needsInput: finished.filter((run) => run.phase === 'finished' && !run.prURL).length,
+      triaged: finished.filter((run) => run.phase === 'triaged').length,
       remaining: this.waiting.length,
       awaitingConfirmation: this.awaitingNextBatch,
     }
@@ -349,11 +394,22 @@ class IssueAgent {
     )
     if (this.runs[issue.id]?.phase !== 'fixing') return this.checkBatch()
 
-    this.append(issue.id, entry('user', 'agent', `【自动修复任务】${issue.key} ${issue.title}`))
     try {
-      this.startAgent(issue, fixPrompt(issue, run.branch, contextPrompt(context)), cwd, config, (outcome) =>
-        this.agentFinished(issue, outcome, config),
-      )
+      if (config.triage) {
+        // Is it real, and still there? Same session as the fix, so the fix starts from what it found.
+        this.update(issue.id, (r) => {
+          r.phase = 'triaging'
+        })
+        this.append(issue.id, entry('user', 'agent', `【修复前验证】${issue.key} ${issue.title}`))
+        this.startAgent(issue, triagePrompt(issue, run.branch, contextPrompt(context)), cwd, config, (outcome) =>
+          this.triageFinished(issue, outcome, config),
+        )
+      } else {
+        this.append(issue.id, entry('user', 'agent', `【自动修复任务】${issue.key} ${issue.title}`))
+        this.startAgent(issue, fixPrompt(issue, run.branch, contextPrompt(context)), cwd, config, (outcome) =>
+          this.agentFinished(issue, outcome, config),
+        )
+      }
     } catch (error) {
       this.fail(issue.id, `启动 agent 失败：${errorMessage(error)}`)
       this.checkBatch()
@@ -373,19 +429,72 @@ class IssueAgent {
       cwd,
       session: { kind: sessionExists(run.sessionId, cwd) ? 'resume' : 'new', id: run.sessionId },
       model: run.model ?? config.fixModel,
+      access: run.access ?? config.access,
       baseCommand: state.settings.agentCommand,
       appendSystemPrompt: systemPrompt(issue),
       // The issue's downloaded attachments live outside the worktree; let the agent read them.
       extraArgs: [contextDir(issue.id), uploadsDir(issue.id)].filter(existsSync).flatMap((dir) => ['--add-dir', dir]),
       channel: 'agent',
       onEntry: (line) => this.append(issue.id, line),
+      onContext: (used) =>
+        this.update(issue.id, (current) => {
+          current.context = { used, window: current.context?.window }
+        }),
       onExit: (outcome) => {
         this.handles.delete(issue.id)
+        if (outcome.contextWindow)
+          this.update(issue.id, (current) => {
+            current.context = { used: current.context?.used ?? 0, window: outcome.contextWindow }
+          })
         onExit(outcome)
       },
     })
     this.handles.set(issue.id, handle)
     this.changed()
+  }
+
+  /** Settle the pre-fix check: a confirmed bug goes straight on to the fix; anything else waits for you. */
+  private triageFinished(issue: Issue, outcome: Outcome, config: TeableConfig): void {
+    try {
+      const run = this.runs[issue.id]
+      if (!run || run.phase === 'cancelled' || outcome.cancelled) return
+      this.update(issue.id, (r) => {
+        r.costUSD += outcome.costUSD
+      })
+      if (!outcome.finalText) {
+        this.fail(issue.id, outcome.diagnosis ?? '验证没有输出结论')
+        return
+      }
+      // No verdict line is a check that didn't conclude: ask, don't fix on a guess.
+      const verdict = triageVerdict(outcome.finalText) ?? 'needsInfo'
+      this.update(issue.id, (r) => {
+        r.triage = { verdict, text: outcome.finalText as string, at: Date.now() }
+      })
+      if (verdict !== 'bug') {
+        this.update(issue.id, (r) => {
+          r.phase = 'triaged'
+        })
+        this.append(issue.id, entry('system', 'agent', `验证结论：${triageLabel[verdict]}，不自动修复，等你决定`))
+        return
+      }
+      const cwd = this.worktreePath(run)
+      if (!cwd) {
+        this.fail(issue.id, `找不到 worktree：${run.branch}`)
+        return
+      }
+      this.update(issue.id, (r) => {
+        r.phase = 'fixing'
+      })
+      this.append(issue.id, entry('system', 'agent', '验证结论：确认是 bug，开始修复'))
+      this.append(issue.id, entry('user', 'agent', `【自动修复任务】${issue.key} ${issue.title}`))
+      this.startAgent(issue, fixAfterTriagePrompt(issue, run.branch), cwd, config, (next) =>
+        this.agentFinished(issue, next, config),
+      )
+    } catch (error) {
+      this.fail(issue.id, `启动 agent 失败：${errorMessage(error)}`)
+    } finally {
+      this.checkBatch()
+    }
   }
 
   /** Settle an agent turn: find the PR, write it back, maybe review. */
@@ -638,6 +747,7 @@ function notifyBatch(summary: BatchSummary): void {
   const parts = [`${summary.withPR} 个已提 PR`]
   if (summary.approved) parts.push(`${summary.approved} 个 review 通过`)
   if (summary.needsInput) parts.push(`${summary.needsInput} 个等你回复`)
+  if (summary.triaged) parts.push(`${summary.triaged} 个验证后没修（已修复 / 不是 bug / 信息不足）`)
   if (summary.failed) parts.push(`${summary.failed} 个失败`)
   const body = parts.join('，')
   const [title, text] =
@@ -704,12 +814,53 @@ ${context ? `\n${context}\n` : ''}
 You are in a dedicated git worktree on branch \`${branch}\`, cut from origin/${base}.
 
 1. Find the root cause in the code. If the report is too vague to act on, or the behaviour is intended, stop and explain what you need — do not guess a fix.
-2. Make the smallest correct fix. Add or update a test where the area has tests, and run the relevant tests and type checks.
+${fixSteps(issue, branch)}`
+}
+
+/** Commit-to-PR steps, numbered from 2, shared by the direct fix and the fix after the check. */
+function fixSteps(issue: Issue, branch: string): string {
+  const base = worktrees.baseBranch
+  return `2. Make the smallest correct fix. Add or update a test where the area has tests, and run the relevant tests and type checks.
 3. Commit: \`fix: <summary> (${issue.key})\`.
 4. \`git push -u origin ${branch}\`
 5. Open the PR: \`gh pr create --base ${base} --head ${branch} --title "fix: <summary> [${issue.key}]"\` with a body containing: the issue id ${issue.key} and its link, root cause, the fix, and how it was tested. Write the PR in the issue's language.
 6. Finish with a short summary and the PR URL.`
 }
+
+/**
+ * The check before any fix: is it still there on the latest code, and is it a bug at all? It ends
+ * with a TRIAGE line that decides whether the fix starts by itself.
+ */
+function triagePrompt(issue: Issue, branch: string, context = ''): string {
+  const base = worktrees.baseBranch
+  return `Before anyone fixes this Teable issue, verify it. Do not fix anything yet.
+
+${issueBlock(issue)}
+${context ? `\n${context}\n` : ''}
+You are in a dedicated git worktree on branch \`${branch}\`, cut from the latest origin/${base}.
+
+1. Already fixed? Look for related changes since the issue was filed: \`git log origin/${base}\` (grep for ${issue.key} and the key terms), merged PRs (\`gh pr list --state merged --search "<terms>"\`), and how the code path looks now.
+2. Reproduce it on this code. Best is a minimal automated test that fails because of the bug — leave it uncommitted, it becomes the fix's regression test. Otherwise run the relevant existing tests, or trace the code path precisely. Don't start long-running dev servers.
+3. Is it a bug at all? Compare the reported behaviour with what the code, tests and docs intend. Intended behaviour or a feature request is not a bug.
+
+Report in Chinese: what you checked, the evidence (commands with their output, file:line), and how sure you are. End with exactly one of these lines:
+TRIAGE: BUG — reproduced, or clearly broken in the current code
+TRIAGE: ALREADY_FIXED — the current code no longer has it (cite the commit or PR)
+TRIAGE: NOT_A_BUG — intended behaviour, or a feature request
+TRIAGE: NEEDS_INFO — the report isn't enough to tell; say exactly what's missing`
+}
+
+/** Go on from the check to the fix; `overridden` when the check said not to and you said fix anyway. */
+function fixAfterTriagePrompt(issue: Issue, branch: string, overridden = false): string {
+  const lead = overridden
+    ? 'The user has read your verification and wants this fixed anyway. Treat the reported behaviour as the bug to fix.'
+    : 'Your verification confirmed the bug. Now fix it.'
+  return `${lead}
+
+1. Start from what you found. If you wrote a reproducing test, it is the regression test: it must fail before your fix and pass after.
+${fixSteps(issue, branch)}`
+}
+
 
 function reviewPrompt(issue: Issue, branch: string, round: number): string {
   const base = worktrees.baseBranch

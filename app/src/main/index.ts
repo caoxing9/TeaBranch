@@ -6,6 +6,9 @@ import { log } from './core/log'
 import { resolveUserPath } from './core/shell'
 import { registerIpc, setCategory } from './ipc'
 import { issueAgent, setOnBranchCreated } from './services/issueAgent'
+import { chatAgent } from './services/chatAgent'
+import { trayActivity } from './core/trayAnimation'
+import * as ptyHost from './services/ptyHost'
 import { cleanupAll, startReconcileLoop } from './services/processManager'
 
 let window: BrowserWindow | null = null
@@ -95,6 +98,9 @@ function buildMenu(): void {
           { label: 'Branches', accelerator: 'Cmd+1', click: () => sendMenu('showBranches') },
           { label: 'Issues', accelerator: 'Cmd+2', click: () => sendMenu('showIssues') },
           { type: 'separator' },
+          { label: 'Terminal', accelerator: 'Cmd+J', click: () => sendMenu('toggleTerminal') },
+          { label: 'New Terminal', accelerator: 'Cmd+`', click: () => sendMenu('newTerminal') },
+          { type: 'separator' },
           { role: 'reload' },
           { role: 'toggleDevTools' },
         ],
@@ -112,6 +118,9 @@ function buildTray(): void {
   image.setTemplateImage(true)
   tray = new Tray(image)
   tray.setToolTip('TeaBranch')
+  // Animate while any agent works; a once-a-second check is plenty for "started" and "stopped".
+  const activity = trayActivity(tray, image)
+  setInterval(() => activity(issueAgent.runningCount() + chatAgent.runningCount()), 1000)
   tray.on('click', () => (window?.isVisible() ? window.hide() : showWindow()))
   tray.on('right-click', () =>
     tray?.popUpContextMenu(
@@ -132,6 +141,8 @@ void app.whenReady().then(async () => {
     setCategory(branch, 'developing')
     emit('branchesChanged', undefined)
   })
+  // Packaged, the bundle's icon.icns shows in the Dock; running from source it would be Electron's.
+  if (!app.isPackaged) app.dock?.setIcon(join(__dirname, '../../resources/icon.png'))
   buildMenu()
   buildTray()
   createWindow()
@@ -151,5 +162,7 @@ app.on('before-quit', (event) => {
   quitting = true
   event.preventDefault()
   issueAgent.flush()
+  chatAgent.flush()
+  ptyHost.killAll()
   void cleanupAll().finally(() => app.exit(0))
 })

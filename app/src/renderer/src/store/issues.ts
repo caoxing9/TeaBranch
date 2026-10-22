@@ -11,16 +11,50 @@ import type {
   TeableRecord,
   TeableUser,
 } from '@shared/types'
+import { isActivePhase } from '@shared/types'
 import { api, messageOf, on } from '@/lib/api'
 import { assigneeGuess, mapping, toIssue } from '@/lib/issues'
 
 export type IssueFilter = 'all' | 'active' | 'review' | 'untouched'
 
-const loadFieldFilters = (): Record<string, string[]> => {
+/** Teable-style view filter, applied to the loaded records client-side. */
+export type FilterOperator = 'is' | 'isNot' | 'contains' | 'doesNotContain' | 'isEmpty' | 'isNotEmpty'
+
+export interface FilterCondition {
+  id: string
+  field: string
+  operator: FilterOperator
+  /** Accepted choices for select fields; the text for `contains`. Unused by the empty checks. */
+  value: string[]
+}
+
+export interface IssueFilterSet {
+  conjunction: 'and' | 'or'
+  conditions: FilterCondition[]
+}
+
+const FILTER_KEY = 'teabranch.issueFilter'
+
+export const newConditionId = (): string => Math.random().toString(36).slice(2, 10)
+
+/** A condition with nothing to compare against yet doesn't filter — like Teable's half-built rows. */
+export const isComplete = (condition: FilterCondition): boolean =>
+  condition.operator === 'isEmpty' || condition.operator === 'isNotEmpty' || condition.value.some((value) => value.trim())
+
+const loadIssueFilter = (): IssueFilterSet => {
   try {
-    return JSON.parse(localStorage.getItem('teabranch.issueFieldFilters') ?? '{}')
+    const saved = localStorage.getItem(FILTER_KEY)
+    if (saved) return JSON.parse(saved)
+    // The earlier field → accepted-values map becomes one "is" condition per field.
+    const legacy = JSON.parse(localStorage.getItem('teabranch.issueFieldFilters') ?? '{}') as Record<string, string[]>
+    return {
+      conjunction: 'and',
+      conditions: Object.entries(legacy)
+        .filter(([, values]) => values.length)
+        .map(([field, value]) => ({ id: newConditionId(), field, operator: 'is' as const, value })),
+    }
   } catch {
-    return {}
+    return { conjunction: 'and', conditions: [] }
   }
 }
 
@@ -41,8 +75,8 @@ interface IssuesStore {
   checked: Set<string>
   search: string
   filter: IssueFilter
-  /** Field → accepted values, for select columns like 状态 / Type. Remembered across launches. */
-  fieldFilters: Record<string, string[]>
+  /** Field conditions over the loaded issues. Remembered across launches. */
+  issueFilter: IssueFilterSet
   transcripts: Record<string, ConversationEntry[]>
   /** Comment threads of issues someone opened. */
   comments: Record<string, IssueComment[]>
@@ -67,8 +101,7 @@ interface IssuesStore {
   loadTranscript(recordId: string): Promise<void>
   loadComments(recordId: string): Promise<void>
   perform(work: () => Promise<unknown>): Promise<void>
-  toggleFieldFilter(field: string, value: string): void
-  clearFieldFilters(): void
+  setIssueFilter(filter: IssueFilterSet): void
   loadMagpieModels(): Promise<void>
 }
 
@@ -87,7 +120,7 @@ export const useIssues = create<IssuesStore>((set, get) => ({
   checked: new Set(),
   search: '',
   filter: 'all',
-  fieldFilters: loadFieldFilters(),
+  issueFilter: loadIssueFilter(),
   transcripts: {},
   comments: {},
   magpieModels: [],
@@ -244,19 +277,13 @@ export const useIssues = create<IssuesStore>((set, get) => ({
     }
   },
 
-  toggleFieldFilter(field, value) {
-    const current = new Set(get().fieldFilters[field] ?? [])
-    if (current.has(value)) current.delete(value)
-    else current.add(value)
-    const next = { ...get().fieldFilters, [field]: [...current] }
-    if (!current.size) delete next[field]
-    localStorage.setItem('teabranch.issueFieldFilters', JSON.stringify(next))
-    set({ fieldFilters: next })
-  },
-
-  clearFieldFilters() {
-    localStorage.setItem('teabranch.issueFieldFilters', '{}')
-    set({ fieldFilters: {} })
+  setIssueFilter(issueFilter) {
+    try {
+      localStorage.setItem(FILTER_KEY, JSON.stringify(issueFilter))
+    } catch {
+      // Not remembered this time; the filter still applies.
+    }
+    set({ issueFilter })
   },
 
   async loadMagpieModels() {
@@ -268,21 +295,45 @@ export const useIssues = create<IssuesStore>((set, get) => ({
   },
 }))
 
+/** One condition against one issue. Cells are text-format; multi-select ones read "a, b". */
+export function matchesCondition(issue: Issue, condition: FilterCondition): boolean {
+  const cell = (issue.record.fields[condition.field] ?? '').trim()
+  const values = cell ? cell.split(', ') : []
+  const needle = (condition.value[0] ?? '').trim().toLowerCase()
+  switch (condition.operator) {
+    case 'isEmpty':
+      return !cell
+    case 'isNotEmpty':
+      return !!cell
+    case 'contains':
+      return cell.toLowerCase().includes(needle)
+    case 'doesNotContain':
+      return !cell.toLowerCase().includes(needle)
+    case 'is':
+      return values.some((value) => condition.value.includes(value))
+    case 'isNot':
+      return !values.some((value) => condition.value.includes(value))
+  }
+}
+
+export function matchesFilter(issue: Issue, filter: IssueFilterSet): boolean {
+  const active = filter.conditions.filter(isComplete)
+  if (!active.length) return true
+  return filter.conjunction === 'and'
+    ? active.every((condition) => matchesCondition(issue, condition))
+    : active.some((condition) => matchesCondition(issue, condition))
+}
+
 /** Search, run-state tab and field filters, in list order. */
-export function visibleIssues(state: Pick<IssuesStore, 'issues' | 'search' | 'filter' | 'runs' | 'fieldFilters'>): Issue[] {
+export function visibleIssues(state: Pick<IssuesStore, 'issues' | 'search' | 'filter' | 'runs' | 'issueFilter'>): Issue[] {
   const query = state.search.trim().toLowerCase()
   return state.issues.filter((issue) => {
     if (query && !issue.title.toLowerCase().includes(query) && !issue.key.toLowerCase().includes(query)) return false
-    for (const [field, accepted] of Object.entries(state.fieldFilters)) {
-      if (!accepted.length) continue
-      // Multi-select cells arrive as "a, b" in text format.
-      const values = (issue.record.fields[field] ?? '').split(', ')
-      if (!values.some((value) => accepted.includes(value))) return false
-    }
+    if (!matchesFilter(issue, state.issueFilter)) return false
     const run = state.runs[issue.id]
     switch (state.filter) {
       case 'active':
-        return !!run && ['queued', 'preparing', 'fixing', 'reviewing'].includes(run.phase)
+        return !!run && isActivePhase(run.phase)
       case 'review':
         return run?.phase === 'prOpen'
       case 'untouched':

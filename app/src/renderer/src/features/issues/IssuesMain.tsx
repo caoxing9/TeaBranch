@@ -1,10 +1,15 @@
 import { Bug, TableProperties, Wand2 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, EmptyState, inputClass, Spinner, Toggle, TitleStrip } from '@/components/kit'
 import { api } from '@/lib/api'
 import { fixable, useIssues } from '@/store/issues'
 import { PhaseBadge } from './IssueSidebar'
 import { IssueDetail } from './IssueDetail'
+import { IssueTabs } from './IssueTabs'
+import { ChatView } from './ChatView'
+import { TerminalDock } from '../terminal/TerminalDock'
+import { useChats } from '@/store/chats'
+import { currentGroup, useTabs } from '@/store/tabs'
 
 export function IssuesMain() {
   const user = useIssues((s) => s.user)
@@ -13,16 +18,39 @@ export function IssuesMain() {
   const issues = useIssues((s) => s.issues)
   const config = useIssues((s) => s.config)
   const checked = useIssues((s) => s.checked)
+  const chats = useChats((s) => s.chats)
+  const activeChat = useTabs((s) => s.activeChat)
+  const initChats = useChats((s) => s.init)
+  useEffect(() => void initChats(), [initChats])
 
   if (!checkedSession) return <div className="h-full" />
   if (!user) return <LoginView />
   if (!config?.tableId) return <TablePicker />
   const issue = selection.size === 1 ? issues.find((candidate) => selection.has(candidate.id)) : undefined
-  if (issue) return <IssueDetail key={issue.id} issue={issue} />
-  if (checked.size > 0) return <BatchPanel />
+  // Only a chat from the group on screen: the selected issue's, or the free-standing ones.
+  const chat = chats.find((candidate) => candidate.id === activeChat && (candidate.issueId ?? null) === currentGroup(selection))
   return (
     <div className="flex h-full flex-col">
-      <TitleStrip />
+      <IssueTabs />
+      <div className="min-h-0 flex-1">
+        {chat ? (
+          <ChatView key={chat.id} chat={chat} />
+        ) : issue ? (
+          <IssueDetail key={issue.id} issue={issue} />
+        ) : checked.size > 0 ? (
+          <BatchPanel />
+        ) : (
+          <Empty />
+        )}
+      </div>
+      <TerminalDock />
+    </div>
+  )
+}
+
+function Empty() {
+  return (
+    <div className="flex h-full flex-col">
       <EmptyState
         icon={<Bug className="size-9" strokeWidth={1.2} />}
         title="选择一个 issue"

@@ -6,6 +6,9 @@ directories:
 files:
   - out/**
   - package.json
+# node-pty's spawn-helper is an executable, so it can't live inside the asar.
+asarUnpack:
+  - node_modules/node-pty/**
 extraResources:
   - from: resources/trayTemplate@2x.png
     to: trayTemplate@2x.png

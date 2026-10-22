@@ -1,4 +1,5 @@
 import ReactMarkdown from 'react-markdown'
+import { useLightbox } from '@/components/Lightbox'
 import remarkGfm from 'remark-gfm'
 
 /** Agent and reviewer prose: GitHub-flavoured Markdown, links out to the browser. */
@@ -7,7 +8,19 @@ export function Markdown({ text }: { text: string }) {
     <div className="prose-chat">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a> }}
+        components={{
+          a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>,
+          // Images in descriptions and comments preview in place rather than opening a download.
+          img: ({ src, alt }) =>
+            typeof src === 'string' ? (
+              <img
+                src={src}
+                alt={alt ?? ''}
+                onClick={() => useLightbox.getState().open([{ url: src, name: alt || undefined }])}
+                className="cursor-zoom-in"
+              />
+            ) : null,
+        }}
       >
         {text}
       </ReactMarkdown>

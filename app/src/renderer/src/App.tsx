@@ -1,5 +1,5 @@
 import { AlertTriangle, GitBranch } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, IconButton, TitleStrip } from '@/components/kit'
 import { BranchDetail } from '@/features/branches/BranchDetail'
 import { BranchSidebar } from '@/features/branches/BranchSidebar'
@@ -9,6 +9,7 @@ import { SettingsDialog } from '@/features/branches/SettingsDialog'
 import { IssueSettingsDialog } from '@/features/issues/IssueSettingsDialog'
 import { IssueSidebar } from '@/features/issues/IssueSidebar'
 import { IssuesMain } from '@/features/issues/IssuesMain'
+import { Lightbox } from '@/components/Lightbox'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useApp } from '@/store/app'
 import { useIssues } from '@/store/issues'
@@ -25,20 +26,27 @@ export function App() {
     void initIssues()
   }, [init, initIssues])
 
+  const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth)
+
   if (!ready) return null
   if (!settings?.projectPath) return <Onboarding />
 
   return (
     <TooltipProvider delay={400}>
     <div className="flex h-full">
-      <aside className="flex w-[290px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar/80 text-sidebar-foreground">
+      <aside
+        style={{ width: sidebarWidth }}
+        className="relative flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar/80 text-sidebar-foreground"
+      >
         {section === 'branches' ? <BranchSidebar /> : <IssueSidebar />}
+        <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} />
       </aside>
       <main className="selectable-area relative flex min-w-0 flex-1 flex-col bg-bg">
         {section === 'branches' ? <BranchDetail /> : <IssuesMain />}
         <ErrorToast />
       </main>
       <Dialogs />
+      <Lightbox />
     </div>
     </TooltipProvider>
   )
@@ -105,3 +113,59 @@ function Onboarding() {
   )
 }
 
+
+const SIDEBAR_KEY = 'teabranch.sidebarWidth'
+const SIDEBAR_MIN = 220
+const SIDEBAR_MAX = 560
+
+function loadSidebarWidth(): number {
+  try {
+    const saved = Number(localStorage.getItem(SIDEBAR_KEY))
+    if (saved >= SIDEBAR_MIN && saved <= SIDEBAR_MAX) return saved
+  } catch {
+    // Default below.
+  }
+  return 290
+}
+
+/** Drag the sidebar's edge to resize it, like Finder; double-click puts it back. */
+function SidebarResizer({ width, onResize }: { width: number; onResize: (width: number) => void }) {
+  const save = (value: number) => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, String(value))
+    } catch {
+      // Not persisted; fine for this window.
+    }
+  }
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      title="拖动调整宽度，双击还原"
+      onDoubleClick={() => {
+        onResize(290)
+        save(290)
+      }}
+      onPointerDown={(event) => {
+        event.preventDefault()
+        const startX = event.clientX
+        const startWidth = width
+        let latest = width
+        const move = (moveEvent: PointerEvent) => {
+          latest = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, startWidth + moveEvent.clientX - startX))
+          onResize(latest)
+        }
+        const up = () => {
+          window.removeEventListener('pointermove', move)
+          window.removeEventListener('pointerup', up)
+          document.body.style.cursor = ''
+          save(latest)
+        }
+        document.body.style.cursor = 'col-resize'
+        window.addEventListener('pointermove', move)
+        window.addEventListener('pointerup', up)
+      }}
+      className="no-drag absolute inset-y-0 -right-[3px] z-20 w-[6px] cursor-col-resize transition-colors hover:bg-brand/40 active:bg-brand/60"
+    />
+  )
+}

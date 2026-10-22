@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useState } from 'react'
-import type { AgentModel, ReviewEngine, TeableConfig } from '@shared/types'
-import { agentModelLabel } from '@shared/types'
+import type { AgentAccess, AgentEffort, AgentModel, ReviewEngine, TeableConfig } from '@shared/types'
+import { agentAccessModes, agentEfforts, agentModelLabel } from '@shared/types'
 import { Button, Dialog, inputClass, Segmented, Toggle } from '@/components/kit'
 import { api } from '@/lib/api'
 import { assigneeGuess, isUserField, mapping } from '@/lib/issues'
@@ -33,15 +33,34 @@ function ModelSelect({ value, onChange, magpie }: { value: AgentModel; onChange:
     ...magpie.map((model) => ({ provider: 'magpie' as const, model })),
   ]
   const key = (m: AgentModel) => `${m.provider}:${m.model ?? ''}`
-  if (!options.some((option) => key(option) === key(value))) options.push(value)
+  if (!options.some((option) => key(option) === key(value))) options.push({ ...value, effort: undefined })
+  const pick = (k: string) => {
+    const option = options.find((o) => key(o) === k)
+    if (option) onChange({ ...option, effort: value.effort })
+  }
   return (
-    <select value={key(value)} onChange={(e) => onChange(options.find((o) => key(o) === e.target.value) ?? value)} className={inputClass}>
-      {options.map((option) => (
-        <option key={key(option)} value={key(option)}>
-          {agentModelLabel(option)}
-        </option>
-      ))}
-    </select>
+    <div className="flex gap-2">
+      <select value={key(value)} onChange={(e) => pick(e.target.value)} className={inputClass}>
+        {options.map((option) => (
+          <option key={key(option)} value={key(option)}>
+            {agentModelLabel(option)}
+          </option>
+        ))}
+      </select>
+      <select
+        value={value.effort ?? ''}
+        onChange={(e) => onChange({ ...value, effort: (e.target.value || undefined) as AgentEffort | undefined })}
+        className={`${inputClass} w-32 shrink-0`}
+        title="思考等级"
+      >
+        <option value="">默认思考</option>
+        {agentEfforts.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
   )
 }
 
@@ -101,6 +120,11 @@ export function IssueSettingsDialog() {
         <Line label="描述">{fieldSelect('bodyField', guessed.body)}</Line>
         <Line label="状态">{fieldSelect('statusField', guessed.status)}</Line>
         <Line label="Issue ID">{fieldSelect('idField', guessed.id)}</Line>
+        <Toggle
+          checked={config.onlyMine}
+          onChange={(onlyMine) => update({ onlyMine })}
+          label="只看分配给我的 issue（在 Teable 服务端筛选，别人的 issue 不会下载到本机）"
+        />
         <Line label="负责人（只看我的）">
           <select value={config.assigneeField ?? ''} onChange={(e) => update({ assigneeField: e.target.value || undefined })} className={inputClass}>
             <option value="">自动（{assigneeGuess({ ...config, assigneeField: undefined }, state.fields) ?? '无'}）</option>
@@ -122,6 +146,14 @@ export function IssueSettingsDialog() {
             </select>
           </Line>
         )}
+      </Group>
+
+      <Group title="修复前验证">
+        <Toggle
+          checked={config.triage}
+          onChange={(triage) => update({ triage })}
+          label="先验证再修：查是否已被修复、本地复现、判断是不是 bug；只有确认是 bug 才自动修"
+        />
       </Group>
 
       <Group
@@ -172,6 +204,15 @@ export function IssueSettingsDialog() {
       >
         <Line label="修复用">
           <ModelSelect value={config.fixModel} onChange={(fixModel) => update({ fixModel })} magpie={state.magpieModels} />
+        </Line>
+        <Line label="权限">
+          <select value={config.access} onChange={(e) => update({ access: e.target.value as AgentAccess })} className={inputClass}>
+            {agentAccessModes.map((mode) => (
+              <option key={mode.value} value={mode.value}>
+                {mode.label}
+              </option>
+            ))}
+          </select>
         </Line>
         <Line label="Review 引擎">
           <Segmented<ReviewEngine>

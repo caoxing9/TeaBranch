@@ -1,7 +1,7 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { AppSettings, ConversationEntry, DevCategory, IssueRun, TeableConfig } from '@shared/types'
+import type { AppSettings, Chat, ConversationEntry, DevCategory, IssueRun, TeableConfig } from '@shared/types'
 import { log } from './log'
 
 /**
@@ -61,10 +61,12 @@ export const defaultTeableConfig: TeableConfig = {
   autoNextBatch: false,
   branchPrefix: '',
   fixModel: { provider: 'claude' },
+  access: 'fullAccess',
   reviewEngine: 'codex',
   reviewModel: { provider: 'claude' },
   codexModel: '',
   autoReview: true,
+  triage: true,
   sendReviewToAgent: true,
   maxReviewRounds: 2,
   magpieURL: 'http://127.0.0.1:3425',
@@ -95,3 +97,18 @@ export function loadTranscript(recordId: string): ConversationEntry[] {
 }
 export const saveTranscript = (recordId: string, entries: ConversationEntry[]): void =>
   save(join(configDirectory, 'transcripts', `${recordId}.json`), entries)
+
+// MARK: - Chats
+
+export function loadChats(): Record<string, Chat> {
+  return load<Record<string, Chat>>(join(configDirectory, 'chats.json')) ?? {}
+}
+export const saveChats = (chats: Record<string, Chat>): void => save(join(configDirectory, 'chats.json'), chats)
+
+export function loadChatTranscript(chatId: string): ConversationEntry[] {
+  return load<ConversationEntry[]>(join(configDirectory, 'chat-transcripts', `${chatId}.json`)) ?? []
+}
+export const saveChatTranscript = (chatId: string, entries: ConversationEntry[]): void =>
+  save(join(configDirectory, 'chat-transcripts', `${chatId}.json`), entries)
+export const deleteChatTranscript = (chatId: string): void =>
+  rmSync(join(configDirectory, 'chat-transcripts', `${chatId}.json`), { force: true })

@@ -3,5 +3,5 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   resolve: { alias: { '@shared': resolve(__dirname, 'src/shared') } },
-  test: { include: ['src/main/**/*.test.ts'] },
+  test: { include: ['src/main/**/*.test.ts', 'src/shared/**/*.test.ts'] },
 })

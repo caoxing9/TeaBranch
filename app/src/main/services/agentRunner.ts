@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { httpFetch } from '../core/http'
-import { readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { AgentModel, ConversationEntry, EntryChannel, EntryKind } from '@shared/types'
+import type { AgentAccess, AgentModel, ConversationEntry, EntryChannel, EntryKind } from '@shared/types'
 import { readSecret } from '../core/secrets'
 import { loadTeableConfig } from '../core/settingsStore'
 import { shellQuote } from '../core/shell'
@@ -20,6 +20,8 @@ export interface Outcome {
   isError: boolean
   /** Why a run produced nothing, when the output made that recognisable. */
   diagnosis?: string
+  /** The model's context window, from the result's `modelUsage`. */
+  contextWindow?: number
 }
 
 export interface Handle {
@@ -62,28 +64,61 @@ export function modelEnvironment(model: AgentModel): Record<string, string> {
 
 // MARK: - Claude Code
 
+const permissionModes: Record<AgentAccess, string> = {
+  supervised: 'default',
+  acceptEdits: 'acceptEdits',
+  auto: 'auto',
+  fullAccess: 'bypassPermissions',
+}
+
+export function accessArgs(access: AgentAccess): string[] {
+  const args = ['--permission-mode', permissionModes[access]]
+  if (access === 'fullAccess') args.push('--allow-dangerously-skip-permissions')
+  return args
+}
+
+/** The default agent command skips permissions outright, which would override any mode. */
+export const withoutSkipPermissions = (command: string): string =>
+  command.replace(/\s+--dangerously-skip-permissions\b/g, '')
+
+/** `--effort` for the CLI's own levels; `ultracode` is `xhigh` plus its setting, `ultrathink` a prompt prefix. */
+export function effortArgs(effort: AgentModel['effort']): string[] {
+  if (!effort || effort === 'ultrathink') return []
+  if (effort === 'ultracode') return ['--effort', 'xhigh', '--settings', JSON.stringify({ ultracode: true })]
+  return ['--effort', effort]
+}
+
 export function runClaude(options: {
   prompt: string
   cwd: string
   session: Session
   model: AgentModel
+  /** Undefined leaves `baseCommand`'s own permission flags alone. */
+  access?: AgentAccess
   baseCommand: string
   appendSystemPrompt?: string
   extraArgs?: string[]
   channel: EntryChannel
   onEntry: (entry: ConversationEntry) => void
+  /** Tokens now in context, after each model call. */
+  onContext?: (used: number) => void
   onExit: (outcome: Outcome) => void
 }): Handle {
-  const args = ['-p', options.prompt, '--output-format', 'stream-json', '--verbose']
+  const effort = options.model.effort
+  const prompt = effort === 'ultrathink' ? `Ultrathink:\n${options.prompt}` : options.prompt
+  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose']
   args.push(options.session.kind === 'new' ? '--session-id' : '--resume', options.session.id)
   if (options.model.model) args.push('--model', options.model.model)
+  args.push(...effortArgs(effort))
+  const baseCommand = options.access ? withoutSkipPermissions(options.baseCommand) : options.baseCommand
+  if (options.access) args.push(...accessArgs(options.access))
   if (options.appendSystemPrompt) args.push('--append-system-prompt', options.appendSystemPrompt)
   args.push(...(options.extraArgs ?? []))
 
-  const parser = new StreamParser(options.channel)
+  const parser = new StreamParser(options.channel, options.onContext)
   let cancelled = false
   const child = spawnShell(
-    commandLine(options.baseCommand, args),
+    commandLine(baseCommand, args),
     options.cwd,
     modelEnvironment(options.model),
     (line, stream) => {
@@ -101,6 +136,7 @@ export function runClaude(options: {
       finalText: parser.result,
       costUSD: parser.cost,
       isError: parser.isError || !isCleanExit(exit),
+      contextWindow: parser.contextWindow,
     }),
   )
   return {
@@ -117,8 +153,13 @@ class StreamParser {
   result = ''
   cost = 0
   isError = false
+  contextWindow?: number
+  private lastUsageId = ''
 
-  constructor(private readonly channel: EntryChannel) {}
+  constructor(
+    private readonly channel: EntryChannel,
+    private readonly onContext?: (used: number) => void,
+  ) {}
 
   consume(line: string): ConversationEntry[] {
     let event: Record<string, unknown>
@@ -132,7 +173,16 @@ class StreamParser {
     switch (event.type) {
       case 'system':
         return event.subtype === 'init' ? [entry('system', this.channel, `会话已连接 · ${String(event.model ?? '?')}`)] : []
-      case 'assistant':
+      case 'assistant': {
+        // One API call can arrive as several events (one per content block); report it once.
+        const message = event.message as { id?: string; usage?: Record<string, number> } | undefined
+        const usage = message?.usage
+        if (usage && this.onContext && !event.parent_tool_use_id && message?.id !== this.lastUsageId) {
+          this.lastUsageId = message?.id ?? ''
+          this.onContext(
+            (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.output_tokens ?? 0),
+          )
+        }
         return content.flatMap((block) => {
           if (block.type === 'text') {
             const text = String(block.text ?? '').trim()
@@ -144,6 +194,7 @@ class StreamParser {
           }
           return []
         })
+      }
       case 'user':
         return content.flatMap((block) => {
           if (block.type !== 'tool_result') return []
@@ -155,6 +206,9 @@ class StreamParser {
         this.result = String(event.result ?? '')
         this.cost = Number(event.total_cost_usd ?? 0)
         this.isError = event.is_error === true
+        const models = Object.values((event.modelUsage ?? {}) as Record<string, { contextWindow?: number }>)
+        const windows = models.map((model) => model.contextWindow ?? 0).filter(Boolean)
+        if (windows.length) this.contextWindow = Math.max(...windows)
         const seconds = Number(event.duration_ms ?? 0) / 1000
         const summary = `完成 · ${Number(event.num_turns ?? 0)} 轮 · ${seconds.toFixed(0)}s · $${this.cost.toFixed(2)}`
         return [entry('result', this.channel, summary, this.isError)]
@@ -259,4 +313,37 @@ export async function magpieModels(baseURL: string): Promise<string[]> {
   if (!response?.ok) throw new Error(`Magpie at ${baseURL} did not return a model list — is it running?`)
   const payload = (await response.json()) as { data?: { id: string }[] }
   return (payload.data ?? []).map((model) => model.id).sort()
+}
+
+// MARK: - Context
+
+/**
+ * Tokens in a session's context as of its last model call, read from the transcript Claude Code
+ * keeps under `~/.claude/projects`. For sessions that predate live tracking.
+ */
+export function sessionContextUsed(sessionId: string): number | undefined {
+  const root = join(homedir(), '.claude/projects')
+  let file: string | undefined
+  try {
+    file = readdirSync(root)
+      .map((dir) => join(root, dir, `${sessionId}.jsonl`))
+      .find((path) => existsSync(path))
+  } catch {
+    return undefined
+  }
+  if (!file) return undefined
+  const lines = readFileSync(file, 'utf8').trimEnd().split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const event = JSON.parse(lines[i])
+      const usage = event.type === 'assistant' && !event.isSidechain ? event.message?.usage : undefined
+      if (usage)
+        return (
+          (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.output_tokens ?? 0)
+        )
+    } catch {
+      // Skip a partial line.
+    }
+  }
+  return undefined
 }

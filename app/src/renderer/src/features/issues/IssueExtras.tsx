@@ -1,6 +1,7 @@
 import { FileText, MessageSquare, Paperclip } from 'lucide-react'
 import type { Attachment, IssueComment } from '@shared/types'
 import { PersonAvatar } from '@/components/person'
+import { useLightbox } from '@/components/Lightbox'
 import { api } from '@/lib/api'
 import { formatBytes } from '@/lib/format'
 import { Markdown } from './Markdown'
@@ -10,7 +11,13 @@ const isImage = (attachment: Attachment): boolean => attachment.mimetype.startsW
 /** Attachments as a strip of thumbnails; files that aren't images as chips. */
 export function Attachments({ attachments }: { attachments: Attachment[] }) {
   if (!attachments.length) return null
-  const open = (attachment: Attachment) => attachment.url && void api.openExternal(attachment.url)
+  const images = attachments.filter((attachment) => isImage(attachment) && attachment.url)
+  // Images preview in place; other files (PDFs, logs, videos) still go to the default app.
+  const open = (attachment: Attachment) => {
+    const at = images.indexOf(attachment)
+    if (at >= 0) useLightbox.getState().open(images.map((image) => ({ url: image.url as string, name: image.name })), at)
+    else if (attachment.url) void api.openExternal(attachment.url)
+  }
   return (
     <div className="flex flex-wrap gap-2">
       {attachments.map((attachment, index) =>
@@ -20,7 +27,7 @@ export function Attachments({ attachments }: { attachments: Attachment[] }) {
             type="button"
             title={`${attachment.name} · ${formatBytes(attachment.size)}`}
             onClick={() => open(attachment)}
-            className="group relative h-24 w-36 overflow-hidden rounded-lg border bg-muted shadow-xs"
+            className="group relative h-24 w-36 cursor-zoom-in overflow-hidden rounded-lg border bg-muted shadow-xs"
           >
             <img
               src={attachment.thumbnail ?? attachment.url}
@@ -82,11 +89,11 @@ export function Comments({ comments }: { comments: IssueComment[] }) {
               )}
               {comment.images.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {comment.images.map((url) => (
+                  {comment.images.map((url, index) => (
                     <button
                       key={url}
                       type="button"
-                      onClick={() => void api.openExternal(url)}
+                      onClick={() => useLightbox.getState().open(comment.images.map((image) => ({ url: image })), index)}
                       className="h-20 w-32 overflow-hidden rounded-md border bg-muted"
                     >
                       <img src={url} alt="" className="size-full object-cover" />
