@@ -9,9 +9,10 @@ import Foundation
 /// decode and silently drop the user back to onboarding.
 struct TeableConfig: Codable, Hashable, Sendable {
     var baseURL = "https://app.teable.ai"
-    var baseId = "bserJ2pmgiLHFHfXNwE"
-    var tableId = "tblNHimLUhUDtC3K7Jk"
-    var viewId: String? = "viwn9Y3Rsy0H5W4yOCQ"
+    // No table until the user picks one: a download must not point at someone else's private table.
+    var baseId = ""
+    var tableId = ""
+    var viewId: String?
 
     // Column mapping, by field name. Unset means "guess from the schema".
     var titleField: String?
