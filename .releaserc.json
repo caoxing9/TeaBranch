@@ -16,6 +16,7 @@
       {
         "assets": [
           "package.json",
+          "app/package.json",
           "swift/Resources/Info.plist",
           "CHANGELOG.md"
         ],
