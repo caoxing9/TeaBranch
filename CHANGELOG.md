@@ -1,3 +1,10 @@
+# [0.12.0](https://github.com/caoxing9/TeaBranch/compare/v0.11.0...v0.12.0) (2026-10-23)
+
+
+### Features
+
+* queue and steer agent messages, run the issue branch from its header ([#8](https://github.com/caoxing9/TeaBranch/issues/8)) ([13b3029](https://github.com/caoxing9/TeaBranch/commit/13b3029053a5cd222978b620639df675365268d7))
+
 # [0.11.0](https://github.com/caoxing9/TeaBranch/compare/v0.10.2...v0.11.0) (2026-10-22)
 
 
