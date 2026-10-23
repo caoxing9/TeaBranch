@@ -92,6 +92,8 @@ export function ChatView({ chat }: { chat: Chat }) {
       <Composer
         uploadKey={`chat-${chat.id}`}
         busy={chat.running}
+        queued={chat.queued}
+        canSteer={chat.running}
         contextUsage={chat.context}
         placeholder={t('问点什么，或让它改代码；可粘贴或拖入截图')}
         context={
@@ -106,7 +108,9 @@ export function ChatView({ chat }: { chat: Chat }) {
             <AccessPicker access={chat.access} onChange={(access) => void perform(() => api.updateChat(chat.id, { access }))} />
           </>
         }
-        onSend={(message, attachments) => void perform(() => api.sendChat(chat.id, message, attachments))}
+        onSend={(message, attachments, steer) => void perform(() => api.sendChat(chat.id, message, attachments, steer))}
+        onSteer={(queuedId) => void perform(() => api.steerChatMessage(chat.id, queuedId))}
+        onUnqueue={(queuedId) => void perform(() => api.unqueueChatMessage(chat.id, queuedId))}
         onCancel={() => void perform(() => api.cancelChat(chat.id))}
       />
     </div>

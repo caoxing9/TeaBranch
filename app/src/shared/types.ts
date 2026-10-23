@@ -409,9 +409,18 @@ export interface IssueRun {
   access?: AgentAccess
   /** How full the agent session's context is, as of its last message. */
   context?: ContextUsage
+  /** Messages typed while the agent was busy, sent in order once it settles. */
+  queued?: QueuedMessage[]
   costUSD: number
   createdAt: number
   updatedAt: number
+}
+
+/** A message waiting for the agent to finish its turn — or to be steered into it. */
+export interface QueuedMessage {
+  id: string
+  text: string
+  attachments: string[]
 }
 
 export type EntryKind = 'user' | 'assistant' | 'tool' | 'toolResult' | 'system' | 'result' | 'error' | 'review'
@@ -519,8 +528,14 @@ export interface Api {
   enqueueFix(issues: Issue[]): Promise<void>
   startNextBatch(): Promise<void>
   restoreQueue(issues: Issue[]): Promise<void>
-  /** `attachments` are paths returned by `saveUpload` / `pickUploads`. */
-  sendToAgent(issue: Issue, message: string, attachments?: string[]): Promise<void>
+  /**
+   * `attachments` are paths returned by `saveUpload` / `pickUploads`. While the agent is busy the
+   * message queues; `steer` puts it into the running turn instead, when it can.
+   */
+  sendToAgent(issue: Issue, message: string, attachments?: string[], steer?: boolean): Promise<void>
+  /** Send a queued message now: into the running turn, or as the next one when idle. */
+  steerIssueMessage(issue: Issue, queuedId: string): Promise<void>
+  unqueueIssueMessage(recordId: string, queuedId: string): Promise<void>
   setIssueModel(recordId: string, model: AgentModel | null): Promise<void>
   setIssueAccess(recordId: string, access: AgentAccess | null): Promise<void>
   claudeCatalog(): Promise<ClaudeCatalog>
@@ -543,7 +558,9 @@ export interface Api {
   terminalResize(id: string, cols: number, rows: number): Promise<void>
   terminalKill(id: string): Promise<void>
   chatTranscript(chatId: string): Promise<ConversationEntry[]>
-  sendChat(chatId: string, message: string, attachments?: string[]): Promise<void>
+  sendChat(chatId: string, message: string, attachments?: string[], steer?: boolean): Promise<void>
+  steerChatMessage(chatId: string, queuedId: string): Promise<void>
+  unqueueChatMessage(chatId: string, queuedId: string): Promise<void>
   cancelChat(chatId: string): Promise<void>
   deleteChat(chatId: string): Promise<void>
   updateChat(chatId: string, patch: { model?: AgentModel | null; access?: AgentAccess | null; title?: string }): Promise<void>
@@ -586,6 +603,7 @@ export interface Chat {
   model?: AgentModel
   access?: AgentAccess
   context?: ContextUsage
+  queued?: QueuedMessage[]
   costUSD: number
   running: boolean
   createdAt: number

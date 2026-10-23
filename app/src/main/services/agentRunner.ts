@@ -28,6 +28,11 @@ export interface Outcome {
 export interface Handle {
   pid: number
   cancel(): void
+  /**
+   * Put a message into the turn that is running, where the agent picks it up at its next step.
+   * False when this process can't take one — not Claude, or already winding down.
+   */
+  steer?(message: string): boolean
 }
 
 export type Session = { kind: 'new' | 'resume'; id: string }
@@ -107,7 +112,8 @@ export function runClaude(options: {
 }): Handle {
   const effort = options.model.effort
   const prompt = effort === 'ultrathink' ? `Ultrathink:\n${options.prompt}` : options.prompt
-  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose']
+  // The prompt goes in on stdin, which stays open for the turn so messages can be steered into it.
+  const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose']
   args.push(options.session.kind === 'new' ? '--session-id' : '--resume', options.session.id)
   if (options.model.model) args.push('--model', options.model.model)
   args.push(...effortArgs(effort))
@@ -118,18 +124,41 @@ export function runClaude(options: {
 
   const parser = new StreamParser(options.channel, options.onContext)
   let cancelled = false
-  const child = spawnShell(commandLine(baseCommand, args), options.cwd, modelEnvironment(options.model), (line, stream) => {
-    if (stream === 'stderr') {
-      if (line.trim()) options.onEntry(entry('system', options.channel, line.trim(), true))
-      return
-    }
-    for (const parsed of parser.consume(line)) options.onEntry(parsed)
-  })
+  let open = true
+  const child = spawnShell(
+    commandLine(baseCommand, args),
+    options.cwd,
+    modelEnvironment(options.model),
+    (line, stream) => {
+      if (stream === 'stderr') {
+        if (line.trim()) options.onEntry(entry('system', options.channel, line.trim(), true))
+        return
+      }
+      for (const parsed of parser.consume(line)) {
+        options.onEntry(parsed)
+        // The turn is over. Claude still answers anything that came in too late to steer, then exits.
+        if (parsed.kind === 'result' && open) {
+          open = false
+          child.process.stdin?.end()
+        }
+      }
+    },
+    { stdin: true },
+  )
+  const write = (text: string): boolean => {
+    const stdin = child.process.stdin
+    if (!open || !stdin?.writable) return false
+    stdin.write(`${JSON.stringify({ type: 'user', message: { role: 'user', content: text } })}\n`)
+    return true
+  }
+  // A shell that failed to start closes the pipe; that surfaces as the exit, not as a crash here.
+  child.process.stdin?.on('error', () => (open = false))
+  write(prompt)
   void child.exited.then((exit) =>
     options.onExit({
       exit,
       cancelled,
-      finalText: parser.result,
+      finalText: parser.results.join('\n\n'),
       costUSD: parser.cost,
       isError: parser.isError || !isCleanExit(exit),
       contextWindow: parser.contextWindow,
@@ -139,14 +168,17 @@ export function runClaude(options: {
     pid: child.pid,
     cancel: () => {
       cancelled = true
+      open = false
       killGroup(child.pid, 1000)
     },
+    steer: write,
   }
 }
 
 /** Claude's `stream-json` events → conversation lines. */
 class StreamParser {
-  result = ''
+  /** One per turn: a steered message that came too late for the running turn gets a turn of its own. */
+  results: string[] = []
   cost = 0
   isError = false
   contextWindow?: number
@@ -204,7 +236,7 @@ class StreamParser {
           return failed || text ? [entry('toolResult', this.channel, truncate(text, 1200), failed)] : []
         })
       case 'result': {
-        this.result = String(event.result ?? '')
+        if (event.result) this.results.push(String(event.result))
         this.cost = Number(event.total_cost_usd ?? 0)
         this.isError = event.is_error === true
         const models = Object.values((event.modelUsage ?? {}) as Record<string, { contextWindow?: number }>)

@@ -1,8 +1,8 @@
-import { Code2, FileDiff, GitCommitHorizontal, Globe, Play, RefreshCw, Square, Terminal } from 'lucide-react'
+import { ChevronDown, Code2, FileDiff, GitCommitHorizontal, Globe, Play, RefreshCw, Square, Terminal } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { BranchChanges, Issue, IssueRun } from '@shared/types'
 import { isLive } from '@shared/types'
-import { Button, IconButton, Segmented, Spinner, StatusDot } from '@/components/kit'
+import { Button, IconButton, type MenuEntry, MenuButton, Segmented, Spinner, StatusDot } from '@/components/kit'
 import { PersonAvatar } from '@/components/person'
 import { t } from '@shared/i18n'
 import { api, messageOf } from '@/lib/api'
@@ -46,6 +46,72 @@ export function IssuePanel({ issue, run }: { issue: Issue; run?: IssueRun }) {
           <ChangesTab branch={run.branch} prURL={run.prURL} />
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * The issue branch's dev server, from the header: one press starts it and opens the preview once
+ * it is up; while it runs the same button is the preview. The rest is in the menu beside it.
+ */
+export function RunControl({ branch: name }: { branch: string }) {
+  const app = useApp()
+  const branch = app.branches.find((candidate) => candidate.name === name)
+  const status = branch ? statusOf(branch) : 'stopped'
+  const [previewWhenUp, setPreviewWhenUp] = useState(false)
+
+  useEffect(() => {
+    if (!previewWhenUp || status !== 'running') return
+    setPreviewWhenUp(false)
+    void app.run(null, () => api.openPreview(name))
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- fire on the status change, not on every store update
+  }, [previewWhenUp, status, name])
+
+  // No worktree yet: nothing to run.
+  if (!branch) return null
+  const live = isLive(status)
+  const busy = app.busy.has(name) || status === 'building'
+  const port = branch.environment?.port
+  const act = (work: () => Promise<unknown>) => void app.run(null, work)
+  const start = async () => {
+    setPreviewWhenUp(true)
+    await app.toggle(branch)
+    // It didn't come up (the error is shown): don't pop a preview later out of nowhere.
+    const after = useApp.getState().branches.find((candidate) => candidate.name === name)
+    if (!after || !isLive(statusOf(after))) setPreviewWhenUp(false)
+  }
+  const menu = (): MenuEntry[] => [
+    { label: t('在分支页打开'), onSelect: () => app.set({ section: 'branches', selectedBranch: name }) },
+    'separator',
+    { label: t('打开预览'), disabled: status !== 'running' || !port, onSelect: () => act(() => api.openPreview(name)) },
+    { label: t('重启'), disabled: !live || app.busy.has(name), onSelect: () => void app.restart(name) },
+    { label: live ? t('停止') : t('启动'), disabled: app.busy.has(name), onSelect: () => void app.toggle(branch) },
+    'separator',
+    { label: t('在终端打开'), onSelect: () => act(() => api.openTerminal(name)) },
+    { label: t('在 VS Code 打开'), onSelect: () => act(() => api.openEditor(name)) },
+  ]
+
+  return (
+    <div className="flex items-center">
+      {status === 'running' ? (
+        <Button icon={<Globe className="size-3.5" />} title={t('打开预览')} onClick={() => act(() => api.openPreview(name))}>
+          {t('预览')}
+          {port ? ` :${port}` : ''}
+        </Button>
+      ) : (
+        <Button
+          tone="accent"
+          disabled={busy}
+          icon={busy ? <Spinner /> : <Play className="size-3.5" />}
+          title={t('启动这个分支的 dev server，起来后打开预览')}
+          onClick={() => void start()}
+        >
+          {status === 'building' ? t('启动中') : t('启动')}
+        </Button>
+      )}
+      <MenuButton label={t('分支操作')} entries={menu}>
+        <ChevronDown className="size-3.5" />
+      </MenuButton>
     </div>
   )
 }

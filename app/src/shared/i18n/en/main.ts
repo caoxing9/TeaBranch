@@ -177,4 +177,5 @@ export const main: Record<string, string> = {
     'Failed to drive {hint}: {error} (grant Accessibility permission to TeaBranch in System Settings → Privacy & Security)',
   '打开 VS Code 失败：{error}': 'Failed to open VS Code: {error}',
   '装了 `code` 命令吗？': 'is the `code` command installed?',
+  '现在没有 agent 在对话，这条会在它结束后发出': 'No agent is in the conversation right now; this goes out when it finishes',
 }
