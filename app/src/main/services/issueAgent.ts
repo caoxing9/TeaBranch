@@ -11,6 +11,7 @@ import type {
   DbMode,
   Issue,
   IssueRun,
+  IssueShelf,
   QueueState,
   QueuedMessage,
   ReviewRecord,
@@ -165,6 +166,8 @@ class IssueAgent {
       .sort((a, b) => (this.runs[a.id]?.createdAt ?? 0) - (this.runs[b.id]?.createdAt ?? 0))
     if (!stale.length) return
     this.waiting.push(...stale)
+    // A relaunch is no go-ahead: whether the last batch was reviewed isn't kept, so ask again.
+    if (!this.batch.length && !loadTeableConfig().autoNextBatch) this.awaitingNextBatch = true
     this.changed()
     this.startNextBatchIfIdle()
   }
@@ -254,6 +257,12 @@ class IssueAgent {
     const review = this.runs[issue.id]?.reviews.at(-1)
     if (!review) throw new TeaBranchError(t('还没有 review 结果。'))
     await this.send(issue, reviewFeedbackPrompt(promptTarget(issue, this.runs[issue.id].branch), review, engineLabel(review.engine)))
+  }
+
+  setShelf(recordId: string, shelf: IssueShelf | null): void {
+    this.update(recordId, (run) => {
+      run.shelf = shelf ?? undefined
+    })
   }
 
   setAccess(recordId: string, access: AgentAccess | null): void {
@@ -478,6 +487,8 @@ class IssueAgent {
 
   private startAgent(issue: Issue, prompt: string, cwd: string, config: TeableConfig, onExit: (outcome: Outcome) => void): void {
     const run = this.runs[issue.id]
+    // New work: where it lands is up to how this run ends, not where you filed the last one.
+    run.shelf = undefined
     const handle = runClaude({
       prompt,
       cwd,

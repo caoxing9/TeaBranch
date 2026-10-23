@@ -1,9 +1,9 @@
 import { ChevronDown, ChevronRight, GitBranch, ListChecks, MoreHorizontal, Pause, Play, RefreshCw, Search, X } from 'lucide-react'
 import { useRef, useState } from 'react'
-import type { Issue, IssuePhase, IssueRun, Person } from '@shared/types'
+import type { Issue, IssuePhase, IssueRun, IssueShelf, Person } from '@shared/types'
 import { isActivePhase, phaseLabel } from '@shared/types'
 import { SectionSwitcher } from '@/components/SectionSwitcher'
-import { Button, IconButton, MenuButton, Spinner, StatusDot } from '@/components/kit'
+import { Button, ContextMenuArea, IconButton, type MenuEntry, MenuButton, Spinner, StatusDot } from '@/components/kit'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { selectedRow } from '../branches/BranchSidebar'
@@ -274,7 +274,7 @@ export function IssueSidebar() {
   )
 }
 
-type Group = 'active' | 'review' | 'attention' | 'untouched'
+type Group = 'active' | IssueShelf | 'untouched'
 
 const groupLabel = (group: Group): string =>
   ({
@@ -282,19 +282,48 @@ const groupLabel = (group: Group): string =>
     review: t('待审查'),
     attention: t('需要你处理'),
     untouched: t('未开始'),
+    done: t('已处理'),
   })[group]
 
-/** Where an issue sits in the issue-driven flow: what needs you now comes first. */
+/**
+ * Where an issue sits in the issue-driven flow: what needs you now comes first. Groups are
+ * TeaBranch's own, not the table's status; a settled issue can be filed elsewhere by hand.
+ */
 function groupOf(run: IssueRun | undefined, queued: boolean): Group {
   if (queued || (run && isActivePhase(run.phase))) return 'active'
   if (!run) return 'untouched'
+  if (run.shelf) return run.shelf
   if (run.phase === 'prOpen') return 'review'
   return 'attention'
 }
 
+const shelves: IssueShelf[] = ['review', 'attention', 'done']
+
+/** Move a settled issue between groups; running ones go where their run takes them. */
+export function shelfMenu(run: IssueRun | undefined, queued: boolean): MenuEntry[] {
+  if (!run || queued || isActivePhase(run.phase)) return []
+  const current = groupOf(run, queued)
+  return [
+    {
+      label: t('移到'),
+      items: [
+        ...shelves.map((shelf) => ({
+          label: groupLabel(shelf),
+          checked: current === shelf,
+          onSelect: () => void useIssues.getState().perform(() => api.setIssueShelf(run.recordId, shelf)),
+        })),
+        ...(run.shelf
+          ? [{ label: t('按状态自动分组'), onSelect: () => void useIssues.getState().perform(() => api.setIssueShelf(run.recordId, null)) }]
+          : []),
+      ],
+    },
+  ]
+}
+
 const loadCollapsed = (): Group[] => {
   try {
-    return JSON.parse(localStorage.getItem('teabranch.issueGroups') ?? '[]')
+    // Done is out of the way until you open it.
+    return JSON.parse(localStorage.getItem('teabranch.issueGroups') ?? '["done"]')
   } catch {
     return []
   }
@@ -318,7 +347,7 @@ function IssueGroups({
     localStorage.setItem('teabranch.issueGroups', JSON.stringify(next))
     setCollapsed(next)
   }
-  const groups = (['active', 'review', 'attention', 'untouched'] as Group[]).map((group) => ({
+  const groups = (['active', 'review', 'attention', 'untouched', 'done'] as Group[]).map((group) => ({
     group,
     issues: visible.filter((issue) => groupOf(state.runs[issue.id], state.queue.waiting.includes(issue.id)) === group),
   }))
@@ -340,6 +369,7 @@ function IssueGroups({
               issues.map((issue) => (
                 <IssueRow
                   key={issue.id}
+                  menu={() => shelfMenu(state.runs[issue.id], state.queue.waiting.includes(issue.id))}
                   issue={issue}
                   people={issuePeople(issue, state.config, state.fields)}
                   run={state.runs[issue.id]}
@@ -369,6 +399,7 @@ function age(ms: number): string {
 /** A card per issue: id and status above, the title, then where its agent stands. */
 function IssueRow({
   issue,
+  menu,
   people,
   run,
   queuePosition,
@@ -379,6 +410,7 @@ function IssueRow({
   onToggleCheck,
 }: {
   issue: Issue
+  menu: () => MenuEntry[]
   people: Person[]
   run?: IssueRun
   queuePosition?: number
@@ -389,7 +421,7 @@ function IssueRow({
   onClick: (event: React.MouseEvent) => void
   onToggleCheck: () => void
 }) {
-  return (
+  const row = (
     <div
       role="button"
       tabIndex={0}
@@ -438,6 +470,8 @@ function IssueRow({
       </div>
     </div>
   )
+  const entries = menu()
+  return entries.length ? <ContextMenuArea entries={menu}>{row}</ContextMenuArea> : row
 }
 
 /** The batch in progress and the queue behind it, with the go-ahead for the next batch. */

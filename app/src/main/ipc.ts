@@ -299,6 +299,7 @@ const handlers: Api = {
   unqueueIssueMessage: async (recordId, queuedId) => issueAgent.unqueue(recordId, queuedId),
   setIssueModel: async (recordId, model) => issueAgent.setModel(recordId, model),
   setIssueAccess: async (recordId, access) => issueAgent.setAccess(recordId, access),
+  setIssueShelf: async (recordId, shelf) => issueAgent.setShelf(recordId, shelf),
   claudeCatalog: async () => claudeCatalog(state.settings.agentCommand),
   listChats: async () => chatAgent.list(),
   createChat: async (workspace) => chatAgent.create(workspace),
