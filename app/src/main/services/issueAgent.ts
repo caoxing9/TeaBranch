@@ -166,6 +166,8 @@ class IssueAgent {
       .sort((a, b) => (this.runs[a.id]?.createdAt ?? 0) - (this.runs[b.id]?.createdAt ?? 0))
     if (!stale.length) return
     this.waiting.push(...stale)
+    // A relaunch is no go-ahead: whether the last batch was reviewed isn't kept, so ask again.
+    if (!this.batch.length && !loadTeableConfig().autoNextBatch) this.awaitingNextBatch = true
     this.changed()
     this.startNextBatchIfIdle()
   }
