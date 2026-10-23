@@ -11,6 +11,7 @@ import type {
   DbMode,
   Issue,
   IssueRun,
+  IssueShelf,
   QueueState,
   QueuedMessage,
   ReviewRecord,
@@ -256,6 +257,12 @@ class IssueAgent {
     await this.send(issue, reviewFeedbackPrompt(promptTarget(issue, this.runs[issue.id].branch), review, engineLabel(review.engine)))
   }
 
+  setShelf(recordId: string, shelf: IssueShelf | null): void {
+    this.update(recordId, (run) => {
+      run.shelf = shelf ?? undefined
+    })
+  }
+
   setAccess(recordId: string, access: AgentAccess | null): void {
     this.update(recordId, (run) => {
       run.access = access ?? undefined
@@ -478,6 +485,8 @@ class IssueAgent {
 
   private startAgent(issue: Issue, prompt: string, cwd: string, config: TeableConfig, onExit: (outcome: Outcome) => void): void {
     const run = this.runs[issue.id]
+    // New work: where it lands is up to how this run ends, not where you filed the last one.
+    run.shelf = undefined
     const handle = runClaude({
       prompt,
       cwd,

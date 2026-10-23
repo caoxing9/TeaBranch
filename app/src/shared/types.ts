@@ -411,10 +411,15 @@ export interface IssueRun {
   context?: ContextUsage
   /** Messages typed while the agent was busy, sent in order once it settles. */
   queued?: QueuedMessage[]
+  /** Where you filed it in the sidebar, over where its phase puts it. Cleared when the agent runs again. */
+  shelf?: IssueShelf
   costUSD: number
   createdAt: number
   updatedAt: number
 }
+
+/** The sidebar groups you can move a settled issue into. */
+export type IssueShelf = 'review' | 'attention' | 'done'
 
 /** A message waiting for the agent to finish its turn — or to be steered into it. */
 export interface QueuedMessage {
@@ -536,6 +541,8 @@ export interface Api {
   /** Send a queued message now: into the running turn, or as the next one when idle. */
   steerIssueMessage(issue: Issue, queuedId: string): Promise<void>
   unqueueIssueMessage(recordId: string, queuedId: string): Promise<void>
+  /** File the issue under a sidebar group by hand; null goes back to where its phase puts it. */
+  setIssueShelf(recordId: string, shelf: IssueShelf | null): Promise<void>
   setIssueModel(recordId: string, model: AgentModel | null): Promise<void>
   setIssueAccess(recordId: string, access: AgentAccess | null): Promise<void>
   claudeCatalog(): Promise<ClaudeCatalog>
