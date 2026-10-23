@@ -4,12 +4,14 @@ import {
   ChevronRight,
   CircleAlert,
   CircleCheck,
+  Clock,
   FileText,
   GitBranch,
   GitPullRequest,
   Globe,
   MoreHorizontal,
   PanelRight,
+  Play,
   RotateCw,
   Square,
   Terminal,
@@ -31,7 +33,7 @@ import { useApp } from '@/store/app'
 import { useIssues } from '@/store/issues'
 import { PhaseBadge } from './IssueSidebar'
 import { Attachments, AttachmentsLabel, Comments } from './IssueExtras'
-import { IssuePanel } from './IssuePanel'
+import { IssuePanel, RunControl } from './IssuePanel'
 import { Markdown } from './Markdown'
 import { AgentAvatar, PeopleStack, PersonAvatar } from '@/components/person'
 import { peopleByField } from '@/lib/people'
@@ -46,6 +48,8 @@ export function IssueDetail({ issue }: { issue: Issue }) {
   const entries = useIssues((s) => s.transcripts[issue.id]) ?? []
   const loadTranscript = useIssues((s) => s.loadTranscript)
   const busy = !!run && isActivePhase(run.phase)
+  // Waiting its turn in the fix queue: nothing is running yet.
+  const queued = run?.phase === 'queued'
   const perform = useIssues((s) => s.perform)
 
   const loadComments = useIssues((s) => s.loadComments)
@@ -63,11 +67,14 @@ export function IssueDetail({ issue }: { issue: Issue }) {
       <Header issue={issue} run={run} busy={busy} panel={panel} onTogglePanel={togglePanel} />
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          <Conversation issue={issue} run={run} entries={entries} live={busy} />
+          <Conversation issue={issue} run={run} entries={entries} live={busy && !queued} />
           {run && (
             <Composer
               uploadKey={issue.id}
               busy={busy}
+              waiting={queued}
+              queued={run.queued}
+              canSteer={run.phase === 'triaging' || run.phase === 'fixing'}
               contextUsage={run.context}
               placeholder={t('给 {key} 的 agent 发消息，可粘贴或拖入截图', { key: issue.key })}
               context={
@@ -83,7 +90,9 @@ export function IssueDetail({ issue }: { issue: Issue }) {
                   <AccessPicker access={run.access} onChange={(access) => void perform(() => api.setIssueAccess(issue.id, access))} />
                 </>
               }
-              onSend={(message, attachments) => void perform(() => api.sendToAgent(issue, message, attachments))}
+              onSend={(message, attachments, steer) => void perform(() => api.sendToAgent(issue, message, attachments, steer))}
+              onSteer={(queuedId) => void perform(() => api.steerIssueMessage(issue, queuedId))}
+              onUnqueue={(queuedId) => void perform(() => api.unqueueIssueMessage(issue.id, queuedId))}
               onCancel={() => void perform(() => api.cancelIssue(issue.id))}
             />
           )}
@@ -189,6 +198,9 @@ function Header({
         )}
         {run && (
           <>
+            <span className="mr-1 border-r pr-2">
+              <RunControl branch={run.branch} />
+            </span>
             <IconButton label={t('Review 当前分支')} disabled={busy} onClick={() => void perform(() => api.review(issue))}>
               <BadgeCheck className="size-4" />
             </IconButton>
@@ -309,6 +321,7 @@ function Conversation({ issue, run, entries, live }: { issue: Issue; run?: Issue
         <IssueCard issue={issue} startOpen={!run} />
         <IssueComments recordId={issue.id} />
         {!run && <StartPrompt issue={issue} />}
+        {run?.phase === 'queued' && <QueuedNote recordId={issue.id} />}
         {turns.map((turn) => (
           <TurnView
             key={turn.id}
@@ -318,6 +331,32 @@ function Conversation({ issue, run, entries, live }: { issue: Issue; run?: Issue
           />
         ))}
       </div>
+    </div>
+  )
+}
+
+/** Where a queued issue stands: its place in line, and whether the line waits on you. */
+function QueuedNote({ recordId }: { recordId: string }) {
+  const queue = useIssues((s) => s.queue)
+  const perform = useIssues((s) => s.perform)
+  const position = queue.waiting.indexOf(recordId) + 1
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-[12.5px] text-muted-foreground">
+      <Clock className="size-3.5 shrink-0" />
+      <span className="flex-1">
+        {position ? t('在修复队列里排第 {n}', { n: position }) : t('在修复队列里')}
+        {queue.awaitingNextBatch && t('；上一批跑完了，等你审查后点“开始下一批”')}
+      </span>
+      {queue.awaitingNextBatch && (
+        <Button
+          tone="accent"
+          className="h-6 px-2 text-[11px]"
+          icon={<Play className="size-3" />}
+          onClick={() => void perform(() => api.startNextBatch())}
+        >
+          {t('开始下一批')}
+        </Button>
+      )}
     </div>
   )
 }

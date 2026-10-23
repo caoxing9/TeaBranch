@@ -21,7 +21,8 @@ export interface Child {
  *
  * `detached` is what makes the group: `pnpm dev` forks a tree of node processes, and only a signal
  * to the whole group (`kill(-pgid)`) takes all of it down. stdin is /dev/null — `next dev` turns
- * on keypress handling when it looks like a TTY and exits the moment that input hits EOF.
+ * on keypress handling when it looks like a TTY and exits the moment that input hits EOF — unless
+ * `stdin` asks for a pipe, for a process that is talked to while it runs.
  *
  * The descriptor limit is raised inside the shell: a GUI app inherits launchd's 256, which is far
  * too low for webpack/swc/chokidar — dev servers hang silently on first compile with EMFILE.
@@ -31,11 +32,12 @@ export function spawnShell(
   cwd: string,
   env: Record<string, string> = {},
   onLine?: (line: string, stream: 'stdout' | 'stderr') => void,
+  options: { stdin?: boolean } = {},
 ): Child {
   const script = `ulimit -n 65536 2>/dev/null || ulimit -n 10240 2>/dev/null; cd -- '${cwd.replace(/'/g, `'\\''`)}' || exit 127\n${command}`
   const child = spawn('/bin/sh', ['-c', script], {
     detached: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: [options.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     env: childEnvironment(env),
   })
 

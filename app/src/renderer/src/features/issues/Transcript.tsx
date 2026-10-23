@@ -325,25 +325,26 @@ export function ActivityGroup({ steps, live, review }: { steps: ConversationEntr
     : (steps[steps.length - 1]?.text ?? '')
   const failed = steps.some((step) => step.isError)
   const expanded = live || open
-  // Setup lines (worktree progress) have no calls; show them as the tree instead.
-  const rows = calls.length ? calls : steps
+  // Setup lines (worktree progress) have no calls: the latest is the summary, the earlier ones the tree.
+  const rows = calls.length ? calls : steps.slice(0, -1)
+  const expandable = rows.length > 0
 
   return (
     <div className="text-[13px]">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        disabled={live}
+        disabled={live || !expandable}
         className="group flex max-w-full items-center gap-2 text-left text-muted-foreground enabled:hover:text-foreground"
       >
         <Icon className="size-3.5 shrink-0" />
         <span className={cn('truncate', live && 'shimmer')}>{review ? t('评审 · {summary}', { summary }) : summary}</span>
         {failed && !live && <CircleAlert className="size-3 shrink-0 text-err" />}
-        {!live && (
+        {!live && expandable && (
           <ChevronDown className={cn('size-3.5 shrink-0 opacity-0 transition group-hover:opacity-60', open && 'rotate-180 opacity-60')} />
         )}
       </button>
-      {expanded && (
+      {expanded && expandable && (
         <div className="mt-1.5 ml-[7px]">
           {rows.map((row, index) => (
             <TreeRow key={row.id} entry={row} output={calls.length ? outputOf(steps, row) : undefined} last={index === rows.length - 1} />

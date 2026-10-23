@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { t } from '@shared/i18n'
-import type { AgentAccess, AgentModel, Chat, ConversationEntry } from '@shared/types'
+import type { AgentAccess, AgentModel, Chat, ConversationEntry, QueuedMessage } from '@shared/types'
 import { state } from '../core/appState'
 import { emit } from '../core/events'
 import { TeaBranchError } from '../core/log'
@@ -70,10 +70,37 @@ class ChatAgent {
     this.changed()
   }
 
-  send(id: string, message: string, attachments: string[] = []): void {
+  /** From the composer: sent now when idle; while a turn runs, queued for after it or steered into it. */
+  say(id: string, message: string, attachments: string[] = [], steer = false): void {
     const chat = this.get(id)
-    if (this.handles.has(id)) throw new TeaBranchError(t('这个对话还在运行，等它结束或先停止'))
-    const files = attachments.length ? `\n\n<attachments>\n${attachments.join('\n')}\n</attachments>` : ''
+    if (!this.handles.has(id)) return this.send(id, message, attachments)
+    const queued: QueuedMessage = { id: randomUUID(), text: message, attachments }
+    chat.queued = [...(chat.queued ?? []), queued]
+    this.changed()
+    if (steer) this.steer(id, queued.id)
+  }
+
+  /** A queued message, now: into the running turn, or as the next turn when there is none. */
+  steer(id: string, queuedId: string): void {
+    const chat = this.get(id)
+    const queued = chat.queued?.find((candidate) => candidate.id === queuedId)
+    if (!queued) return
+    const handle = this.handles.get(id)
+    // Too late for this turn: it stays queued and goes out the moment the turn ends.
+    if (handle && !handle.steer?.(withAttachments(queued.text, queued.attachments))) return
+    this.unqueue(id, queuedId)
+    if (handle) this.append(id, entry('user', 'agent', queued.text))
+    else this.send(id, queued.text, queued.attachments)
+  }
+
+  unqueue(id: string, queuedId: string): void {
+    const chat = this.get(id)
+    chat.queued = chat.queued?.filter((candidate) => candidate.id !== queuedId)
+    this.changed()
+  }
+
+  private send(id: string, message: string, attachments: string[] = []): void {
+    const chat = this.get(id)
     this.append(id, entry('user', 'agent', message))
     if (untitled.has(chat.title)) chat.title = message.replace(/\s+/g, ' ').slice(0, 40)
     chat.running = true
@@ -83,7 +110,7 @@ class ChatAgent {
     const config = loadTeableConfig()
     const uploads = uploadsDir(`chat-${id}`)
     const handle = runClaude({
-      prompt: message + files,
+      prompt: withAttachments(message, attachments),
       cwd: chat.cwd,
       session: { kind: sessionExists(chat.sessionId, chat.cwd) ? 'resume' : 'new', id: chat.sessionId },
       model: chat.model ?? config.fixModel,
@@ -109,6 +136,9 @@ class ChatAgent {
         if (outcome.cancelled) this.append(id, entry('system', 'agent', t('已停止')))
         else if (outcome.isError && !outcome.finalText) this.append(id, entry('error', 'agent', outcome.diagnosis ?? t('agent 异常退出')))
         this.changed()
+        // What was typed during the turn goes next. After a stop it waits for you instead.
+        const next = current.queued?.[0]
+        if (next && !outcome.cancelled) this.steer(id, next.id)
       },
     })
     this.handles.set(id, handle)
@@ -154,6 +184,9 @@ class ChatAgent {
     emit('chatsChanged', undefined)
   }
 }
+
+const withAttachments = (message: string, attachments: string[]): string =>
+  attachments.length ? `${message}\n\n<attachments>\n${attachments.join('\n')}\n</attachments>` : message
 
 /** A new chat's placeholder title, in either language: the first message replaces it. */
 const untitled = new Set(['新对话', 'New Chat', 'New chat']) // i18n-ignore

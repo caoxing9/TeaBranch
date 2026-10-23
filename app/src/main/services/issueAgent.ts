@@ -12,6 +12,7 @@ import type {
   Issue,
   IssueRun,
   QueueState,
+  QueuedMessage,
   ReviewRecord,
   TeableConfig,
   WorktreeProgress,
@@ -94,6 +95,11 @@ class IssueAgent {
 
   allRuns = (): Record<string, IssueRun> => this.runs
   isRunning = (recordId: string): boolean => this.handles.has(recordId)
+  /** A process alive, or a pipeline step about to start one. */
+  private isBusy = (recordId: string): boolean => {
+    const run = this.runs[recordId]
+    return this.handles.has(recordId) || (!!run && isActivePhase(run.phase))
+  }
   /** Agent and reviewer processes alive right now. */
   runningCount = (): number => this.handles.size
 
@@ -177,6 +183,46 @@ class IssueAgent {
     await this.send(issue, fixAfterTriagePrompt(promptTarget(issue, run.branch), true), [], t('验证结论我看过了，仍然按 bug 修复。'))
   }
 
+  /**
+   * From the composer: sent now when the issue is idle. While it works the message queues and goes
+   * out once the issue settles — or, with `steer`, into the agent's running turn.
+   */
+  async say(issue: Issue, message: string, attachments: string[] = [], steer = false): Promise<void> {
+    const run = this.runs[issue.id]
+    if (!run) throw new TeaBranchError(t('这个 issue 还没有 agent 会话，先点“自动修复”。'))
+    if (!this.isBusy(issue.id)) return this.send(issue, message, attachments)
+    const queued: QueuedMessage = { id: randomUUID(), text: message, attachments }
+    this.update(issue.id, (r) => {
+      r.queued = [...(r.queued ?? []), queued]
+    })
+    if (steer) await this.steer(issue, queued.id)
+  }
+
+  /** A queued message, now: into the agent's running turn, or as the next turn when the issue is idle. */
+  async steer(issue: Issue, queuedId: string): Promise<void> {
+    const run = this.runs[issue.id]
+    const queued = run?.queued?.find((candidate) => candidate.id === queuedId)
+    if (!run || !queued) return
+    if (!this.isBusy(issue.id)) {
+      this.unqueue(issue.id, queuedId)
+      return this.send(issue, queued.text, queued.attachments)
+    }
+    const handle = this.handles.get(issue.id)
+    // Only the fixing agent takes messages: not a reviewer, not a worktree still being built.
+    if (!handle || (run.phase !== 'triaging' && run.phase !== 'fixing'))
+      throw new TeaBranchError(t('现在没有 agent 在对话，这条会在它结束后发出'))
+    // Too late for this turn: it stays queued and goes out once the issue settles.
+    if (!handle.steer?.(agentMessage(queued.text, queued.attachments))) return
+    this.unqueue(issue.id, queuedId)
+    this.append(issue.id, entry('user', 'agent', shownMessage(queued.text, queued.attachments)))
+  }
+
+  unqueue(recordId: string, queuedId: string): void {
+    this.update(recordId, (run) => {
+      run.queued = run.queued?.filter((candidate) => candidate.id !== queuedId)
+    })
+  }
+
   /** `display` replaces the message in the transcript when the prompt itself is boilerplate. */
   async send(issue: Issue, message: string, attachments: string[] = [], display?: string): Promise<void> {
     const run = this.runs[issue.id]
@@ -185,15 +231,8 @@ class IssueAgent {
     const cwd = this.worktreePath(run)
     if (!cwd) throw new TeaBranchError(t('找不到 worktree：{branch}', { branch: run.branch }))
     const config = loadTeableConfig()
-    const files = attachments.length
-      ? `\n\n<attachments>\n${attachments.map((path) => `- ${path}`).join('\n')}\n</attachments>\nOpen these with the Read tool.`
-      : ''
-    const shown = display ?? message
-    this.append(
-      issue.id,
-      entry('user', 'agent', attachments.length ? `${shown}\n\n📎 ${attachments.map((path) => path.split('/').pop()).join(', ')}` : shown),
-    )
-    message = message + files
+    this.append(issue.id, entry('user', 'agent', shownMessage(display ?? message, attachments)))
+    message = agentMessage(message, attachments)
     this.update(issue.id, (r) => {
       r.phase = 'fixing'
       r.lastError = undefined
@@ -509,6 +548,7 @@ class IssueAgent {
       this.fail(issue.id, t('启动 agent 失败：{error}', { error: errorMessage(error) }))
     } finally {
       this.checkBatch()
+      this.drain(issue)
     }
   }
 
@@ -560,6 +600,7 @@ class IssueAgent {
       }
     } finally {
       this.checkBatch()
+      this.drain(issue)
     }
   }
 
@@ -643,7 +684,16 @@ class IssueAgent {
       }
     } finally {
       this.checkBatch()
+      this.drain(issue)
     }
+  }
+
+  /** Once the issue settles, what you typed while it worked goes to the agent, a message a turn. */
+  private drain(issue: Issue): void {
+    const run = this.runs[issue.id]
+    const next = run?.queued?.[0]
+    if (!run || !next || this.isBusy(issue.id) || run.phase === 'cancelled') return
+    this.steer(issue, next.id).catch((error) => this.append(issue.id, entry('error', 'agent', errorMessage(error), true)))
   }
 
   private async writeBack(recordId: string, prURL: string, config: TeableConfig): Promise<void> {
@@ -803,3 +853,13 @@ function promptTarget(issue: Issue, branch: string): PromptTarget {
   const config = loadTeableConfig()
   return { issue, link: teable.recordURL(config, issue.id), branch, base: worktrees.baseBranch, custom: config.prompts }
 }
+
+/** A message as the agent reads it: attachments listed by path, for the Read tool. */
+const agentMessage = (message: string, attachments: string[]): string =>
+  attachments.length
+    ? `${message}\n\n<attachments>\n${attachments.map((path) => `- ${path}`).join('\n')}\n</attachments>\nOpen these with the Read tool.`
+    : message
+
+/** …and as the transcript shows it: attachments by name. */
+const shownMessage = (message: string, attachments: string[]): string =>
+  attachments.length ? `${message}\n\n📎 ${attachments.map((path) => path.split('/').pop()).join(', ')}` : message
