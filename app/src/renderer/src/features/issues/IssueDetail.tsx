@@ -31,7 +31,7 @@ import { cx } from '@/lib/format'
 import { isApproved } from '@/lib/issues'
 import { useApp } from '@/store/app'
 import { useIssues } from '@/store/issues'
-import { PhaseBadge } from './IssueSidebar'
+import { PhaseBadge, shelfMenu } from './IssueSidebar'
 import { Attachments, AttachmentsLabel, Comments } from './IssueExtras'
 import { IssuePanel, RunControl } from './IssuePanel'
 import { Markdown } from './Markdown'
@@ -125,6 +125,7 @@ function Header({
   const perform = useIssues((s) => s.perform)
   const setApp = useApp((s) => s.set)
   const prNumber = run?.prURL?.split('/').pop()
+  const queue = useIssues((s) => s.queue)
 
   return (
     <header className="drag flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-4">
@@ -240,6 +241,7 @@ function Header({
                 onSelect: () => useTranscriptLayout.getState().setLayout(value),
               })),
             },
+            ...shelfMenu(run, queue.waiting.includes(issue.id)),
             ...(run
               ? [
                   {

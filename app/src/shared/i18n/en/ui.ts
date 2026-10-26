@@ -240,4 +240,7 @@ export const ui: Record<string, string> = {
   '在修复队列里排第 {n}': 'Number {n} in the fix queue',
   在修复队列里: 'In the fix queue',
   '；上一批跑完了，等你审查后点“开始下一批”': '. The last batch is done and waits for your review; press “Start next batch” to go on',
+  已处理: 'Done',
+  移到: 'Move to',
+  按状态自动分组: 'Group by status again',
 }
