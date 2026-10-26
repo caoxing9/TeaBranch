@@ -1,3 +1,10 @@
+# [0.13.0](https://github.com/caoxing9/TeaBranch/compare/v0.12.0...v0.13.0) (2026-10-26)
+
+
+### Features
+
+* move issues between sidebar groups; relaunch waits for the next batch ([#9](https://github.com/caoxing9/TeaBranch/issues/9)) ([29129e5](https://github.com/caoxing9/TeaBranch/commit/29129e5acdf2b6613a064c7b9af968d621760b4a))
+
 # [0.12.0](https://github.com/caoxing9/TeaBranch/compare/v0.11.0...v0.12.0) (2026-10-23)
 
 
