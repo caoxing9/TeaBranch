@@ -1,3 +1,10 @@
+# [0.14.0](https://github.com/caoxing9/TeaBranch/compare/v0.13.0...v0.14.0) (2026-10-27)
+
+
+### Features
+
+* PR tab with CI, a rolling queue, and background tasks shown ([#10](https://github.com/caoxing9/TeaBranch/issues/10)) ([869f977](https://github.com/caoxing9/TeaBranch/commit/869f97721141da8f4bbb915938068fcffad011c7))
+
 # [0.13.0](https://github.com/caoxing9/TeaBranch/compare/v0.12.0...v0.13.0) (2026-10-26)
 
 
