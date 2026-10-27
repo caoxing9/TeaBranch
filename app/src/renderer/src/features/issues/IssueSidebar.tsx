@@ -461,7 +461,11 @@ function IssueRow({
             )}
             <div className="flex-1" />
             {run && <CIDot run={run} />}
-            {queuePosition ? <span>{t('排队第 {n}', { n: queuePosition })}</span> : run ? <PhaseBadge phase={run.phase} recordId={run.recordId} /> : null}
+            {queuePosition ? (
+              <span>{t('排队第 {n}', { n: queuePosition })}</span>
+            ) : run ? (
+              <PhaseBadge phase={run.phase} recordId={run.recordId} />
+            ) : null}
           </div>
         )}
       </div>

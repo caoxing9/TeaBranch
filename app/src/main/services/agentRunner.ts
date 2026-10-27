@@ -314,7 +314,9 @@ export class StreamParser {
         if (!task) return []
         this.tasks.delete(id)
         this.background = this.background.filter((other) => other.id !== id)
-        const status = finishedStatuses.has(String(event.status)) ? (String(event.status) as 'completed' | 'failed' | 'stopped') : 'completed'
+        const status = finishedStatuses.has(String(event.status))
+          ? (String(event.status) as 'completed' | 'failed' | 'stopped')
+          : 'completed'
         const summary = String(event.summary ?? '').trim() || task.description
         return [{ ...entry('task', this.channel, truncate(summary, 1200), status === 'failed'), task: { ...task, status } }]
       }

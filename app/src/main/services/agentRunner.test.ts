@@ -19,7 +19,11 @@ describe('StreamParser', () => {
     ])
     expect(parser.background).toEqual([])
     expect(lines).toHaveLength(1)
-    expect(lines[0]).toMatchObject({ kind: 'task', text: 'CI is green', task: { kind: 'command', status: 'completed', description: 'Poll CI' } })
+    expect(lines[0]).toMatchObject({
+      kind: 'task',
+      text: 'CI is green',
+      task: { kind: 'command', status: 'completed', description: 'Poll CI' },
+    })
   })
 
   it('files a subagent’s steps under its call and drops what it says', () => {
@@ -27,7 +31,11 @@ describe('StreamParser', () => {
     const lines = feed(parser, [
       { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'call', name: 'Agent', input: { description: 'Look' } }] } },
       { type: 'assistant', parent_tool_use_id: 'call', message: { content: [{ type: 'text', text: 'thinking aloud' }] } },
-      { type: 'assistant', parent_tool_use_id: 'call', message: { content: [{ type: 'tool_use', id: 'inner', name: 'Bash', input: { command: 'ls' } }] } },
+      {
+        type: 'assistant',
+        parent_tool_use_id: 'call',
+        message: { content: [{ type: 'tool_use', id: 'inner', name: 'Bash', input: { command: 'ls' } }] },
+      },
     ])
     expect(lines.map((line) => [line.kind, line.toolUseId, line.parentToolUseId])).toEqual([
       ['tool', 'call', undefined],
