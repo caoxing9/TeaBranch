@@ -9,6 +9,7 @@ import { DeleteDialog } from '@/features/branches/DeleteDialog'
 import { SettingsDialog } from '@/features/branches/SettingsDialog'
 import { IssueSettingsDialog } from '@/features/issues/IssueSettingsDialog'
 import { IssueSidebar } from '@/features/issues/IssueSidebar'
+import { QueueSidebar } from '@/features/issues/QueuePanel'
 import { IssuesMain } from '@/features/issues/IssuesMain'
 import { Lightbox } from '@/components/Lightbox'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -39,7 +40,7 @@ export function App() {
           style={{ width: sidebarWidth }}
           className="relative flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar/80 text-sidebar-foreground"
         >
-          {section === 'branches' ? <BranchSidebar /> : <IssueSidebar />}
+          {section === 'branches' ? <BranchSidebar /> : section === 'queue' ? <QueueSidebar /> : <IssueSidebar />}
           <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} />
         </aside>
         <main className="selectable-area relative flex min-w-0 flex-1 flex-col bg-bg">
@@ -75,9 +76,9 @@ function ErrorToast() {
   const issueError = useIssues((s) => s.error)
   const user = useIssues((s) => s.user)
   // Before sign-in the login view shows its own error inline.
-  const message = section === 'issues' ? (user ? issueError : null) : appError
+  const message = section !== 'branches' ? (user ? issueError : null) : appError
   if (!message) return null
-  const dismiss = () => (section === 'issues' ? useIssues.setState({ error: null }) : useApp.setState({ error: null }))
+  const dismiss = () => (section !== 'branches' ? useIssues.setState({ error: null }) : useApp.setState({ error: null }))
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center px-4">
       <div className="pointer-events-auto flex max-w-xl items-start gap-2.5 rounded-xl border border-err/30 bg-panel/95 px-3.5 py-2.5 shadow-xl backdrop-blur-xl">

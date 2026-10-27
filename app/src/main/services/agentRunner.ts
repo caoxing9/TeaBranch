@@ -3,7 +3,7 @@ import { httpFetch } from '../core/http'
 import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { AgentAccess, AgentModel, ConversationEntry, EntryChannel, EntryKind } from '@shared/types'
+import type { AgentAccess, AgentModel, BackgroundTask, ConversationEntry, EntryChannel, EntryKind } from '@shared/types'
 import { t } from '@shared/i18n'
 import { readSecret } from '../core/secrets'
 import { loadTeableConfig } from '../core/settingsStore'
@@ -108,6 +108,13 @@ export function runClaude(options: {
   onEntry: (entry: ConversationEntry) => void
   /** Tokens now in context, after each model call. */
   onContext?: (used: number) => void
+  /** What the agent has running in the background, each time that changes. */
+  onBackground?: (tasks: BackgroundTask[]) => void
+  /**
+   * A turn ended but background tasks keep the process alive: it takes a new message now, and
+   * starts a turn of its own when a task finishes.
+   */
+  onIdle?: () => void
   onExit: (outcome: Outcome) => void
 }): Handle {
   const effort = options.model.effort
@@ -125,6 +132,12 @@ export function runClaude(options: {
   const parser = new StreamParser(options.channel, options.onContext)
   let cancelled = false
   let open = true
+  // Between turns, waiting on background tasks.
+  let idle = false
+  const close = () => {
+    open = false
+    child.process.stdin?.end()
+  }
   const child = spawnShell(
     commandLine(baseCommand, args),
     options.cwd,
@@ -134,12 +147,26 @@ export function runClaude(options: {
         if (line.trim()) options.onEntry(entry('system', options.channel, line.trim(), true))
         return
       }
-      for (const parsed of parser.consume(line)) {
-        options.onEntry(parsed)
-        // The turn is over. Claude still answers anything that came in too late to steer, then exits.
-        if (parsed.kind === 'result' && open) {
-          open = false
-          child.process.stdin?.end()
+      const before = parser.background
+      const parsed = parser.consume(line)
+      if (parser.background !== before) {
+        options.onBackground?.(parser.background)
+        // The last task finished between turns. Claude still takes the turn it wakes up for, then exits.
+        if (idle && open && !parser.background.length) close()
+      }
+      for (const item of parsed) {
+        options.onEntry(item)
+        if (item.kind !== 'result') {
+          idle = false
+          continue
+        }
+        if (!open) continue
+        // The turn is over. Claude still answers anything that came in too late to steer, then exits —
+        // unless it left work in the background, which it waits for: until then it takes messages.
+        if (!parser.background.length) close()
+        else {
+          idle = true
+          options.onIdle?.()
         }
       }
     },
@@ -148,6 +175,7 @@ export function runClaude(options: {
   const write = (text: string): boolean => {
     const stdin = child.process.stdin
     if (!open || !stdin?.writable) return false
+    idle = false
     stdin.write(`${JSON.stringify({ type: 'user', message: { role: 'user', content: text } })}\n`)
     return true
   }
@@ -176,13 +204,17 @@ export function runClaude(options: {
 }
 
 /** Claude's `stream-json` events → conversation lines. */
-class StreamParser {
+export class StreamParser {
   /** One per turn: a steered message that came too late for the running turn gets a turn of its own. */
   results: string[] = []
   cost = 0
   isError = false
   contextWindow?: number
+  /** Replaced, not mutated, so a change shows as a new array. */
+  background: BackgroundTask[] = []
   private lastUsageId = ''
+  /** The agent's own background tasks — not what its subagents ran — by task id. */
+  private tasks = new Map<string, BackgroundTask>()
 
   constructor(
     private readonly channel: EntryChannel,
@@ -200,9 +232,7 @@ class StreamParser {
 
     switch (event.type) {
       case 'system':
-        if (event.subtype !== 'init') return []
-        const model = String(event.model ?? '?')
-        return [{ ...entry('system', this.channel, t('会话已连接 · {model}', { model })), connectedModel: model }]
+        return this.system(event)
       case 'assistant': {
         // One API call can arrive as several events (one per content block); report it once.
         const message = event.message as { id?: string; usage?: Record<string, number> } | undefined
@@ -216,25 +246,30 @@ class StreamParser {
               (usage.output_tokens ?? 0),
           )
         }
+        // A subagent's steps belong under the call that runs it; what it says comes back as that call's result.
+        const parentToolUseId = event.parent_tool_use_id ? String(event.parent_tool_use_id) : undefined
         return content.flatMap((block) => {
-          if (block.type === 'text') {
+          if (block.type === 'text' && !parentToolUseId) {
             const text = String(block.text ?? '').trim()
             return text ? [entry('assistant', this.channel, text)] : []
           }
           if (block.type === 'tool_use') {
             const input = (block.input ?? {}) as Record<string, unknown>
-            return [entry('tool', this.channel, `${String(block.name ?? 'tool')}  ${summarize(input)}`)]
+            const line = entry('tool', this.channel, `${String(block.name ?? 'tool')}  ${summarize(input)}`)
+            return [{ ...line, toolUseId: String(block.id ?? ''), parentToolUseId }]
           }
           return []
         })
       }
-      case 'user':
+      case 'user': {
+        const parentToolUseId = event.parent_tool_use_id ? String(event.parent_tool_use_id) : undefined
         return content.flatMap((block) => {
           if (block.type !== 'tool_result') return []
           const text = flatten(block.content)
           const failed = block.is_error === true
-          return failed || text ? [entry('toolResult', this.channel, truncate(text, 1200), failed)] : []
+          return failed || text ? [{ ...entry('toolResult', this.channel, truncate(text, 1200), failed), parentToolUseId }] : []
         })
+      }
       case 'result': {
         if (event.result) this.results.push(String(event.result))
         this.cost = Number(event.total_cost_usd ?? 0)
@@ -251,7 +286,56 @@ class StreamParser {
         return []
     }
   }
+
+  /** The session's start — reported again for each turn, which names its model — and background tasks. */
+  private system(event: Record<string, unknown>): ConversationEntry[] {
+    switch (event.subtype) {
+      case 'init': {
+        const model = String(event.model ?? '?')
+        return [{ ...entry('system', this.channel, t('会话已连接 · {model}', { model })), connectedModel: model }]
+      }
+      case 'task_started': {
+        // A subagent's own commands, and calls that run in the foreground, are its tool calls already.
+        if (event.is_backgrounded !== true || event.owned_by_subagent === true) return []
+        const id = String(event.task_id ?? '')
+        const task: BackgroundTask = {
+          id,
+          kind: taskKinds[String(event.task_type)] ?? 'other',
+          description: String(event.description ?? ''),
+          startedAt: Date.now(),
+        }
+        this.tasks.set(id, task)
+        this.background = [...this.background.filter((other) => other.id !== id), task]
+        return []
+      }
+      case 'task_notification': {
+        const id = String(event.task_id ?? '')
+        const task = this.tasks.get(id)
+        if (!task) return []
+        this.tasks.delete(id)
+        this.background = this.background.filter((other) => other.id !== id)
+        const status = finishedStatuses.has(String(event.status))
+          ? (String(event.status) as 'completed' | 'failed' | 'stopped')
+          : 'completed'
+        const summary = String(event.summary ?? '').trim() || task.description
+        return [{ ...entry('task', this.channel, truncate(summary, 1200), status === 'failed'), task: { ...task, status } }]
+      }
+      case 'background_tasks_changed': {
+        // Claude's own list is the authority: a task it dropped without a notification is gone too.
+        const live = new Set(((event.tasks ?? []) as { task_id?: string }[]).map((task) => String(task.task_id)))
+        const kept = this.background.filter((task) => live.has(task.id))
+        if (kept.length !== this.background.length) this.background = kept
+        return []
+      }
+      default:
+        return []
+    }
+  }
 }
+
+const taskKinds: Record<string, BackgroundTask['kind']> = { local_bash: 'command', local_agent: 'agent' }
+
+const finishedStatuses = new Set(['completed', 'failed', 'stopped'])
 
 /** One line for a tool call — the path or command, not the input blob. */
 function summarize(input: Record<string, unknown>): string {

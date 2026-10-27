@@ -217,8 +217,8 @@ export interface TeableConfig {
   doneStatus?: string
   fixStatuses: string[]
   autoFix: boolean
+  /** How many queued issues run at once. */
   batchSize: number
-  autoNextBatch: boolean
   branchPrefix: string
   fixModel: AgentModel
   /** Permission mode fix agents run with. */
@@ -231,6 +231,10 @@ export interface TeableConfig {
   triage: boolean
   sendReviewToAgent: boolean
   maxReviewRounds: number
+  /** Send a PR's failing CI back to its agent once every check has finished. */
+  autoFixCI: boolean
+  /** How many times per run that happens by itself before it waits for you. */
+  maxCIRounds: number
   magpieURL: string
   /** Client ID of a Teable OAuth app with Device Flow enabled. */
   oauthClientId?: string
@@ -333,6 +337,8 @@ export type IssuePhase =
   | 'finished'
   | 'failed'
   | 'cancelled'
+  /** Stopped by you mid-step, to pick up where it left off. Holds its place in the batch. */
+  | 'paused'
 
 export const phaseLabel = translatedLabels<IssuePhase>({
   queued: () => t('排队中'),
@@ -342,9 +348,10 @@ export const phaseLabel = translatedLabels<IssuePhase>({
   fixing: () => t('修复中'),
   prOpen: () => t('PR 待审查'),
   reviewing: () => t('Review 中'),
-  finished: () => t('已结束'),
+  finished: () => t('等你回复'),
   failed: () => t('失败'),
   cancelled: () => t('已取消'),
+  paused: () => t('已暂停'),
 })
 
 export const isActivePhase = (p: IssuePhase): boolean =>
@@ -411,12 +418,64 @@ export interface IssueRun {
   context?: ContextUsage
   /** Messages typed while the agent was busy, sent in order once it settles. */
   queued?: QueuedMessage[]
+  /** What the agent left running in the background; the process lives on until they finish. */
+  background?: BackgroundTask[]
+  /** The PR's checks as last polled. */
+  ci?: PRChecks
+  /** CI failures sent to the agent by themselves so far. */
+  ciRounds?: number
+  /** The head commit whose failures went to the agent last, so they go once per push. */
+  ciSentFor?: string
+  /** The step a pause cut short, which resuming picks up. */
+  pausedFrom?: IssuePhase
   /** Where you filed it in the sidebar, over where its phase puts it. Cleared when the agent runs again. */
   shelf?: IssueShelf
   costUSD: number
   createdAt: number
   updatedAt: number
 }
+
+export type CheckBucket = 'pass' | 'fail' | 'pending' | 'skip'
+
+export interface PRCheck {
+  name: string
+  bucket: CheckBucket
+  link?: string
+  description?: string
+}
+
+export interface PRChecks {
+  /** The head commit these results are for. */
+  sha: string
+  /** OPEN, MERGED or CLOSED. */
+  state: string
+  checks: PRCheck[]
+  at: number
+}
+
+/** What the PR tab shows, from `gh pr view`. */
+export interface PRDetails {
+  number: number
+  url: string
+  title: string
+  body: string
+  /** OPEN, MERGED or CLOSED. */
+  state: string
+  isDraft: boolean
+  /** APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED — or empty when no review is required. */
+  reviewDecision: string
+  /** CLEAN, BLOCKED, BEHIND, DIRTY (conflicts), UNSTABLE (failing checks), DRAFT… */
+  mergeStateStatus: string
+  headRefName: string
+  baseRefName: string
+  additions: number
+  deletions: number
+  changedFiles: number
+  author: string
+  updatedAt: string
+}
+
+export type PRAction = 'squash' | 'merge' | 'rebase' | 'draft' | 'ready' | 'close'
 
 /** The sidebar groups you can move a settled issue into. */
 export type IssueShelf = 'review' | 'attention' | 'done'
@@ -428,7 +487,7 @@ export interface QueuedMessage {
   attachments: string[]
 }
 
-export type EntryKind = 'user' | 'assistant' | 'tool' | 'toolResult' | 'system' | 'result' | 'error' | 'review'
+export type EntryKind = 'user' | 'assistant' | 'tool' | 'toolResult' | 'system' | 'result' | 'error' | 'review' | 'task'
 export type EntryChannel = 'agent' | 'review'
 
 export interface ConversationEntry {
@@ -445,25 +504,29 @@ export interface ConversationEntry {
   connectedModel?: string
   /** Set on a `result` line: the run's numbers, so nothing parses the display text. */
   stats?: { turns: number; seconds: number; costUSD: number }
+  /** Set on a `tool` line: the call's id, which its subagent's steps point back to. */
+  toolUseId?: string
+  /** Set on a subagent's own steps: the `Agent` call that runs it. */
+  parentToolUseId?: string
+  /** Set on a `task` line, a background task that finished and woke the agent. */
+  task?: BackgroundTask & { status: 'completed' | 'failed' | 'stopped' }
+}
+
+/** A command or subagent the agent left running in the background, which keeps its process alive. */
+export interface BackgroundTask {
+  id: string
+  kind: 'command' | 'agent' | 'other'
+  description: string
+  startedAt: number
 }
 
 export interface QueueState {
-  batch: string[]
+  /** Taken off the queue and still going: at most `concurrency`. */
+  running: string[]
   waiting: string[]
-  awaitingNextBatch: boolean
-  settled: number
-}
-
-export interface BatchSummary {
-  total: number
-  withPR: number
-  approved: number
-  failed: number
-  needsInput: number
-  /** Stopped by the pre-fix check: already fixed, not a bug, or not enough to go on. */
-  triaged: number
-  remaining: number
-  awaitingConfirmation: boolean
+  /** Paused as a whole: running steps stopped, nothing new taken from the queue. */
+  paused: boolean
+  concurrency: number
 }
 
 // MARK: - IPC
@@ -531,7 +594,8 @@ export interface Api {
   /** The record's comment thread, oldest first. */
   issueComments(recordId: string): Promise<IssueComment[]>
   enqueueFix(issues: Issue[]): Promise<void>
-  startNextBatch(): Promise<void>
+  /** Fix one issue right away: queued if it wasn't, then past the batch gate and the line. */
+  fixNow(issue: Issue): Promise<void>
   restoreQueue(issues: Issue[]): Promise<void>
   /**
    * `attachments` are paths returned by `saveUpload` / `pickUploads`. While the agent is busy the
@@ -579,6 +643,23 @@ export interface Api {
   sendLatestReview(issue: Issue): Promise<void>
   postLatestReview(recordId: string): Promise<void>
   cancelIssue(recordId: string): Promise<void>
+  /** The PR as GitHub has it now; its checks are refreshed along the way. */
+  prDetails(recordId: string): Promise<PRDetails>
+  prAction(recordId: string, action: PRAction): Promise<void>
+  /** Poll the PR's checks now rather than at the next round. */
+  refreshChecks(recordId: string): Promise<void>
+  /** Hand the PR's failing checks to the agent, past the automatic round cap. */
+  sendCIFailures(issue: Issue): Promise<void>
+  /** Stop the issue's current step, keeping its place; `resumeIssue` picks it up again. */
+  pauseIssue(recordId: string): Promise<void>
+  resumeIssue(recordId: string): Promise<void>
+  /** Pause everything running and stop taking new issues off the queue — or undo that. */
+  pauseQueue(): Promise<void>
+  resumeQueue(): Promise<void>
+  /** Stop the batch and empty the queue. */
+  cancelQueue(): Promise<void>
+  /** Put the waiting issues in this order; ids left out keep their place after. */
+  reorderQueue(ids: string[]): Promise<void>
   resetIssue(recordId: string): Promise<void>
   resumeInTerminal(recordId: string): Promise<void>
   magpieModels(): Promise<string[]>
@@ -611,6 +692,7 @@ export interface Chat {
   access?: AgentAccess
   context?: ContextUsage
   queued?: QueuedMessage[]
+  background?: BackgroundTask[]
   costUSD: number
   running: boolean
   createdAt: number
@@ -629,7 +711,6 @@ export interface Events {
   transcript: { recordId: string; entries: ConversationEntry[] }
   chatsChanged: void
   chatTranscript: { chatId: string; entries: ConversationEntry[] }
-  batchFinished: BatchSummary
   /** A device-flow sign-in finished; `error` when it didn't succeed. */
   teableSignedIn: { error?: string }
   menu: 'newBranch' | 'settings' | 'showBranches' | 'showIssues' | 'toggleTerminal' | 'newTerminal'

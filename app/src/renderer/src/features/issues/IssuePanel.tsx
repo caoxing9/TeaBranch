@@ -11,10 +11,12 @@ import { cn } from '@/lib/utils'
 import { statusOf, useApp } from '@/store/app'
 import { useIssues } from '@/store/issues'
 import { Attachments } from './IssueExtras'
+import { Markdown } from './Markdown'
+import { PRTab } from './PRTab'
 import { LogPane } from '../branches/LogPane'
 import { statusColor } from '../branches/BranchSidebar'
 
-type Tab = 'run' | 'changes' | 'details'
+type Tab = 'run' | 'changes' | 'pr' | 'details'
 
 /**
  * Everything reviewing an issue needs beside its conversation: run the fix, see what it changed,
@@ -31,6 +33,7 @@ export function IssuePanel({ issue, run }: { issue: Issue; run?: IssueRun }) {
           options={[
             { value: 'run', label: t('运行') },
             { value: 'changes', label: t('改动') },
+            ...(run?.prURL ? [{ value: 'pr' as const, label: 'PR' }] : []),
             { value: 'details', label: t('详情') },
           ]}
         />
@@ -42,6 +45,8 @@ export function IssuePanel({ issue, run }: { issue: Issue; run?: IssueRun }) {
           <div className="p-6 text-center text-[12.5px] text-muted-foreground">{t('开始修复后，这里可以运行它的分支、查看改动。')}</div>
         ) : tab === 'run' ? (
           <RunTab branch={run.branch} />
+        ) : tab === 'pr' && run.prURL ? (
+          <PRTab issue={issue} run={run} />
         ) : (
           <ChangesTab branch={run.branch} prURL={run.prURL} />
         )}
@@ -275,6 +280,11 @@ function Details({ issue }: { issue: Issue }) {
                   {person.name}
                 </span>
               ))}
+            </div>
+          ) : field.type === 'longText' ? (
+            // Long text is where people write Markdown: steps, code, links.
+            <div className="text-[12.5px] [&>.prose-chat>:first-child]:mt-0">
+              <Markdown text={issue.record.fields[field.name]} />
             </div>
           ) : (
             <div className="text-[12.5px] break-words whitespace-pre-wrap">{issue.record.fields[field.name]}</div>

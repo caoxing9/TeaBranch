@@ -1,17 +1,20 @@
-import { ChevronDown, ChevronRight, GitBranch, ListChecks, MoreHorizontal, Pause, Play, RefreshCw, Search, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, GitBranch, ListChecks, MoreHorizontal, Pause, RefreshCw, Search } from 'lucide-react'
 import { useRef, useState } from 'react'
 import type { Issue, IssuePhase, IssueRun, IssueShelf, Person } from '@shared/types'
 import { isActivePhase, phaseLabel } from '@shared/types'
 import { SectionSwitcher } from '@/components/SectionSwitcher'
-import { Button, ContextMenuArea, IconButton, type MenuEntry, MenuButton, Spinner, StatusDot } from '@/components/kit'
+import { Button, ContextMenuArea, IconButton, type MenuEntry, MenuButton, Spinner } from '@/components/kit'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { selectedRow } from '../branches/BranchSidebar'
 import { issuePeople } from '@/lib/people'
 import { PeopleStack, PersonAvatar } from '@/components/person'
 import { cx } from '@/lib/format'
+import { useChats } from '@/store/chats'
 import { fixable, useIssues, visibleIssues } from '@/store/issues'
-import { filterSummary, IssueFilterButton } from './IssueFilter'
+import { IssueFilterButton } from './IssueFilter'
+import { CIDot } from './CIStatus'
+import { QueueBar } from './QueuePanel'
 
 export const phaseColor: Record<IssuePhase, string> = {
   queued: 'text-agent',
@@ -24,12 +27,28 @@ export const phaseColor: Record<IssuePhase, string> = {
   finished: 'text-fg-2',
   cancelled: 'text-fg-2',
   failed: 'text-err',
+  paused: 'text-warn',
 }
 
-export function PhaseBadge({ phase }: { phase: IssuePhase }) {
+export function PhaseBadge({ phase, recordId }: { phase: IssuePhase; recordId?: string }) {
+  // A conversation opened under a settled issue is work on it too, though the issue's own agent rests.
+  const chatting = useChats((s) => !!recordId && s.chats.some((chat) => chat.issueId === recordId && chat.running))
+  if (chatting && !isActivePhase(phase))
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-medium whitespace-nowrap text-agent">
+        <Spinner className="size-2.5" />
+        {t('对话中')}
+      </span>
+    )
   return (
     <span className={cx('inline-flex items-center gap-1 text-[10px] font-medium whitespace-nowrap', phaseColor[phase])}>
-      {isActivePhase(phase) ? <Spinner className="size-2.5" /> : <span className="size-1.5 rounded-full bg-current" />}
+      {isActivePhase(phase) ? (
+        <Spinner className="size-2.5" />
+      ) : phase === 'paused' ? (
+        <Pause className="size-2.5" />
+      ) : (
+        <span className="size-1.5 rounded-full bg-current" />
+      )}
       {phaseLabel[phase]}
     </span>
   )
@@ -40,7 +59,6 @@ export function IssueSidebar() {
   const visible = visibleIssues(state)
   const lastClicked = useRef<string | null>(null)
   const active = Object.values(state.runs).filter((run) => isActivePhase(run.phase)).length
-  const summary = filterSummary(state.issueFilter)
   const [selectMode, setSelectMode] = useState(false)
   const showBatchBar = selectMode || state.checked.size > 0
 
@@ -87,7 +105,7 @@ export function IssueSidebar() {
       <div className="drag h-[38px] shrink-0" />
       <SectionSwitcher />
       <div
-        className="shrink-0 px-2 pt-2 pb-1"
+        className="shrink-0 border-b border-border/60 px-2 pt-2 pb-1.5"
         onKeyDown={(event) => {
           if (event.key === 'a' && event.metaKey) {
             event.preventDefault()
@@ -127,36 +145,13 @@ export function IssueSidebar() {
               } else setSelectMode(true)
             }}
             className={cx(
-              'flex size-7 shrink-0 items-center justify-center rounded-md transition-colors',
+              'flex size-[26px] shrink-0 items-center justify-center rounded-md transition-colors',
               showBatchBar ? 'bg-foreground/[0.09] text-fg' : 'text-fg-2 hover:bg-foreground/[0.07] hover:text-fg',
             )}
           >
-            <ListChecks className="size-4" />
+            <ListChecks className="size-3.5" />
           </button>
         </div>
-        {summary && (
-          <div className="mt-1.5 flex items-center gap-1 text-[11.5px]">
-            {
-              <span className="inline-flex h-[22px] min-w-0 items-center gap-0.5 rounded-full bg-brand-soft pr-0.5 pl-2 text-brand">
-                <span className="truncate">{summary}</span>
-                <button
-                  type="button"
-                  aria-label={t('清除筛选')}
-                  title={t('清除筛选')}
-                  onClick={() =>
-                    state.setIssueFilter({
-                      ...state.issueFilter,
-                      conditions: [],
-                    })
-                  }
-                  className="flex size-4 shrink-0 items-center justify-center rounded-full hover:bg-brand/15"
-                >
-                  <X className="size-3" />
-                </button>
-              </span>
-            }
-          </div>
-        )}
         {showBatchBar && (
           <div className="mt-1.5 flex h-6 items-center gap-2 rounded-md bg-fill px-1.5 text-[11.5px] text-fg-2">
             <input
@@ -236,8 +231,9 @@ export function IssueSidebar() {
           />
         )}
         <span className="truncate font-medium text-fg">{state.user?.name ?? t('未登录')}</span>
-        {active > 0 && <span className="text-agent">· {t('{n} 进行中', { n: active })}</span>}
+        {active > 0 && <span className="shrink-0 text-agent">· {t('{n} 进行中', { n: active })}</span>}
         <div className="flex-1" />
+        {state.user && state.config && <ScopeSwitch />}
         <IconButton label={t('刷新')} disabled={!state.user || state.loading} onClick={() => void state.reload()}>
           <RefreshCw className={cx('size-3.5', state.loading && 'animate-spin')} />
         </IconButton>
@@ -290,7 +286,7 @@ const groupLabel = (group: Group): string =>
  * TeaBranch's own, not the table's status; a settled issue can be filed elsewhere by hand.
  */
 function groupOf(run: IssueRun | undefined, queued: boolean): Group {
-  if (queued || (run && isActivePhase(run.phase))) return 'active'
+  if (queued || (run && (isActivePhase(run.phase) || run.phase === 'paused'))) return 'active'
   if (!run) return 'untouched'
   if (run.shelf) return run.shelf
   if (run.phase === 'prOpen') return 'review'
@@ -301,7 +297,7 @@ const shelves: IssueShelf[] = ['review', 'attention', 'done']
 
 /** Move a settled issue between groups; running ones go where their run takes them. */
 export function shelfMenu(run: IssueRun | undefined, queued: boolean): MenuEntry[] {
-  if (!run || queued || isActivePhase(run.phase)) return []
+  if (!run || queued || isActivePhase(run.phase) || run.phase === 'paused') return []
   const current = groupOf(run, queued)
   return [
     {
@@ -464,7 +460,12 @@ function IssueRow({
               </>
             )}
             <div className="flex-1" />
-            {queuePosition ? <span>{t('排队第 {n}', { n: queuePosition })}</span> : run ? <PhaseBadge phase={run.phase} /> : null}
+            {run && <CIDot run={run} />}
+            {queuePosition ? (
+              <span>{t('排队第 {n}', { n: queuePosition })}</span>
+            ) : run ? (
+              <PhaseBadge phase={run.phase} recordId={run.recordId} />
+            ) : null}
           </div>
         )}
       </div>
@@ -475,42 +476,41 @@ function IssueRow({
 }
 
 /** The batch in progress and the queue behind it, with the go-ahead for the next batch. */
-function QueueBar() {
-  const queue = useIssues((s) => s.queue)
-  const batchSize = useIssues((s) => s.config?.batchSize ?? 3)
-  const perform = useIssues((s) => s.perform)
-  if (!queue.batch.length && !queue.waiting.length) return null
+/**
+ * "只看我的" out where it's seen: which issues Teable sends at all, not a view over them — so
+ * flipping it reloads, and auto mode only ever sees what this lets through.
+ */
+function ScopeSwitch() {
+  const onlyMine = useIssues((s) => s.config?.onlyMine ?? true)
+  const loading = useIssues((s) => s.loading)
+  const updateConfig = useIssues((s) => s.updateConfig)
+  const options = [
+    { value: true, label: t('我的') },
+    { value: false, label: t('全部') },
+  ]
   return (
-    <div className="flex h-9 shrink-0 items-center gap-2 border-t border-border bg-fill px-3 text-[11.5px] font-medium text-fg-2">
-      {queue.awaitingNextBatch ? (
-        <>
-          <Pause className="size-3.5 text-warn" />
-          <span className="flex-1">{t('本批已完成，等你审查')}</span>
-          <Button
-            tone="accent"
-            className="h-6 px-2 text-[11px]"
-            icon={<Play className="size-3" />}
-            title={t('从排队的 {waiting} 个里取下一批 {n} 个', {
-              waiting: queue.waiting.length,
-              n: Math.min(queue.waiting.length, batchSize),
-            })}
-            onClick={() => void perform(() => api.startNextBatch())}
-          >
-            {t('开始下一批')}
-          </Button>
-        </>
-      ) : (
-        <>
-          {queue.batch.length > 0 && (
-            <>
-              <StatusDot color="bg-agent" pulse />
-              <span>{t('本批 {done}/{total} 完成', { done: queue.settled, total: queue.batch.length })}</span>
-            </>
+    <div
+      role="radiogroup"
+      aria-label={t('拉取范围')}
+      title={t('只拉分配给我的 issue，还是视图里的全部（在 Teable 服务端筛选）')}
+      className="flex h-[22px] shrink-0 items-center rounded-md bg-fill p-0.5"
+    >
+      {options.map((option) => (
+        <button
+          key={String(option.value)}
+          type="button"
+          role="radio"
+          aria-checked={onlyMine === option.value}
+          disabled={loading}
+          onClick={() => onlyMine !== option.value && void updateConfig({ onlyMine: option.value })}
+          className={cx(
+            'h-full rounded-[5px] px-1.5 text-[11px] transition-colors disabled:opacity-60',
+            onlyMine === option.value ? 'bg-background font-medium text-fg shadow-xs' : 'text-fg-2 hover:text-fg',
           )}
-          <div className="flex-1" />
-          {queue.waiting.length > 0 && <span>{t('排队 {n}', { n: queue.waiting.length })}</span>}
-        </>
-      )}
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   )
 }

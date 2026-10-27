@@ -93,6 +93,7 @@ export function ChatView({ chat }: { chat: Chat }) {
         uploadKey={`chat-${chat.id}`}
         busy={chat.running}
         queued={chat.queued}
+        background={chat.background}
         canSteer={chat.running}
         contextUsage={chat.context}
         placeholder={t('问点什么，或让它改代码；可粘贴或拖入截图')}
@@ -120,7 +121,7 @@ export function ChatView({ chat }: { chat: Chat }) {
 function ChatItem({ item }: { item: Item }) {
   switch (item.kind) {
     case 'work':
-      return <ActivityGroup steps={item.steps} live={item.live} review={false} />
+      return <ActivityGroup steps={item.steps} subagents={item.subagents} live={item.live} review={false} />
     case 'error':
       return (
         <div className="selectable flex items-start gap-2 rounded-lg bg-err-soft px-3 py-2 text-[12px] text-err">

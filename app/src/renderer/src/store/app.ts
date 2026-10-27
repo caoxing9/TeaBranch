@@ -4,7 +4,7 @@ import type { AppSettings, Branch, BranchUsage, DbMode, DevCategory, NgrokTunnel
 import { isLive } from '@shared/types'
 import { api, messageOf, on } from '@/lib/api'
 
-export type Section = 'branches' | 'issues'
+export type Section = 'branches' | 'issues' | 'queue'
 export type Theme = 'system' | 'light' | 'dark'
 export type SortKey = 'name' | 'status' | 'category'
 
@@ -70,6 +70,8 @@ interface AppStore {
   refreshTerminals(): Promise<void>
 }
 
+let listening = false
+
 export const useApp = create<AppStore>((set, get) => ({
   ready: false,
   settings: null,
@@ -119,6 +121,9 @@ export const useApp = create<AppStore>((set, get) => ({
     applyTheme(get().theme)
     const [settings, ngrok] = await Promise.all([api.getSettings(), api.ngrok()])
     set({ settings, ngrok, ready: true })
+    // StrictMode runs the mounting effect twice in dev; a second set of listeners doubles every event.
+    if (listening) return
+    listening = true
     on('branchesChanged', () => void get().refresh())
     on('ngrokChanged', (tunnel) => set({ ngrok: tunnel }))
     on('worktreeProgress', ({ branch, progress }) => {

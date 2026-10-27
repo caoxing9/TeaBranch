@@ -228,6 +228,7 @@ const handlers: Api = {
   updateTeableConfig: async (patch) => {
     const next: TeableConfig = { ...loadTeableConfig(), ...patch }
     saveTeableConfig(next)
+    if ('batchSize' in patch) issueAgent.concurrencyChanged()
     return next
   },
   teableSignIn: async (token, baseURL) => {
@@ -292,7 +293,10 @@ const handlers: Api = {
     requireRepo()
     for (const issue of issues) issueAgent.enqueueFix(issue)
   },
-  startNextBatch: async () => issueAgent.startNextBatch(),
+  fixNow: async (issue) => {
+    requireRepo()
+    issueAgent.fixNow(issue)
+  },
   restoreQueue: async (issues) => issueAgent.restoreQueue(issues),
   sendToAgent: (issue, message, attachments, steer) => issueAgent.say(issue, message, attachments, steer),
   steerIssueMessage: (issue, queuedId) => issueAgent.steer(issue, queuedId),
@@ -334,6 +338,16 @@ const handlers: Api = {
   sendLatestReview: (issue) => issueAgent.sendLatestReview(issue),
   postLatestReview: (recordId) => issueAgent.postLatestReview(recordId),
   cancelIssue: async (recordId) => issueAgent.cancel(recordId),
+  prDetails: (recordId) => issueAgent.prDetails(recordId),
+  prAction: (recordId, action) => issueAgent.prAction(recordId, action),
+  refreshChecks: (recordId) => issueAgent.refreshChecks(recordId),
+  sendCIFailures: (issue) => issueAgent.sendCIFailures(issue),
+  pauseIssue: async (recordId) => issueAgent.pause(recordId),
+  resumeIssue: async (recordId) => issueAgent.resume(recordId),
+  pauseQueue: async () => issueAgent.pauseAll(),
+  resumeQueue: async () => issueAgent.resumeAll(),
+  cancelQueue: async () => issueAgent.cancelAll(),
+  reorderQueue: async (ids) => issueAgent.reorder(ids),
   resetIssue: async (recordId) => issueAgent.reset(recordId),
   resumeInTerminal: async (recordId) => {
     const target = issueAgent.resumeCommand(recordId)

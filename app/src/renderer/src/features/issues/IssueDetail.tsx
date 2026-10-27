@@ -11,6 +11,7 @@ import {
   Globe,
   MoreHorizontal,
   PanelRight,
+  Pause,
   Play,
   RotateCw,
   Square,
@@ -31,6 +32,7 @@ import { cx } from '@/lib/format'
 import { isApproved } from '@/lib/issues'
 import { useApp } from '@/store/app'
 import { useIssues } from '@/store/issues'
+import { CIStatus } from './CIStatus'
 import { PhaseBadge, shelfMenu } from './IssueSidebar'
 import { Attachments, AttachmentsLabel, Comments } from './IssueExtras'
 import { IssuePanel, RunControl } from './IssuePanel'
@@ -74,6 +76,7 @@ export function IssueDetail({ issue }: { issue: Issue }) {
               busy={busy}
               waiting={queued}
               queued={run.queued}
+              background={run.background}
               canSteer={run.phase === 'triaging' || run.phase === 'fixing'}
               contextUsage={run.context}
               placeholder={t('给 {key} 的 agent 发消息，可粘贴或拖入截图', { key: issue.key })}
@@ -139,7 +142,7 @@ function Header({
         <div className="mt-px flex items-center gap-2 text-[11px] text-fg-2">
           {run ? (
             <>
-              <PhaseBadge phase={run.phase} />
+              <PhaseBadge phase={run.phase} recordId={run.recordId} />
               <Chip
                 icon={<GitBranch className="size-3" />}
                 title={t('在分支页打开：dev server、预览')}
@@ -152,6 +155,7 @@ function Header({
                   PR #{prNumber}
                 </Chip>
               )}
+              {run.prURL && <CIStatus issue={issue} run={run} busy={busy} />}
               {run.costUSD > 0 && (
                 <span className="text-fg-3 tabular-nums" title={t('Claude 报告的累计花费')}>
                   ${run.costUSD.toFixed(2)}
@@ -174,14 +178,36 @@ function Header({
       </div>
 
       <div className="flex items-center gap-1">
-        {busy ? (
-          <Button tone="danger" icon={<Square className="size-3" />} onClick={() => void perform(() => api.cancelIssue(issue.id))}>
-            {t('停止')}
-          </Button>
+        {busy || run?.phase === 'paused' ? (
+          <>
+            {run?.phase === 'paused' ? (
+              <Button
+                tone="accent"
+                icon={<Play className="size-3" />}
+                title={t('从暂停的那一步接着跑，沿用同一个会话')}
+                onClick={() => void perform(() => api.resumeIssue(issue.id))}
+              >
+                {t('继续')}
+              </Button>
+            ) : (
+              run?.phase !== 'queued' && (
+                <Button
+                  icon={<Pause className="size-3" />}
+                  title={t('停下这一步，保留会话和位置，之后可以继续')}
+                  onClick={() => void perform(() => api.pauseIssue(issue.id))}
+                >
+                  {t('暂停')}
+                </Button>
+              )
+            )}
+            <Button tone="danger" icon={<Square className="size-3" />} onClick={() => void perform(() => api.cancelIssue(issue.id))}>
+              {t('停止')}
+            </Button>
+          </>
         ) : (
           <>
             {(run?.phase === 'failed' || run?.phase === 'cancelled') && (
-              <Button tone="accent" icon={<RotateCw className="size-3.5" />} onClick={() => void perform(() => api.enqueueFix([issue]))}>
+              <Button tone="accent" icon={<RotateCw className="size-3.5" />} onClick={() => void perform(() => api.fixNow(issue))}>
                 {t('重试')}
               </Button>
             )}
@@ -323,7 +349,7 @@ function Conversation({ issue, run, entries, live }: { issue: Issue; run?: Issue
         <IssueCard issue={issue} startOpen={!run} />
         <IssueComments recordId={issue.id} />
         {!run && <StartPrompt issue={issue} />}
-        {run?.phase === 'queued' && <QueuedNote recordId={issue.id} />}
+        {run?.phase === 'queued' && <QueuedNote issue={issue} />}
         {turns.map((turn) => (
           <TurnView
             key={turn.id}
@@ -338,25 +364,27 @@ function Conversation({ issue, run, entries, live }: { issue: Issue; run?: Issue
 }
 
 /** Where a queued issue stands: its place in line, and whether the line waits on you. */
-function QueuedNote({ recordId }: { recordId: string }) {
+function QueuedNote({ issue }: { issue: Issue }) {
   const queue = useIssues((s) => s.queue)
   const perform = useIssues((s) => s.perform)
-  const position = queue.waiting.indexOf(recordId) + 1
+  const position = queue.waiting.indexOf(issue.id) + 1
+  const held = queue.paused
   return (
     <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-[12.5px] text-muted-foreground">
       <Clock className="size-3.5 shrink-0" />
       <span className="flex-1">
         {position ? t('在修复队列里排第 {n}', { n: position }) : t('在修复队列里')}
-        {queue.awaitingNextBatch && t('；上一批跑完了，等你审查后点“开始下一批”')}
+        {queue.paused && t('；队列已暂停')}
       </span>
-      {queue.awaitingNextBatch && (
+      {position > 0 && (
         <Button
-          tone="accent"
+          tone={held ? 'accent' : 'plain'}
           className="h-6 px-2 text-[11px]"
           icon={<Play className="size-3" />}
-          onClick={() => void perform(() => api.startNextBatch())}
+          title={t('不等队列，现在就单独跑这一个')}
+          onClick={() => void perform(() => api.fixNow(issue))}
         >
-          {t('开始下一批')}
+          {t('立即开始')}
         </Button>
       )}
     </div>
@@ -396,7 +424,7 @@ function StartPrompt({ issue }: { issue: Issue }) {
           tone="accent"
           className="h-8 px-4"
           icon={<Wand2 className="size-4" />}
-          onClick={() => void perform(() => api.enqueueFix([issue]))}
+          onClick={() => void perform(() => api.fixNow(issue))}
         >
           {t('自动修复')}
         </Button>
@@ -442,7 +470,7 @@ function ItemView({ item, hasPR, issue, busy }: { item: Item; hasPR: boolean; is
         </div>
       )
     case 'work':
-      return <ActivityGroup steps={item.steps} live={item.live} review={item.channel === 'review'} />
+      return <ActivityGroup steps={item.steps} subagents={item.subagents} live={item.live} review={item.channel === 'review'} />
   }
 }
 

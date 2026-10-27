@@ -1,4 +1,5 @@
 import {
+  BellRing,
   Check,
   ChevronDown,
   ChevronRight,
@@ -27,9 +28,12 @@ import { Markdown } from './Markdown'
  * with copy, cost and time.
  */
 
+/** Each `Agent` call's own steps, by its tool-use id: they show under that call, not among the agent's. */
+export type Subagents = Map<string, ConversationEntry[]>
+
 export type Item =
-  | { kind: 'user' | 'assistant' | 'review' | 'error' | 'result'; entry: ConversationEntry }
-  | { kind: 'work'; id: string; steps: ConversationEntry[]; live: boolean; channel: EntryChannel }
+  | { kind: 'user' | 'assistant' | 'review' | 'error' | 'result' | 'task'; entry: ConversationEntry }
+  | { kind: 'work'; id: string; steps: ConversationEntry[]; live: boolean; channel: EntryChannel; subagents: Subagents }
 
 export const itemId = (item: Item): string => (item.kind === 'work' ? item.id : item.entry.id)
 
@@ -42,11 +46,11 @@ const connectedModel = (entry: ConversationEntry): string | undefined =>
     : (entry.connectedModel ?? (CONNECTED.test(entry.text) ? entry.text.replace(CONNECTED, '') : undefined))
 
 /** Fold every run of tool calls, tool output and progress lines into one `work` item. */
-export function buildItems(entries: ConversationEntry[], live: boolean): Item[] {
+export function buildItems(entries: ConversationEntry[], live: boolean, subagents: Subagents = new Map()): Item[] {
   const items: Item[] = []
   let pending: ConversationEntry[] = []
   const flush = () => {
-    if (pending.length) items.push({ kind: 'work', id: pending[0].id, steps: pending, live: false, channel: pending[0].channel })
+    if (pending.length) items.push({ kind: 'work', id: pending[0].id, steps: pending, live: false, channel: pending[0].channel, subagents })
     pending = []
   }
   for (const entry of entries) {
@@ -70,6 +74,8 @@ export function buildItems(entries: ConversationEntry[], live: boolean): Item[] 
 export interface Turn {
   id: string
   user?: ConversationEntry
+  /** A background task that finished and woke the agent, when it — not you — started the turn. */
+  wake?: ConversationEntry
   /** Everything the agent did before its answer. */
   work: Item[]
   answer?: ConversationEntry
@@ -81,13 +87,22 @@ export interface Turn {
   live: boolean
 }
 
-/** Split the transcript at each of your messages; within a turn, the agent's result settles it. */
+/**
+ * Split the transcript at each of your messages, and where a finished background task wakes the
+ * agent after its turn; within a turn, the agent's result settles it.
+ */
 export function buildTurns(entries: ConversationEntry[], live: boolean): Turn[] {
   const turns: Turn[] = []
   const segments: ConversationEntry[][] = []
+  const subagents: Subagents = new Map()
   let current: ConversationEntry[] = []
   for (const entry of entries) {
-    if (entry.kind === 'user' && current.length) {
+    if (entry.parentToolUseId) {
+      subagents.set(entry.parentToolUseId, [...(subagents.get(entry.parentToolUseId) ?? []), entry])
+      continue
+    }
+    const settled = current.some((other) => other.kind === 'result' && other.channel === 'agent')
+    if ((entry.kind === 'user' || (entry.kind === 'task' && settled)) && current.length) {
       segments.push(current)
       current = []
     }
@@ -97,7 +112,8 @@ export function buildTurns(entries: ConversationEntry[], live: boolean): Turn[] 
 
   segments.forEach((segment, index) => {
     const user = segment[0].kind === 'user' ? segment[0] : undefined
-    const body = user ? segment.slice(1) : segment
+    const wake = segment[0].kind === 'task' && index > 0 ? segment[0] : undefined
+    const body = user || wake ? segment.slice(1) : segment
     const resultAt = body.findIndex((entry) => entry.kind === 'result' && entry.channel === 'agent')
     const before = resultAt < 0 ? body : body.slice(0, resultAt)
     const model = before.map(connectedModel).find((name) => name !== undefined)
@@ -105,9 +121,10 @@ export function buildTurns(entries: ConversationEntry[], live: boolean): Turn[] 
     const turn: Turn = {
       id: segment[0].id,
       user,
-      work: buildItems(before, live && isLast && resultAt < 0),
+      wake,
+      work: buildItems(before, live && isLast && resultAt < 0, subagents),
       result: resultAt < 0 ? undefined : body[resultAt],
-      after: resultAt < 0 ? [] : buildItems(body.slice(resultAt + 1), live && isLast),
+      after: resultAt < 0 ? [] : buildItems(body.slice(resultAt + 1), live && isLast, subagents),
       startedAt: segment[0].at ?? 0,
       model,
       live: live && isLast && resultAt < 0,
@@ -132,11 +149,13 @@ export function TurnView({ turn, layout, renderItem }: { turn: Turn; layout: 'do
   const [open, setOpen] = useState(false)
   const model = turn.model ? modelDisplayName(turn.model, catalog) : undefined
   const endedAt = turn.result?.at
-  const work = turn.work.map((item) => <div key={itemId(item)}>{renderItem(item)}</div>)
+  const render = (item: Item) => (item.kind === 'task' ? <TaskNotice entry={item.entry} /> : renderItem(item))
+  const work = turn.work.map((item) => <div key={itemId(item)}>{render(item)}</div>)
 
   return (
     <div className="flex flex-col gap-4">
       {turn.user && <UserMessage entry={turn.user} layout={layout} />}
+      {turn.wake && <TaskNotice entry={turn.wake} />}
       {turn.live && <WorkingLine startedAt={turn.startedAt} model={model} />}
       {turn.result ? (
         <>
@@ -171,8 +190,34 @@ export function TurnView({ turn, layout, renderItem }: { turn: Turn; layout: 'do
         work
       )}
       {turn.after.map((item) => (
-        <div key={itemId(item)}>{renderItem(item)}</div>
+        <div key={itemId(item)}>{render(item)}</div>
       ))}
+    </div>
+  )
+}
+
+/** A background task the agent left running has finished: what it reported, which the agent now picks up. */
+function TaskNotice({ entry }: { entry: ConversationEntry }) {
+  const [open, setOpen] = useState(false)
+  const task = entry.task
+  const title = task?.kind === 'agent' ? t('后台子 agent 结束') : task?.kind === 'command' ? t('后台命令结束') : t('后台任务结束')
+  const status = { completed: undefined, failed: t('失败'), stopped: t('已停止') }[task?.status ?? 'completed']
+  const long = entry.text.length > 160 || entry.text.includes('\n')
+  return (
+    <div className="text-[13px]">
+      <button
+        type="button"
+        onClick={() => long && setOpen(!open)}
+        className={cn('flex max-w-full items-center gap-2 text-left text-muted-foreground', long && 'hover:text-foreground')}
+      >
+        <BellRing className={cn('size-3.5 shrink-0', entry.isError && 'text-err')} />
+        <span className="shrink-0">{status ? `${title} · ${status}` : title}</span>
+        {task?.description && <span className="truncate text-muted-foreground/70">{task.description}</span>}
+        {long && <ChevronDown className={cn('size-3.5 shrink-0 opacity-60 transition-transform', open && 'rotate-180')} />}
+      </button>
+      {(open || !long) && entry.text !== task?.description && (
+        <div className="selectable mt-1 ml-[22px] text-[12.5px] whitespace-pre-wrap text-muted-foreground">{entry.text}</div>
+      )}
     </div>
   )
 }
@@ -311,7 +356,17 @@ function clause(kind: WorkKind, n: number, live: boolean): string {
 }
 
 /** A stretch of tool calls: a summary line, and while live (or opened) the calls as a tree. */
-export function ActivityGroup({ steps, live, review }: { steps: ConversationEntry[]; live: boolean; review: boolean }) {
+export function ActivityGroup({
+  steps,
+  live,
+  review,
+  subagents = new Map(),
+}: {
+  steps: ConversationEntry[]
+  live: boolean
+  review: boolean
+  subagents?: Subagents
+}) {
   const [open, setOpen] = useState(false)
   const calls = steps.filter((step) => step.kind === 'tool')
   const counts = new Map<WorkKind, number>()
@@ -347,7 +402,14 @@ export function ActivityGroup({ steps, live, review }: { steps: ConversationEntr
       {expanded && expandable && (
         <div className="mt-1.5 ml-[7px]">
           {rows.map((row, index) => (
-            <TreeRow key={row.id} entry={row} output={calls.length ? outputOf(steps, row) : undefined} last={index === rows.length - 1} />
+            <TreeRow
+              key={row.id}
+              entry={row}
+              output={calls.length ? outputOf(steps, row) : undefined}
+              steps={row.toolUseId ? subagents.get(row.toolUseId) : undefined}
+              live={live}
+              last={index === rows.length - 1}
+            />
           ))}
         </div>
       )}
@@ -360,8 +422,25 @@ const outputOf = (steps: ConversationEntry[], call: ConversationEntry): Conversa
   return next?.kind === 'toolResult' ? next : undefined
 }
 
-function TreeRow({ entry, output, last }: { entry: ConversationEntry; output?: ConversationEntry; last: boolean }) {
+function TreeRow({
+  entry,
+  output,
+  steps,
+  live = false,
+  last,
+}: {
+  entry: ConversationEntry
+  output?: ConversationEntry
+  /** A subagent's own calls and their output, under the call that runs it. */
+  steps?: ConversationEntry[]
+  live?: boolean
+  last: boolean
+}) {
   const [open, setOpen] = useState(false)
+  const [showSteps, setShowSteps] = useState(false)
+  const calls = steps?.filter((step) => step.kind === 'tool') ?? []
+  // While it works, its latest few; once done, all of them behind a toggle.
+  const shownCalls = showSteps ? calls : live ? calls.slice(-3) : []
   const kind = workKindOf(entry)
   const text = entry.kind !== 'tool' ? entry.text : kind === 'run' ? toolArg(entry) || toolName(entry) : entry.text
   return (
@@ -381,6 +460,22 @@ function TreeRow({ entry, output, last }: { entry: ConversationEntry; output?: C
       >
         {text}
       </button>
+      {calls.length > 0 && (
+        <div className="mb-1 ml-1">
+          {!showSteps && (
+            <button
+              type="button"
+              onClick={() => setShowSteps(true)}
+              className="py-[2px] text-[11.5px] text-muted-foreground hover:text-foreground"
+            >
+              {plural(t('子 agent 的 {n} 个步骤', { n: calls.length }))}
+            </button>
+          )}
+          {shownCalls.map((call, index) => (
+            <TreeRow key={call.id} entry={call} output={outputOf(steps ?? [], call)} last={index === shownCalls.length - 1} />
+          ))}
+        </div>
+      )}
       {open && output && (
         <pre
           className={cn(
