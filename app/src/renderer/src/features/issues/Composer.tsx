@@ -1,31 +1,63 @@
-import { ArrowUp, CornerDownRight, FileText, Plus, Square, X } from 'lucide-react'
+import { ArrowUp, CornerDownRight, Plus, Square, Terminal, Users, Wrench, X } from 'lucide-react'
 import { t } from '@shared/i18n'
-import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
-import type { ContextUsage, QueuedMessage } from '@shared/types'
+import { type ReactNode, useEffect, useState } from 'react'
+import type { BackgroundTask, ContextUsage, QueuedMessage } from '@shared/types'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { IconButton } from '@/components/kit'
-import { useLightbox } from '@/components/Lightbox'
 import { api } from '@/lib/api'
 import { cx } from '@/lib/format'
 import { useIssues } from '@/store/issues'
+import { type AttachmentAttrs, EditorContent, insertAttachments, serialize, useMessageEditor } from './MessageEditor'
+
+// MARK: - Background
+
+const taskIcon = { command: Terminal, agent: Users, other: Wrench }
+
+/** What the agent left running between its turns: why it still counts as working, and for how long. */
+function BackgroundStrip({ tasks, bordered }: { tasks: BackgroundTask[]; bordered: boolean }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  return (
+    <div className={cx('flex flex-col gap-0.5 px-2 py-1.5', bordered && 'border-b')}>
+      <div className="px-1 text-[11px] text-muted-foreground">{t('后台运行中，结束后 agent 会接着处理')}</div>
+      {tasks.map((task) => {
+        const Icon = taskIcon[task.kind]
+        return (
+          <div key={task.id} className="flex h-7 items-center gap-2 rounded-md px-1 text-[12.5px]" title={task.description}>
+            <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="shrink-0 text-muted-foreground">
+              {task.kind === 'agent' ? t('子 agent') : task.kind === 'command' ? t('命令') : t('任务')}
+            </span>
+            <span className="shimmer min-w-0 flex-1 truncate">{task.description}</span>
+            <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">{elapsed(now - task.startedAt)}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function elapsed(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+}
 
 // MARK: - Composer
 
 /**
- * One rounded box that grows with its text, send inside it at the bottom right, quiet details on a
- * line underneath. Return sends, Shift-Return breaks the line, and a Return that commits an input
+ * One rounded box, two lines tall when empty, that grows with its text; send inside it at the bottom
+ * right, quiet details (branch, PR) on a line underneath. Return sends, Shift-Return breaks the line, and a Return that commits an input
  * method's candidate is left to the IME — sending half-typed pinyin is the classic bug here.
  *
  * While the agent works, Return queues the message for after its turn and ⌘Return steers it into
  * the turn. Queued messages sit above the text, each one steerable or removable.
  */
-interface Pending {
-  path: string
-  name: string
-  /** A data URL for images pasted or dropped, so the chip can show what it is. */
-  preview?: string
-}
-
 const readAsBase64 = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -41,6 +73,7 @@ export function Composer({
   busy,
   waiting,
   queued = [],
+  background = [],
   canSteer,
   pickers,
   contextUsage,
@@ -58,6 +91,8 @@ export function Composer({
   /** Busy only in the sense of queued for a fix: nothing runs yet. */
   waiting?: boolean
   queued?: QueuedMessage[]
+  /** Commands and subagents the agent left running; it carries on when they finish. */
+  background?: BackgroundTask[]
   /** The running agent takes messages mid-turn (a reviewer or a worktree build doesn't). */
   canSteer: boolean
   pickers: ReactNode
@@ -70,46 +105,46 @@ export function Composer({
   onUnqueue: (queuedId: string) => void
   onCancel: () => void
 }) {
-  const [text, setText] = useState('')
-  const [pending, setPending] = useState<Pending[]>([])
   const [dragging, setDragging] = useState(false)
-  const field = useRef<HTMLTextAreaElement>(null)
-  const canSend = text.trim().length > 0 || pending.length > 0
 
-  useLayoutEffect(() => {
-    const element = field.current
-    if (!element) return
-    element.style.height = '0px'
-    element.style.height = `${Math.min(element.scrollHeight, 160)}px`
-  }, [text])
-
-  const addFiles = async (files: File[]) => {
+  const addFiles = async (files: File[], at?: number) => {
+    const saved: AttachmentAttrs[] = []
     for (const file of files) {
       try {
         const base64 = await readAsBase64(file)
         const path = await api.saveUpload(uploadKey, file.name || 'pasted.png', base64)
         const preview = file.type.startsWith('image/') ? `data:${file.type};base64,${base64}` : undefined
-        setPending((current) => [...current, { path, name: file.name || 'pasted.png', preview }])
+        saved.push({ path, name: file.name || 'pasted.png', preview })
       } catch (error) {
         useIssues.setState({ error: String((error as Error).message) })
       }
     }
+    if (editor) insertAttachments(editor, saved, at)
   }
 
   const send = (steer = false) => {
-    if (!canSend) return
-    const message = text.trim() || t('看一下附件。')
-    const attachments = pending.map((file) => file.path)
-    setText('')
-    setPending([])
-    onSend(message, attachments, steer && busy && canSteer)
+    if (!editor) return
+    const { text, attachments } = serialize(editor)
+    if (!text && !attachments.length) return
+    editor.commands.clearContent(true)
+    onSend(text || t('看一下附件。'), attachments, steer && busy && canSteer)
   }
 
+  const { editor, filled: canSend } = useMessageEditor({
+    placeholder: waiting
+      ? t('还在修复队列里；现在写的消息会在修复跑完后发出')
+      : busy
+        ? t('Agent 正在工作：⏎ 排队到这一轮之后，⌘⏎ 插话')
+        : placeholder,
+    onSubmit: send,
+    onFiles: (files, at) => void addFiles(files, at),
+  })
+
   return (
-    <div className="shrink-0 px-6 pb-4">
+    <div className="mx-auto w-full max-w-[760px] shrink-0 px-6 pb-2.5">
       <div
         className={cx(
-          'mx-auto max-w-[760px] rounded-xl border bg-card shadow-xs transition-colors focus-within:border-ring',
+          'rounded-2xl border border-border/50 bg-card shadow-[0_1px_2px_rgb(0_0_0/0.04),0_6px_20px_rgb(0_0_0/0.06)] transition-[border-color,box-shadow] focus-within:border-border focus-within:shadow-[0_1px_2px_rgb(0_0_0/0.05),0_8px_28px_rgb(0_0_0/0.09)] dark:shadow-none',
           dragging && 'border-brand bg-brand-soft',
         )}
         onDragOver={(event) => {
@@ -118,11 +153,14 @@ export function Composer({
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={(event) => {
-          event.preventDefault()
           setDragging(false)
-          void addFiles([...event.dataTransfer.files])
+          // Drops on the text land where they fall — the editor took those; the rest go at the cursor.
+          const taken = event.defaultPrevented
+          event.preventDefault()
+          if (!taken) void addFiles([...event.dataTransfer.files])
         }}
       >
+        {background.length > 0 && <BackgroundStrip tasks={background} bordered={queued.length > 0} />}
         {queued.length > 0 && (
           <div className="flex flex-col gap-0.5 border-b px-2 py-1.5">
             <div className="px-1 text-[11px] text-muted-foreground">
@@ -163,79 +201,25 @@ export function Composer({
             ))}
           </div>
         )}
-        <div className="flex items-center gap-1.5 px-3 pt-2.5 font-mono text-[11px] text-muted-foreground">{context}</div>
-        {pending.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-3 pt-2">
-            {pending.map((file) => (
-              <span
-                key={file.path}
-                className="group relative flex h-12 items-center gap-2 rounded-lg border bg-muted/50 pr-2 text-[11.5px]"
-              >
-                {file.preview ? (
-                  <img
-                    src={file.preview}
-                    alt=""
-                    onClick={() => useLightbox.getState().open([{ url: file.preview as string, name: file.name }])}
-                    className="h-full w-14 cursor-zoom-in rounded-l-lg object-cover"
-                  />
-                ) : (
-                  <FileText className="ml-2 size-4 text-muted-foreground" />
-                )}
-                <span className="max-w-36 truncate">{file.name}</span>
-                <button
-                  type="button"
-                  title={t('移除')}
-                  onClick={() => setPending((current) => current.filter((candidate) => candidate.path !== file.path))}
-                  className="absolute -top-1.5 -right-1.5 hidden size-4 items-center justify-center rounded-full bg-foreground text-[10px] text-background group-hover:flex"
-                >
-                  ✕
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-        <textarea
-          ref={field}
-          rows={1}
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          onPaste={(event) => {
-            const files = [...event.clipboardData.files]
-            if (!files.length) return
-            event.preventDefault()
-            void addFiles(files)
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229) return
-            event.preventDefault()
-            send(event.metaKey)
-          }}
-          placeholder={
-            waiting
-              ? t('还在修复队列里；现在写的消息会在修复跑完后发出')
-              : busy
-                ? t('Agent 正在工作：⏎ 排队到这一轮之后，⌘⏎ 插话')
-                : placeholder
-          }
-          className="selectable block max-h-40 min-h-[22px] w-full resize-none bg-transparent px-3 py-2 text-[13.5px] leading-[20px] outline-none placeholder:text-muted-foreground"
-        />
+        <EditorContent editor={editor} />
         <div className="flex items-center gap-1 px-2 pb-2">
           <IconButton
             label={t('附加文件')}
             className="size-6"
             onClick={async () => {
               const paths = await api.pickUploads(uploadKey)
-              setPending((current) => [
-                ...current,
-                ...paths.map((path) => ({
-                  path,
-                  name:
-                    path
-                      .split('/')
-                      .pop()
-                      ?.replace(/^\d{14}-/, '') ?? path,
-                })),
-              ])
+              if (editor)
+                insertAttachments(
+                  editor,
+                  paths.map((path) => ({
+                    path,
+                    name:
+                      path
+                        .split('/')
+                        .pop()
+                        ?.replace(/^\d{14}-/, '') ?? path,
+                  })),
+                )
             }}
           >
             <Plus className="size-4" />
@@ -243,9 +227,9 @@ export function Composer({
           {pickers}
           <div className="flex-1" />
           {contextUsage && contextUsage.used > 0 && <ContextRing usage={contextUsage} />}
-          <span className="mr-1 text-[11px] text-muted-foreground">
-            {!busy ? t('⏎ 发送') : canSend ? (canSteer ? t('⏎ 排队 · ⌘⏎ 插话') : t('⏎ 排队')) : waiting ? t('排队中') : t('运行中')}
-          </span>
+          {busy && canSend && (
+            <span className="mr-1 text-[11px] text-muted-foreground">{canSteer ? t('⏎ 排队 · ⌘⏎ 插话') : t('⏎ 排队')}</span>
+          )}
           {busy && (
             <button
               type="button"
@@ -272,6 +256,7 @@ export function Composer({
           )}
         </div>
       </div>
+      <div className="flex h-6 items-center gap-1.5 px-3 font-mono text-[11px] text-muted-foreground">{context}</div>
     </div>
   )
 }

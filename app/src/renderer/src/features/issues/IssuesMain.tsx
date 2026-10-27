@@ -1,7 +1,7 @@
 import { Bug, TableProperties, Wand2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Button, EmptyState, inputClass, Spinner, Toggle, TitleStrip } from '@/components/kit'
-import { getLocale, t } from '@shared/i18n'
+import { Button, EmptyState, inputClass, Spinner, TitleStrip } from '@/components/kit'
+import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { fixable, useIssues } from '@/store/issues'
 import { PhaseBadge } from './IssueSidebar'
@@ -217,15 +217,12 @@ function TableOnboarding() {
   )
 }
 
-/** Several issues selected: queue them all, with the batch window set right here. */
+/** Several issues selected: queue them all, with how many run at once set right here. */
 function BatchPanel() {
   const state = useIssues()
   const selected = state.issues.filter((issue) => state.checked.has(issue.id))
   const ready = fixable(selected, state.runs)
   const batchSize = Math.max(1, state.config?.batchSize ?? 3)
-  const batches = Math.ceil(ready.length / batchSize)
-  const autoNext = state.config?.autoNextBatch ?? false
-  const gap = getLocale() === 'en' ? ' ' : ''
 
   return (
     <div className="h-full overflow-y-auto">
@@ -243,7 +240,7 @@ function BatchPanel() {
 
         <div className="mt-5 space-y-3 rounded-xl bg-fill p-4">
           <div className="flex items-center gap-3">
-            <span className="text-[13px]">{t('每批同时修复')}</span>
+            <span className="text-[13px]">{t('最多同时修复')}</span>
             <div className="flex items-center rounded-md bg-bg">
               <button
                 type="button"
@@ -263,18 +260,7 @@ function BatchPanel() {
             </div>
             <span className="text-[13px]">{t('个')}</span>
           </div>
-          <Toggle
-            checked={autoNext}
-            onChange={(value) => void state.updateConfig({ autoNextBatch: value })}
-            label={t('一批全部完成后自动开始下一批')}
-          />
-          <p className="text-[12px] text-fg-2">
-            {t('共 {n} 批。', { n: batches })}
-            {gap}
-            {autoNext ? t('一直跑到队列清空，每批结束和全部结束都会发系统通知。') : t('每批结束发系统通知并暂停，你审查完点“开始下一批”。')}
-            {gap}
-            {t('一批要等每个 issue 都走完修复 → PR → review → 回改（或失败、停止、等你回复）才算结束。')}
-          </p>
+          <p className="text-[12px] text-fg-2">{t('跑完一个就补上排队的下一个，全部结束发系统通知；在“队列”里可以随时暂停、调整顺序。')}</p>
         </div>
 
         <div className="mt-5 flex gap-2">
@@ -300,7 +286,7 @@ function BatchPanel() {
             <div key={issue.id} className="flex items-center gap-3 px-3 py-2">
               <span className="w-16 shrink-0 font-mono text-[12px] text-fg-2">{issue.key}</span>
               <span className="min-w-0 flex-1 truncate text-[13px]">{issue.title}</span>
-              {state.runs[issue.id] && <PhaseBadge phase={state.runs[issue.id].phase} />}
+              {state.runs[issue.id] && <PhaseBadge phase={state.runs[issue.id].phase} recordId={issue.id} />}
             </div>
           ))}
         </div>

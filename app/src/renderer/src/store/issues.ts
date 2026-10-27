@@ -35,6 +35,8 @@ export interface IssueFilterSet {
 
 const FILTER_KEY = 'teabranch.issueFilter'
 
+let listening = false
+
 export const newConditionId = (): string => Math.random().toString(36).slice(2, 10)
 
 /** A condition with nothing to compare against yet doesn't filter — like Teable's half-built rows. */
@@ -115,7 +117,7 @@ export const useIssues = create<IssuesStore>((set, get) => ({
   records: [],
   issues: [],
   runs: {},
-  queue: { batch: [], waiting: [], awaitingNextBatch: false, settled: 0 },
+  queue: { running: [], waiting: [], paused: false, concurrency: 3 },
   selection: new Set(),
   checked: new Set(),
   search: '',
@@ -139,6 +141,9 @@ export const useIssues = create<IssuesStore>((set, get) => ({
     ])
     set({ config, runs, queue, oauthReady })
 
+    // StrictMode runs the mounting effect twice in dev; a second set of listeners doubles every event.
+    if (listening) return
+    listening = true
     on('issueRunsChanged', async () => {
       const [runs, queue] = await Promise.all([api.issueRuns(), api.queueState()])
       set({ runs, queue })
@@ -241,8 +246,6 @@ export const useIssues = create<IssuesStore>((set, get) => ({
     set({ config, issues: get().records.map((record) => toIssue(record, map)) })
     const reloadKeys: (keyof TeableConfig)[] = ['baseURL', 'baseId', 'tableId', 'viewId', 'onlyMine', 'assigneeField']
     if (before && reloadKeys.some((key) => before[key] !== config[key]) && get().user) await get().reload()
-    // Turning auto-next on while a batch waits for confirmation should not leave it waiting.
-    if (config.autoNextBatch && !before?.autoNextBatch && get().queue.awaitingNextBatch) await api.startNextBatch()
   },
 
   setChecked(ids) {

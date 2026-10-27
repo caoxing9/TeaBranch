@@ -6,12 +6,13 @@ import { Notification } from 'electron'
 import type {
   AgentAccess,
   AgentModel,
-  BatchSummary,
   ConversationEntry,
   DbMode,
   Issue,
   IssueRun,
   IssueShelf,
+  PRAction,
+  PRDetails,
   QueueState,
   QueuedMessage,
   ReviewRecord,
@@ -19,6 +20,8 @@ import type {
   WorktreeProgress,
 } from '@shared/types'
 import { agentModelLabel, isActivePhase, triageLabel, triageVerdict } from '@shared/types'
+import { agentMessage, shownMessage } from '@shared/attachments'
+import { ciFailures, ciPending, parseChecks } from '@shared/ci'
 import { t } from '@shared/i18n'
 import { state } from '../core/appState'
 import { emit, emitSoon } from '../core/events'
@@ -44,6 +47,8 @@ import {
   fixPrompt,
   type PromptTarget,
   reviewFeedbackPrompt,
+  ciFixPrompt,
+  resumePrompt,
   reviewPrompt,
   systemPrompt,
   triagePrompt,
@@ -59,8 +64,11 @@ import * as worktrees from './worktree'
  * after it — a follow-up typed in the app, review findings fed back, `claude --resume` in a
  * terminal — so the agent always has the whole story of the bug.
  *
- * Issues run in batches: N agents at once, and the next N only after every one of those has
- * settled. A rolling window would let fast issues run the queue ahead of what you have reviewed.
+ * The queue works like a download manager: up to N issues run at once, and whenever one settles
+ * the next in line takes its place.
+ *
+ * Pausing stops a step's process but keeps the issue's place; resuming carries the same session
+ * on from that step. Pausing the queue pauses every running issue and takes no new ones.
  */
 class IssueAgent {
   private runs: Record<string, IssueRun> = {}
@@ -68,8 +76,16 @@ class IssueAgent {
   /** Live agent processes. At most one per issue: a session can't be resumed twice at once. */
   private handles = new Map<string, Handle>()
   private waiting: Issue[] = []
-  private batch: string[] = []
-  private awaitingNextBatch = false
+  /** Issues taken off the queue and not settled yet: the slots N counts. */
+  private slots: string[] = []
+  /** Settled out of a slot since the queue last ran dry, for the notification when it does. */
+  private finished: string[] = []
+  private paused = false
+  /** The issues as last loaded, so a paused one can resume from just its id. */
+  private known = new Map<string, Issue>()
+  /** Pauses per issue: a pipeline that sees this change was paused under it, even if resumed since. */
+  private pauses = new Map<string, number>()
+  private ciTimer: NodeJS.Timeout | null = null
   /** Half-built worktrees to discard before a retry rebuilds, record id → branch. */
   private abandoned = new Map<string, string>()
   private dirty = new Set<string>()
@@ -85,11 +101,13 @@ class IssueAgent {
         run.phase = 'failed'
         run.lastError = t('TeaBranch 退出时它还在运行')
       }
+      run.background = undefined
       if (!run.context) {
         const used = sessionContextUsed(run.sessionId)
         if (used) run.context = { used }
       }
     }
+    this.watchCI()
   }
 
   // MARK: Reads
@@ -115,10 +133,10 @@ class IssueAgent {
 
   queueState(): QueueState {
     return {
-      batch: [...this.batch],
+      running: [...this.slots],
       waiting: this.waiting.map((issue) => issue.id),
-      awaitingNextBatch: this.awaitingNextBatch,
-      settled: this.batch.filter((id) => this.isSettled(id)).length,
+      paused: this.paused,
+      concurrency: Math.max(1, loadTeableConfig().batchSize),
     }
   }
 
@@ -152,30 +170,40 @@ class IssueAgent {
       createdAt: previous?.createdAt ?? now,
       updatedAt: now,
     }
+    this.known.set(issue.id, issue)
     this.waiting.push(issue)
     this.append(issue.id, entry('system', 'agent', t('已加入修复队列')))
     this.changed()
-    this.startNextBatchIfIdle()
+    this.fill()
   }
 
   /** Put issues left queued by a previous launch back in the queue, oldest first. */
   restoreQueue(issues: Issue[]): void {
-    const known = new Set([...this.waiting.map((issue) => issue.id), ...this.batch])
+    for (const issue of issues) this.known.set(issue.id, issue)
+    const known = new Set([...this.waiting.map((issue) => issue.id), ...this.slots])
     const stale = issues
       .filter((issue) => this.runs[issue.id]?.phase === 'queued' && !known.has(issue.id))
       .sort((a, b) => (this.runs[a.id]?.createdAt ?? 0) - (this.runs[b.id]?.createdAt ?? 0))
     if (!stale.length) return
     this.waiting.push(...stale)
-    // A relaunch is no go-ahead: whether the last batch was reviewed isn't kept, so ask again.
-    if (!this.batch.length && !loadTeableConfig().autoNextBatch) this.awaitingNextBatch = true
+    // A relaunch is no go-ahead: what was left in the queue waits, paused, until you resume it.
+    if (!this.slots.length) this.paused = true
     this.changed()
-    this.startNextBatchIfIdle()
+    this.fill()
   }
 
-  /** The user's go-ahead for the next batch after reviewing the last one. */
-  startNextBatch(): void {
-    this.awaitingNextBatch = false
-    this.startNextBatchIfIdle()
+  /**
+   * One issue you started yourself: it runs now, outside any batch — you are already looking at
+   * it, so there's nothing to hold it for. Batches are for what you queue in bulk.
+   */
+  fixNow(issue: Issue): void {
+    if (this.runs[issue.id]?.phase !== 'queued') this.enqueueFix(issue)
+    const index = this.waiting.findIndex((candidate) => candidate.id === issue.id)
+    // Already taken into a batch, or not in a state to fix.
+    if (index < 0) return
+    this.waiting.splice(index, 1)
+    this.changed()
+    void this.pipeline(issue, loadTeableConfig())
   }
 
   /** Send a message to the issue's own agent, resuming its session. */
@@ -281,10 +309,97 @@ class IssueAgent {
     this.waiting = this.waiting.filter((issue) => issue.id !== recordId)
     this.handles.get(recordId)?.cancel()
     this.update(recordId, (run) => {
-      if (isActivePhase(run.phase)) run.phase = 'cancelled'
+      if (isActivePhase(run.phase) || run.phase === 'paused') run.phase = 'cancelled'
+      run.pausedFrom = undefined
     })
     this.append(recordId, entry('system', 'agent', t('已停止')))
-    this.checkBatch()
+    this.settle()
+  }
+
+  /** Stop the current step but keep the issue's place; its session waits to be resumed. */
+  pause(recordId: string): void {
+    const run = this.runs[recordId]
+    if (!run || !isActivePhase(run.phase) || run.phase === 'queued') return
+    const from = run.phase
+    this.pauses.set(recordId, (this.pauses.get(recordId) ?? 0) + 1)
+    // Before the kill, so the step's exit handler sees a pause rather than an ending.
+    this.update(recordId, (r) => {
+      r.phase = 'paused'
+      r.pausedFrom = from
+    })
+    this.handles.get(recordId)?.cancel()
+    this.append(recordId, entry('system', 'agent', t('已暂停')))
+  }
+
+  /** Pick a paused issue up at the step it was stopped in. */
+  resume(recordId: string): void {
+    const run = this.runs[recordId]
+    if (!run || run.phase !== 'paused') return
+    const issue = this.known.get(recordId)
+    if (!issue) throw new TeaBranchError(t('这个 issue 不在当前列表里，刷新后再继续'))
+    const from = run.pausedFrom
+    const config = loadTeableConfig()
+    const cwd = this.worktreePath(run)
+    this.append(recordId, entry('system', 'agent', t('继续')))
+    try {
+      if (from === 'reviewing' && cwd) return this.startReview(issue, run, cwd, config)
+      if ((from === 'triaging' || from === 'fixing') && cwd && sessionExists(run.sessionId, cwd)) {
+        this.update(recordId, (r) => {
+          r.phase = from
+        })
+        this.startAgent(issue, resumePrompt(), cwd, config, (outcome) =>
+          from === 'triaging' ? this.triageFinished(issue, outcome, config) : void this.agentFinished(issue, outcome, config),
+        )
+        return
+      }
+      // Paused before the agent had a session to carry on: go through the steps again.
+      this.update(recordId, (r) => {
+        r.phase = 'queued'
+        r.pausedFrom = undefined
+      })
+      void this.pipeline(issue, config)
+    } catch (error) {
+      this.fail(recordId, t('启动 agent 失败：{error}', { error: errorMessage(error) }))
+      this.settle()
+    }
+  }
+
+  pauseAll(): void {
+    this.paused = true
+    for (const id of Object.keys(this.runs)) this.pause(id)
+    this.changed()
+  }
+
+  resumeAll(): void {
+    this.paused = false
+    for (const run of Object.values(this.runs)) {
+      if (run.phase !== 'paused') continue
+      try {
+        this.resume(run.recordId)
+      } catch (error) {
+        this.append(run.recordId, entry('error', 'agent', errorMessage(error), true))
+      }
+    }
+    this.changed()
+    this.fill()
+  }
+
+  /** Stop everything running or paused, and drop what's still waiting. */
+  cancelAll(): void {
+    const waiting = this.waiting.map((issue) => issue.id)
+    this.waiting = []
+    this.paused = false
+    const live = Object.values(this.runs)
+      .filter((run) => isActivePhase(run.phase) || run.phase === 'paused')
+      .map((run) => run.recordId)
+    for (const id of new Set([...waiting, ...live])) this.cancel(id)
+    this.changed()
+  }
+
+  reorder(ids: string[]): void {
+    const rank = new Map(ids.map((id, index) => [id, index]))
+    this.waiting = [...this.waiting].sort((a, b) => (rank.get(a.id) ?? ids.length) - (rank.get(b.id) ?? ids.length))
+    this.changed()
   }
 
   /** Forget the run and its conversation. The worktree and branch stay. */
@@ -295,7 +410,7 @@ class IssueAgent {
     saveTranscript(recordId, [])
     this.scheduleSave()
     this.changed()
-    this.checkBatch()
+    this.settle()
   }
 
   async postLatestReview(recordId: string): Promise<void> {
@@ -355,63 +470,187 @@ class IssueAgent {
     return existsSync(path) ? path : undefined
   }
 
-  // MARK: Batches
+  // MARK: CI
 
-  private startNextBatchIfIdle(): void {
-    if (this.batch.length || this.awaitingNextBatch || !this.waiting.length) return
+  /** Every open PR's checks, now and then; a settled run whose CI failed goes back to its agent. */
+  private watchCI(): void {
+    const tick = async (): Promise<void> => {
+      for (const run of Object.values(this.runs)) {
+        if (!run.prURL || (run.ci && run.ci.state !== 'OPEN') || this.isBusy(run.recordId)) continue
+        await this.refreshChecks(run.recordId).catch(() => undefined)
+      }
+      this.ciTimer = setTimeout(() => void tick(), 90_000)
+    }
+    this.ciTimer ??= setTimeout(() => void tick(), 10_000)
+  }
+
+  async refreshChecks(recordId: string): Promise<void> {
+    const prURL = this.runs[recordId]?.prURL
+    if (!prURL) return
+    const result = await run('gh', ['pr', 'view', prURL, '--json', 'state,headRefOid,statusCheckRollup'], { timeoutMs: 30_000 })
+    const parsed = result.ok ? parseChecks(result.out) : undefined
+    if (!parsed) return
+    this.update(recordId, (r) => {
+      r.ci = { ...parsed, at: Date.now() }
+    })
+    this.maybeSendCI(recordId)
+  }
+
+  async prDetails(recordId: string): Promise<PRDetails> {
+    const prURL = this.runs[recordId]?.prURL
+    if (!prURL) throw new TeaBranchError(t('还没有 PR'))
+    const fields =
+      'number,url,title,body,state,isDraft,reviewDecision,mergeStateStatus,headRefName,baseRefName,additions,deletions,changedFiles,author,updatedAt,headRefOid,statusCheckRollup'
+    const result = await run('gh', ['pr', 'view', prURL, '--json', fields], { timeoutMs: 30_000 })
+    if (!result.ok) throw new TeaBranchError(t('读取 PR 失败：{error}', { error: result.stderr || result.out }))
+    const data = JSON.parse(result.out) as Omit<PRDetails, 'author'> & { author?: { login?: string } }
+    const checks = parseChecks(result.out)
+    if (checks) {
+      this.update(recordId, (r) => {
+        r.ci = { ...checks, at: Date.now() }
+      })
+      this.maybeSendCI(recordId)
+    }
+    return {
+      number: data.number,
+      url: data.url,
+      title: data.title,
+      body: data.body ?? '',
+      state: data.state,
+      isDraft: !!data.isDraft,
+      reviewDecision: data.reviewDecision ?? '',
+      mergeStateStatus: data.mergeStateStatus ?? '',
+      headRefName: data.headRefName,
+      baseRefName: data.baseRefName,
+      additions: data.additions ?? 0,
+      deletions: data.deletions ?? 0,
+      changedFiles: data.changedFiles ?? 0,
+      author: data.author?.login ?? '',
+      updatedAt: data.updatedAt,
+    }
+  }
+
+  /** Merge, draft ⇄ ready, close — what you'd otherwise go to GitHub for. The branch is kept. */
+  async prAction(recordId: string, action: PRAction): Promise<void> {
+    const prURL = this.runs[recordId]?.prURL
+    if (!prURL) throw new TeaBranchError(t('还没有 PR'))
+    const args: Record<PRAction, string[]> = {
+      squash: ['pr', 'merge', prURL, '--squash'],
+      merge: ['pr', 'merge', prURL, '--merge'],
+      rebase: ['pr', 'merge', prURL, '--rebase'],
+      draft: ['pr', 'ready', prURL, '--undo'],
+      ready: ['pr', 'ready', prURL],
+      close: ['pr', 'close', prURL],
+    }
+    const result = await run('gh', args[action], { timeoutMs: 60_000 })
+    if (!result.ok) throw new TeaBranchError(result.stderr || result.out || t('gh 执行失败'))
+    const done: Record<PRAction, string> = {
+      squash: t('PR 已合并'),
+      merge: t('PR 已合并'),
+      rebase: t('PR 已合并'),
+      draft: t('PR 已转为草稿'),
+      ready: t('PR 已标记为可以 review'),
+      close: t('PR 已关闭'),
+    }
+    this.append(recordId, entry('system', 'agent', done[action]))
+    await this.refreshChecks(recordId)
+  }
+
+  /** Once per push, after every check has finished, up to the round cap. */
+  private maybeSendCI(recordId: string): void {
+    const run = this.runs[recordId]
+    const issue = this.known.get(recordId)
     const config = loadTeableConfig()
-    const taken = this.waiting.splice(0, Math.max(1, config.batchSize))
-    this.batch = taken.map((issue) => issue.id)
+    if (!run?.ci || !issue || !config.autoFixCI || this.isBusy(recordId)) return
+    if (run.phase !== 'prOpen' && run.phase !== 'finished') return
+    if (run.ci.state !== 'OPEN' || ciPending(run.ci) || !ciFailures(run.ci).length || run.ciSentFor === run.ci.sha) return
+    if ((run.ciRounds ?? 0) >= Math.max(1, config.maxCIRounds)) return
+    this.sendCIFailures(issue, true).catch((error) => this.append(recordId, entry('error', 'agent', errorMessage(error), true)))
+  }
+
+  async sendCIFailures(issue: Issue, auto = false): Promise<void> {
+    const current = this.runs[issue.id]
+    const failures = current?.ci ? ciFailures(current.ci) : []
+    if (!current?.prURL || !current.ci || !failures.length) throw new TeaBranchError(t('这个 PR 现在没有失败的 CI'))
+    const { prURL, ci } = current
+    this.update(issue.id, (r) => {
+      r.ciSentFor = ci.sha
+      if (auto) r.ciRounds = (r.ciRounds ?? 0) + 1
+    })
+    const names = failures.map((check) => check.name).join(', ')
+    if (auto)
+      this.append(
+        issue.id,
+        entry('system', 'agent', t('CI 失败，自动发给 agent（第 {round} 轮）', { round: this.runs[issue.id].ciRounds ?? 1 })),
+      )
+    await this.send(issue, ciFixPrompt(promptTarget(issue, current.branch), prURL, ci.sha, failures), [], t('CI 失败：{names}', { names }))
+  }
+
+  // MARK: Queue
+
+  /** More slots start more now; fewer let the running ones finish and take no new ones until under. */
+  concurrencyChanged(): void {
+    this.changed()
+    this.fill()
+  }
+
+  /** Free slots take the next issues in line. */
+  private fill(): void {
+    if (this.paused) return
+    const max = Math.max(1, loadTeableConfig().batchSize)
+    const config = loadTeableConfig()
+    const taken: Issue[] = []
+    while (this.slots.length < max && this.waiting.length) {
+      const issue = this.waiting.shift() as Issue
+      this.slots.push(issue.id)
+      taken.push(issue)
+    }
+    if (!taken.length) return
     this.changed()
     for (const issue of taken) void this.pipeline(issue, config)
   }
 
   /**
    * Done with everything automation will do on its own. A run that stopped without a PR counts:
-   * its agent is waiting on a human, and holding the batch for that answer stalls the queue.
+   * its agent is waiting on a human, and holding a slot for that answer stalls the queue. A
+   * paused one doesn't: you stopped it to come back to it.
    */
   private isSettled(recordId: string): boolean {
     const run = this.runs[recordId]
-    return !this.handles.has(recordId) && (!run || !isActivePhase(run.phase))
+    return !this.handles.has(recordId) && (!run || (!isActivePhase(run.phase) && run.phase !== 'paused'))
   }
 
   /**
-   * Close the batch once every member has settled. Called only at the *end* of a step — after an
-   * agent turn or review has started whatever comes next. Between "PR opened" and "review started"
-   * a run briefly looks settled, and checking there would close the batch early.
+   * Free the slots of issues that have settled and fill them. Called only at the *end* of a step —
+   * after an agent turn or review has started whatever comes next. Between "PR opened" and "review
+   * started" a run briefly looks settled, and checking there would free its slot early.
    */
-  private checkBatch(): void {
-    if (!this.batch.length || !this.batch.every((id) => this.isSettled(id))) return
-    const config = loadTeableConfig()
-    const finished = this.batch.map((id) => this.runs[id]).filter((run): run is IssueRun => !!run)
-    this.batch = []
-    this.awaitingNextBatch = this.waiting.length > 0 && !config.autoNextBatch
-    const summary: BatchSummary = {
-      total: finished.length,
-      withPR: finished.filter((run) => run.prURL).length,
-      approved: finished.filter((run) => run.prURL && run.reviews.at(-1)?.approved).length,
-      failed: finished.filter((run) => run.phase === 'failed').length,
-      needsInput: finished.filter((run) => run.phase === 'finished' && !run.prURL).length,
-      triaged: finished.filter((run) => run.phase === 'triaged').length,
-      remaining: this.waiting.length,
-      awaitingConfirmation: this.awaitingNextBatch,
-    }
+  private settle(): void {
+    const done = this.slots.filter((id) => this.isSettled(id))
+    if (!done.length) return
+    this.slots = this.slots.filter((id) => !done.includes(id))
+    this.finished.push(...done)
     this.changed()
-    emit('batchFinished', summary)
-    notifyBatch(summary)
-    this.startNextBatchIfIdle()
+    this.fill()
+    if (this.slots.length || this.waiting.length) return
+    notifyDone(this.finished.map((id) => this.runs[id]).filter((run): run is IssueRun => !!run))
+    this.finished = []
   }
 
   // MARK: Pipeline
 
   /** Worktree, then the first agent turn. */
   private async pipeline(issue: Issue, config: TeableConfig): Promise<void> {
+    this.known.set(issue.id, issue)
     const run = this.runs[issue.id]
-    if (!run || run.phase !== 'queued') return this.checkBatch()
+    if (!run || run.phase !== 'queued') return this.settle()
+    const pauses = this.pauses.get(issue.id) ?? 0
+    const stopped = (phase: IssueRun['phase']): boolean =>
+      this.runs[issue.id]?.phase !== phase || (this.pauses.get(issue.id) ?? 0) !== pauses
     const repo = state.projectPath
     if (!repo) {
       this.fail(issue.id, t('没有设置仓库路径'))
-      return this.checkBatch()
+      return this.settle()
     }
 
     this.update(issue.id, (r) => {
@@ -432,7 +671,7 @@ class IssueAgent {
       )
     } catch (error) {
       this.fail(issue.id, t('创建 worktree 失败：{error}', { error: errorMessage(error) }))
-      return this.checkBatch()
+      return this.settle()
     }
     this.update(issue.id, (r) => {
       r.worktreeReady = true
@@ -440,7 +679,7 @@ class IssueAgent {
     onBranchCreated(run.branch)
 
     // Stopped while the worktree was being built.
-    if (this.runs[issue.id]?.phase !== 'preparing') return this.checkBatch()
+    if (stopped('preparing')) return this.settle()
 
     this.update(issue.id, (r) => {
       r.phase = 'fixing'
@@ -461,7 +700,7 @@ class IssueAgent {
         }),
       ),
     )
-    if (this.runs[issue.id]?.phase !== 'fixing') return this.checkBatch()
+    if (stopped('fixing')) return this.settle()
 
     try {
       if (config.triage) {
@@ -481,7 +720,7 @@ class IssueAgent {
       }
     } catch (error) {
       this.fail(issue.id, t('启动 agent 失败：{error}', { error: errorMessage(error) }))
-      this.checkBatch()
+      this.settle()
     }
   }
 
@@ -489,6 +728,7 @@ class IssueAgent {
     const run = this.runs[issue.id]
     // New work: where it lands is up to how this run ends, not where you filed the last one.
     run.shelf = undefined
+    run.pausedFrom = undefined
     const handle = runClaude({
       prompt,
       cwd,
@@ -505,8 +745,17 @@ class IssueAgent {
         this.update(issue.id, (current) => {
           current.context = { used, window: current.context?.window }
         }),
+      onBackground: (tasks) =>
+        this.update(issue.id, (current) => {
+          current.background = tasks.length ? tasks : undefined
+        }),
+      onIdle: () => this.steerNext(issue),
       onExit: (outcome) => {
         this.handles.delete(issue.id)
+        if (this.runs[issue.id]?.background)
+          this.update(issue.id, (current) => {
+            current.background = undefined
+          })
         if (outcome.contextWindow)
           this.update(issue.id, (current) => {
             current.context = { used: current.context?.used ?? 0, window: outcome.contextWindow }
@@ -522,7 +771,7 @@ class IssueAgent {
   private triageFinished(issue: Issue, outcome: Outcome, config: TeableConfig): void {
     try {
       const run = this.runs[issue.id]
-      if (!run || run.phase === 'cancelled' || outcome.cancelled) return
+      if (!run || run.phase === 'cancelled' || run.phase === 'paused' || outcome.cancelled) return
       this.update(issue.id, (r) => {
         r.costUSD += outcome.costUSD
       })
@@ -558,7 +807,7 @@ class IssueAgent {
     } catch (error) {
       this.fail(issue.id, t('启动 agent 失败：{error}', { error: errorMessage(error) }))
     } finally {
-      this.checkBatch()
+      this.settle()
       this.drain(issue)
     }
   }
@@ -567,7 +816,7 @@ class IssueAgent {
   private async agentFinished(issue: Issue, outcome: Outcome, config: TeableConfig): Promise<void> {
     try {
       const run = this.runs[issue.id]
-      if (!run || run.phase === 'cancelled' || outcome.cancelled) return
+      if (!run || run.phase === 'cancelled' || run.phase === 'paused' || outcome.cancelled) return
       this.update(issue.id, (r) => {
         r.costUSD += outcome.costUSD
       })
@@ -610,7 +859,7 @@ class IssueAgent {
         })
       }
     } finally {
-      this.checkBatch()
+      this.settle()
       this.drain(issue)
     }
   }
@@ -621,6 +870,7 @@ class IssueAgent {
     const model = config.reviewEngine === 'codex' ? config.codexModel || 'codex default' : agentModelLabel(config.reviewModel)
     this.update(issue.id, (r) => {
       r.phase = 'reviewing'
+      r.pausedFrom = undefined
     })
     this.append(
       issue.id,
@@ -654,7 +904,8 @@ class IssueAgent {
 
   private async reviewFinished(issue: Issue, outcome: Outcome, round: number, model: string, config: TeableConfig): Promise<void> {
     try {
-      if (this.runs[issue.id]?.phase === 'cancelled' || outcome.cancelled) return
+      const phase = this.runs[issue.id]?.phase
+      if (phase === 'cancelled' || phase === 'paused' || outcome.cancelled) return
       if (!outcome.finalText) {
         this.update(issue.id, (r) => {
           r.phase = 'prOpen'
@@ -694,16 +945,24 @@ class IssueAgent {
         this.append(issue.id, entry('error', 'agent', errorMessage(error), true))
       }
     } finally {
-      this.checkBatch()
+      this.settle()
       this.drain(issue)
     }
+  }
+
+  /** Between turns while background tasks run: the agent takes the next queued message now. */
+  private steerNext(issue: Issue): void {
+    const run = this.runs[issue.id]
+    const next = run?.queued?.[0]
+    if (!next || run.phase === 'cancelled' || run.phase === 'paused') return
+    this.steer(issue, next.id).catch((error) => this.append(issue.id, entry('error', 'agent', errorMessage(error), true)))
   }
 
   /** Once the issue settles, what you typed while it worked goes to the agent, a message a turn. */
   private drain(issue: Issue): void {
     const run = this.runs[issue.id]
     const next = run?.queued?.[0]
-    if (!run || !next || this.isBusy(issue.id) || run.phase === 'cancelled') return
+    if (!run || !next || this.isBusy(issue.id) || run.phase === 'cancelled' || run.phase === 'paused') return
     this.steer(issue, next.id).catch((error) => this.append(issue.id, entry('error', 'agent', errorMessage(error), true)))
   }
 
@@ -815,21 +1074,21 @@ async function defaultDbMode(repo: string): Promise<DbMode> {
 
 const engineLabel = (engine: string): string => (engine === 'codex' ? 'Codex CLI' : 'Claude Code')
 
-function notifyBatch(summary: BatchSummary): void {
-  const parts = [t('{n} 个已提 PR', { n: summary.withPR })]
-  if (summary.approved) parts.push(t('{n} 个 review 通过', { n: summary.approved }))
-  if (summary.needsInput) parts.push(t('{n} 个等你回复', { n: summary.needsInput }))
-  if (summary.triaged) parts.push(t('{n} 个验证后没修（已修复 / 不是 bug / 信息不足）', { n: summary.triaged }))
-  if (summary.failed) parts.push(t('{n} 个失败', { n: summary.failed }))
-  const body = parts.join(t('，'))
-  const vars = { total: summary.total, body, remaining: summary.remaining }
-  const [title, text] =
-    summary.remaining === 0
-      ? [t('Issue 队列全部完成'), t('最后一批 {total} 个：{body}', vars)]
-      : summary.awaitingConfirmation
-        ? [t('本批 {total} 个已完成，等你审查', vars), t('{body}。还有 {remaining} 个排队，审查后点“开始下一批”。', vars)]
-        : [t('本批 {total} 个已完成', vars), t('{body}。自动开始下一批，还剩 {remaining} 个。', vars)]
-  if (Notification.isSupported()) new Notification({ title, body: text, sound: 'Glass' }).show()
+/** The queue ran dry: what came of everything it ran. */
+function notifyDone(finished: IssueRun[]): void {
+  if (!finished.length) return
+  const count = (test: (run: IssueRun) => boolean): number => finished.filter(test).length
+  const parts = [t('{n} 个已提 PR', { n: count((run) => !!run.prURL) })]
+  const approved = count((run) => !!run.prURL && !!run.reviews.at(-1)?.approved)
+  const needsInput = count((run) => run.phase === 'finished' && !run.prURL)
+  const triaged = count((run) => run.phase === 'triaged')
+  const failed = count((run) => run.phase === 'failed')
+  if (approved) parts.push(t('{n} 个 review 通过', { n: approved }))
+  if (needsInput) parts.push(t('{n} 个等你回复', { n: needsInput }))
+  if (triaged) parts.push(t('{n} 个验证后没修（已修复 / 不是 bug / 信息不足）', { n: triaged }))
+  if (failed) parts.push(t('{n} 个失败', { n: failed }))
+  const body = t('共 {total} 个：{body}', { total: finished.length, body: parts.join(t('，')) })
+  if (Notification.isSupported()) new Notification({ title: t('Issue 队列全部完成'), body, sound: 'Glass' }).show()
 }
 
 /** The issue id itself (`T2312`), case kept, anything git dislikes turned into `-`. */
@@ -864,13 +1123,3 @@ function promptTarget(issue: Issue, branch: string): PromptTarget {
   const config = loadTeableConfig()
   return { issue, link: teable.recordURL(config, issue.id), branch, base: worktrees.baseBranch, custom: config.prompts }
 }
-
-/** A message as the agent reads it: attachments listed by path, for the Read tool. */
-const agentMessage = (message: string, attachments: string[]): string =>
-  attachments.length
-    ? `${message}\n\n<attachments>\n${attachments.map((path) => `- ${path}`).join('\n')}\n</attachments>\nOpen these with the Read tool.`
-    : message
-
-/** …and as the transcript shows it: attachments by name. */
-const shownMessage = (message: string, attachments: string[]): string =>
-  attachments.length ? `${message}\n\n📎 ${attachments.map((path) => path.split('/').pop()).join(', ')}` : message

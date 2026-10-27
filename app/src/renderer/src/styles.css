@@ -317,3 +317,39 @@ body {
   color: transparent;
   animation: shimmer-sweep 1.6s linear infinite;
 }
+
+/* The composer's editor: placeholder on the empty first line, attachments as inline thumbnails. */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+.composer-attachment {
+  display: inline-flex;
+  vertical-align: bottom;
+  margin: 0 2px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  cursor: zoom-in;
+  user-select: none;
+}
+.composer-attachment img {
+  display: block;
+  height: 40px;
+  max-width: 96px;
+  object-fit: cover;
+}
+.composer-attachment-file {
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 20px;
+  background: var(--muted);
+  cursor: default;
+}
+.composer-attachment.ProseMirror-selectednode {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}

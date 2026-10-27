@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { agentMessage, shownMessage } from '@shared/attachments'
 import { t } from '@shared/i18n'
 import type { AgentAccess, AgentModel, Chat, ConversationEntry, QueuedMessage } from '@shared/types'
 import { state } from '../core/appState'
@@ -24,7 +25,10 @@ class ChatAgent {
 
   constructor() {
     // A process that was running when the app quit died with it.
-    for (const chat of Object.values(this.chats)) chat.running = false
+    for (const chat of Object.values(this.chats)) {
+      chat.running = false
+      chat.background = undefined
+    }
   }
 
   runningCount = (): number => this.handles.size
@@ -87,9 +91,9 @@ class ChatAgent {
     if (!queued) return
     const handle = this.handles.get(id)
     // Too late for this turn: it stays queued and goes out the moment the turn ends.
-    if (handle && !handle.steer?.(withAttachments(queued.text, queued.attachments))) return
+    if (handle && !handle.steer?.(agentMessage(queued.text, queued.attachments))) return
     this.unqueue(id, queuedId)
-    if (handle) this.append(id, entry('user', 'agent', queued.text))
+    if (handle) this.append(id, entry('user', 'agent', shownMessage(queued.text, queued.attachments)))
     else this.send(id, queued.text, queued.attachments)
   }
 
@@ -101,7 +105,7 @@ class ChatAgent {
 
   private send(id: string, message: string, attachments: string[] = []): void {
     const chat = this.get(id)
-    this.append(id, entry('user', 'agent', message))
+    this.append(id, entry('user', 'agent', shownMessage(message, attachments)))
     if (untitled.has(chat.title)) chat.title = message.replace(/\s+/g, ' ').slice(0, 40)
     chat.running = true
     chat.updatedAt = Date.now()
@@ -110,7 +114,7 @@ class ChatAgent {
     const config = loadTeableConfig()
     const uploads = uploadsDir(`chat-${id}`)
     const handle = runClaude({
-      prompt: withAttachments(message, attachments),
+      prompt: agentMessage(message, attachments),
       cwd: chat.cwd,
       session: { kind: sessionExists(chat.sessionId, chat.cwd) ? 'resume' : 'new', id: chat.sessionId },
       model: chat.model ?? config.fixModel,
@@ -125,11 +129,23 @@ class ChatAgent {
         current.context = { used, window: current.context?.window }
         this.changed()
       },
+      onBackground: (tasks) => {
+        const current = this.chats[id]
+        if (!current) return
+        current.background = tasks.length ? tasks : undefined
+        this.changed()
+      },
+      // Waiting on background tasks: what was typed during the turn goes in now.
+      onIdle: () => {
+        const next = this.chats[id]?.queued?.[0]
+        if (next) this.steer(id, next.id)
+      },
       onExit: (outcome) => {
         this.handles.delete(id)
         const current = this.chats[id]
         if (!current) return
         current.running = false
+        current.background = undefined
         current.costUSD += outcome.costUSD
         if (outcome.contextWindow) current.context = { used: current.context?.used ?? 0, window: outcome.contextWindow }
         current.updatedAt = Date.now()
@@ -184,9 +200,6 @@ class ChatAgent {
     emit('chatsChanged', undefined)
   }
 }
-
-const withAttachments = (message: string, attachments: string[]): string =>
-  attachments.length ? `${message}\n\n<attachments>\n${attachments.join('\n')}\n</attachments>` : message
 
 /** A new chat's placeholder title, in either language: the first message replaces it. */
 const untitled = new Set(['新对话', 'New Chat', 'New chat']) // i18n-ignore

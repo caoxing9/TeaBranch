@@ -4,7 +4,15 @@ import type { TeableField } from '@shared/types'
 import { getLocale, t } from '@shared/i18n'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cx } from '@/lib/format'
-import { type FilterCondition, type FilterOperator, type IssueFilterSet, isComplete, newConditionId, useIssues } from '@/store/issues'
+import {
+  type FilterCondition,
+  type FilterOperator,
+  type IssueFilterSet,
+  isComplete,
+  matchesFilter,
+  newConditionId,
+  useIssues,
+} from '@/store/issues'
 
 /**
  * Teable's view filter — "当 [字段] [条件] [值]" rows joined by 且/或 — reshaped for a Mac sidebar:
@@ -46,7 +54,7 @@ function PopUp({ className, children, ...props }: SelectHTMLAttributes<HTMLSelec
   )
 }
 
-/** Short summary for the sidebar chip: "状态 是 待修复" or "2 个筛选条件". */
+/** Short summary for the funnel's tooltip: "状态 是 待修复" or "2 个筛选条件". */
 export function filterSummary(filter: IssueFilterSet): string | null {
   const active = filter.conditions.filter(isComplete)
   if (!active.length) return null
@@ -56,26 +64,42 @@ export function filterSummary(filter: IssueFilterSet): string | null {
   return `${condition.field} ${operatorLabel(condition.operator)}${value}`
 }
 
+/** How many loaded issues the conditions hide — 0 means they're set but change nothing right now. */
+const useHiddenCount = (): number => useIssues((s) => s.issues.filter((issue) => !matchesFilter(issue, s.issueFilter)).length)
+
 export function IssueFilterButton() {
   const filter = useIssues((s) => s.issueFilter)
   const count = filter.conditions.filter(isComplete).length
+  const hidden = useHiddenCount()
+  const biting = count > 0 && hidden > 0
+  const summary = filterSummary(filter)
+  const title = summary ? `${summary}\n${hidden ? t('隐藏了 {n} 个 issue', { n: hidden }) : t('没有隐藏任何 issue')}` : t('筛选')
   return (
     <Popover>
       <PopoverTrigger
         render={
           <button
             type="button"
-            title={t('筛选')}
+            title={title}
             aria-label={t('筛选')}
             className={cx(
               'relative flex size-[26px] shrink-0 items-center justify-center rounded-md transition-colors',
-              count ? 'bg-brand-soft text-brand' : 'text-fg-2 hover:bg-foreground/[0.07] hover:text-fg',
+              biting
+                ? 'bg-brand-soft text-brand'
+                : count
+                  ? 'text-brand hover:bg-foreground/[0.07]'
+                  : 'text-fg-2 hover:bg-foreground/[0.07] hover:text-fg',
               'data-popup-open:bg-foreground/[0.09]',
             )}
           >
-            <Filter className="size-3.5" fill={count ? 'currentColor' : 'none'} />
+            <Filter className="size-3.5" fill={biting ? 'currentColor' : 'none'} />
             {count > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-brand px-1 text-[9px] font-semibold text-white tabular-nums">
+              <span
+                className={cx(
+                  'absolute -top-0.5 -right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] font-semibold text-white tabular-nums',
+                  biting ? 'bg-brand' : 'bg-fg-3',
+                )}
+              >
                 {count}
               </span>
             )}
@@ -93,6 +117,8 @@ function FilterEditor() {
   const filter = useIssues((s) => s.issueFilter)
   const fields = useIssues((s) => s.fields)
   const setFilter = useIssues((s) => s.setIssueFilter)
+  const hidden = useHiddenCount()
+  const active = filter.conditions.some(isComplete)
   const usable = fields.filter((field) => field.type !== 'attachment' && field.type !== 'button')
 
   const update = (id: string, patch: Partial<FilterCondition>) =>
@@ -125,7 +151,9 @@ function FilterEditor() {
     >
       <div className="flex h-8 items-center gap-2 border-b border-border/70 px-3">
         <span className="font-semibold text-fg">{t('筛选')}</span>
-        <span className="text-fg-3">{t('只作用于已加载的 issue')}</span>
+        <span className="truncate text-fg-3">
+          {active ? (hidden ? t('隐藏了 {n} 个 issue', { n: hidden }) : t('没有隐藏任何 issue')) : t('按 Teable 字段筛选已加载的 issue')}
+        </span>
         <div className="flex-1" />
         {filter.conditions.length > 0 && (
           <button

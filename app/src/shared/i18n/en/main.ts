@@ -41,7 +41,7 @@ export const main: Record<string, string> = {
   修复中: 'Fixing',
   'PR 待审查': 'PR open',
   'Review 中': 'Reviewing',
-  已结束: 'Finished',
+  等你回复: 'Your turn',
   失败: 'Failed',
   已取消: 'Cancelled',
   '确认是 bug': 'Confirmed bug',
@@ -127,11 +127,6 @@ export const main: Record<string, string> = {
   '{n} 个失败': '{n} failed',
   '，': ', ',
   'Issue 队列全部完成': 'Issue queue complete',
-  '最后一批 {total} 个：{body}': 'Last batch of {total}: {body}',
-  '本批 {total} 个已完成，等你审查': 'Batch of {total} done — waiting for your review',
-  '{body}。还有 {remaining} 个排队，审查后点“开始下一批”。': '{body}. {remaining} more queued — click “Start next batch” after reviewing.',
-  '本批 {total} 个已完成': 'Batch of {total} done',
-  '{body}。自动开始下一批，还剩 {remaining} 个。': '{body}. Starting the next batch automatically; {remaining} left.',
 
   // Teable sign-in
   你在浏览器里拒绝了授权: 'You denied the authorization in the browser',

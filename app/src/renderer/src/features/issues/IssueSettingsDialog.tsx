@@ -155,7 +155,7 @@ export function IssueSettingsDialog() {
       <Group
         title={t('自动模式与限流')}
         footer={[
-          t('所有待修复的 issue 进同一个队列，每次取一批同时跑；整批都走完才切下一批。'),
+          t('所有待修复的 issue 进同一个队列，最多同时跑 N 个，跑完一个就补上下一个。'),
           t('Issue 内容来自共享表格，开启自动模式意味着能编辑这张表的人都能驱动本机 agent（默认带 {flag}）。', {
             flag: '--dangerously-skip-permissions',
           }),
@@ -182,7 +182,7 @@ export function IssueSettingsDialog() {
         ) : (
           <div className="pl-5 text-[12px] text-fg-3">{t('映射“状态”字段后可选择自动修复哪些状态')}</div>
         )}
-        <Line label={t('每批同时修复')}>
+        <Line label={t('最多同时修复')}>
           <input
             type="number"
             min={1}
@@ -192,11 +192,6 @@ export function IssueSettingsDialog() {
             className={cn(inputClass, 'w-20')}
           />
         </Line>
-        <Toggle
-          checked={config.autoNextBatch}
-          onChange={(autoNextBatch) => update({ autoNextBatch })}
-          label={t('一批全部完成后自动开始下一批')}
-        />
         <Line label={t('分支前缀')}>
           <input
             value={config.branchPrefix}
@@ -284,6 +279,24 @@ export function IssueSettingsDialog() {
             max={5}
             value={config.maxReviewRounds}
             onChange={(e) => update({ maxReviewRounds: Math.max(1, Math.min(5, Number(e.target.value) || 1)) })}
+            className={cn(inputClass, 'w-20')}
+          />
+        </Line>
+      </Group>
+
+      <Group title="CI">
+        <Toggle
+          checked={config.autoFixCI}
+          onChange={(autoFixCI) => update({ autoFixCI })}
+          label={t('PR 的 CI 全部跑完后有失败，自动发给该 issue 的 agent 修')}
+        />
+        <Line label={t('每个 issue 最多自动发几轮')}>
+          <input
+            type="number"
+            min={1}
+            max={5}
+            value={config.maxCIRounds}
+            onChange={(e) => update({ maxCIRounds: Math.max(1, Math.min(5, Number(e.target.value) || 1)) })}
             className={cn(inputClass, 'w-20')}
           />
         </Line>

@@ -58,7 +58,6 @@ export const defaultTeableConfig: TeableConfig = {
   fixStatuses: [],
   autoFix: false,
   batchSize: 3,
-  autoNextBatch: false,
   branchPrefix: '',
   fixModel: { provider: 'claude' },
   access: 'fullAccess',
@@ -69,6 +68,8 @@ export const defaultTeableConfig: TeableConfig = {
   triage: true,
   sendReviewToAgent: true,
   maxReviewRounds: 2,
+  autoFixCI: true,
+  maxCIRounds: 2,
   magpieURL: 'http://127.0.0.1:3425',
   oauthClientId: undefined,
 }
