@@ -253,4 +253,12 @@ export const ui: Record<string, string> = {
   已处理: 'Done',
   移到: 'Move to',
   按状态自动分组: 'Group by status again',
+  搜索: 'Search',
+  没有匹配的: 'No matches',
+  '不是 Teable 的表链接，应该像 …/base/bse…/table/tbl…': 'Not a Teable table link — it should look like …/base/bse…/table/tbl…',
+  '这个链接在 {link}，当前登录的是 {host}': 'This link is on {link}, but you are signed in to {host}',
+  已按链接选好: 'Picked from the link',
+  '链接只到 base，再选一张表': 'The link only names a base — pick a table',
+  '粘贴表或视图的链接，自动选好': 'Paste a table or view link to pick it',
+  或者逐级选择: 'or pick step by step',
 }
