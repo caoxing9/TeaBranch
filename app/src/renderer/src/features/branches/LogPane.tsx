@@ -127,11 +127,11 @@ export function LogPane({ branch }: { branch: string }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-border px-3">
-        <Segmented value={tab} options={tabs} onChange={setTab} className="w-auto" />
+        <Segmented value={tab} options={tabs} onChange={setTab} className="w-auto shrink-0" />
         {errors > 0 && (
           <button
             type="button"
-            className="rounded-md bg-err-soft px-2 py-0.5 text-[11.5px] font-medium text-err"
+            className="shrink-0 rounded-md bg-err-soft px-2 py-0.5 text-[11.5px] font-medium whitespace-nowrap text-err"
             title={t('跳到第一个错误')}
             onClick={() => {
               const index = shown.findIndex((line) => line.severity === 'error')
@@ -144,8 +144,9 @@ export function LogPane({ branch }: { branch: string }) {
             {plural(t('{n} 个错误', { n: errors }))}
           </button>
         )}
-        <div className="flex-1" />
-        <div className="flex h-[26px] w-56 items-center gap-1.5 rounded-md bg-fill px-2">
+        <div className="min-w-2 flex-1" />
+        {/* The search gives way first when the pane is narrow. */}
+        <div className="flex h-[26px] w-56 min-w-24 shrink items-center gap-1.5 rounded-md bg-fill px-2">
           <Search className="size-3.5 text-fg-3" />
           <input
             value={query}
@@ -166,12 +167,16 @@ export function LogPane({ branch }: { branch: string }) {
             </span>
           )}
         </div>
-        <IconButton label={t('上一个 (⇧⏎)')} onClick={() => step(-1)} disabled={!matches.length}>
-          <ChevronUp className="size-4" />
-        </IconButton>
-        <IconButton label={t('下一个 (⏎)')} onClick={() => step(1)} disabled={!matches.length}>
-          <ChevronDown className="size-4" />
-        </IconButton>
+        {needle && (
+          <>
+            <IconButton label={t('上一个 (⇧⏎)')} onClick={() => step(-1)} disabled={!matches.length}>
+              <ChevronUp className="size-4" />
+            </IconButton>
+            <IconButton label={t('下一个 (⏎)')} onClick={() => step(1)} disabled={!matches.length}>
+              <ChevronDown className="size-4" />
+            </IconButton>
+          </>
+        )}
         <IconButton
           label={t('清空日志')}
           onClick={() => {
