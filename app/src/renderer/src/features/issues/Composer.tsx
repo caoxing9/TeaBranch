@@ -1,52 +1,13 @@
-import { ArrowUp, CornerDownRight, Plus, Square, Terminal, Users, Wrench, X } from 'lucide-react'
+import { ArrowUp, CornerDownRight, Plus, Square, X } from 'lucide-react'
 import { t } from '@shared/i18n'
-import { type ReactNode, useEffect, useState } from 'react'
-import type { BackgroundTask, ContextUsage, QueuedMessage } from '@shared/types'
+import { type ReactNode, useState } from 'react'
+import type { ContextUsage, QueuedMessage } from '@shared/types'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { IconButton } from '@/components/kit'
 import { api } from '@/lib/api'
 import { cx } from '@/lib/format'
 import { useIssues } from '@/store/issues'
 import { type AttachmentAttrs, EditorContent, insertAttachments, serialize, useMessageEditor } from './MessageEditor'
-
-// MARK: - Background
-
-const taskIcon = { command: Terminal, agent: Users, other: Wrench }
-
-/** What the agent left running between its turns: why it still counts as working, and for how long. */
-function BackgroundStrip({ tasks, bordered }: { tasks: BackgroundTask[]; bordered: boolean }) {
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [])
-  return (
-    <div className={cx('flex flex-col gap-0.5 px-2 py-1.5', bordered && 'border-b')}>
-      <div className="px-1 text-[11px] text-muted-foreground">{t('后台运行中，结束后 agent 会接着处理')}</div>
-      {tasks.map((task) => {
-        const Icon = taskIcon[task.kind]
-        return (
-          <div key={task.id} className="flex h-7 items-center gap-2 rounded-md px-1 text-[12.5px]" title={task.description}>
-            <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="shrink-0 text-muted-foreground">
-              {task.kind === 'agent' ? t('子 agent') : task.kind === 'command' ? t('命令') : t('任务')}
-            </span>
-            <span className="shimmer min-w-0 flex-1 truncate">{task.description}</span>
-            <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">{elapsed(now - task.startedAt)}</span>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function elapsed(ms: number): string {
-  const seconds = Math.max(0, Math.round(ms / 1000))
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m ${seconds % 60}s`
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
-}
 
 // MARK: - Composer
 
@@ -73,7 +34,6 @@ export function Composer({
   busy,
   waiting,
   queued = [],
-  background = [],
   canSteer,
   pickers,
   contextUsage,
@@ -91,8 +51,6 @@ export function Composer({
   /** Busy only in the sense of queued for a fix: nothing runs yet. */
   waiting?: boolean
   queued?: QueuedMessage[]
-  /** Commands and subagents the agent left running; it carries on when they finish. */
-  background?: BackgroundTask[]
   /** The running agent takes messages mid-turn (a reviewer or a worktree build doesn't). */
   canSteer: boolean
   pickers: ReactNode
@@ -160,7 +118,6 @@ export function Composer({
           if (!taken) void addFiles([...event.dataTransfer.files])
         }}
       >
-        {background.length > 0 && <BackgroundStrip tasks={background} bordered={queued.length > 0} />}
         {queued.length > 0 && (
           <div className="flex flex-col gap-0.5 border-b px-2 py-1.5">
             <div className="px-1 text-[11px] text-muted-foreground">

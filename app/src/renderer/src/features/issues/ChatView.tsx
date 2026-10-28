@@ -9,7 +9,7 @@ import { useIssues } from '@/store/issues'
 import { useTabs, useTranscriptLayout } from '@/store/tabs'
 import { AccessPicker, ModelPicker } from './AgentPickers'
 import { Composer } from './Composer'
-import { ActivityGroup, buildTurns, type Item, TurnView } from './Transcript'
+import { ActivityGroup, BackgroundActivity, buildTurns, type Item, TurnView } from './Transcript'
 import { Markdown } from './Markdown'
 
 const home = (path: string) => path.replace(/^\/Users\/[^/]+/, '~')
@@ -87,13 +87,13 @@ export function ChatView({ chat }: { chat: Chat }) {
           {turns.map((turn) => (
             <TurnView key={turn.id} turn={turn} layout={layout} renderItem={(item) => <ChatItem item={item} />} />
           ))}
+          {chat.background && <BackgroundActivity tasks={chat.background} />}
         </div>
       </div>
       <Composer
         uploadKey={`chat-${chat.id}`}
         busy={chat.running}
         queued={chat.queued}
-        background={chat.background}
         canSteer={chat.running}
         contextUsage={chat.context}
         placeholder={t('问点什么，或让它改代码；可粘贴或拖入截图')}

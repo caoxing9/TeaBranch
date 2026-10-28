@@ -24,7 +24,7 @@ import { isActivePhase, triageLabel } from '@shared/types'
 import { Button, IconButton, MenuButton, Toggle } from '@/components/kit'
 import { AccessPicker, ModelPicker } from './AgentPickers'
 import { Composer } from './Composer'
-import { ActivityGroup, buildTurns, type Item, TurnView } from './Transcript'
+import { ActivityGroup, BackgroundActivity, buildTurns, type Item, TurnView } from './Transcript'
 import { useTranscriptLayout } from '@/store/tabs'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
@@ -76,7 +76,6 @@ export function IssueDetail({ issue }: { issue: Issue }) {
               busy={busy}
               waiting={queued}
               queued={run.queued}
-              background={run.background}
               canSteer={run.phase === 'triaging' || run.phase === 'fixing'}
               contextUsage={run.context}
               placeholder={t('给 {key} 的 agent 发消息，可粘贴或拖入截图', { key: issue.key })}
@@ -334,7 +333,7 @@ function Conversation({ issue, run, entries, live }: { issue: Issue; run?: Issue
   useLayoutEffect(() => {
     const element = scroller.current
     if (element && pinned.current) element.scrollTop = element.scrollHeight
-  }, [entries.length])
+  }, [entries.length, run?.background?.length])
 
   return (
     <div
@@ -358,6 +357,7 @@ function Conversation({ issue, run, entries, live }: { issue: Issue; run?: Issue
             renderItem={(item) => <ItemView item={item} hasPR={!!run?.prURL} issue={issue} busy={live} />}
           />
         ))}
+        {run?.background && <BackgroundActivity tasks={run.background} />}
       </div>
     </div>
   )

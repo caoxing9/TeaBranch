@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import { type ReactNode, useEffect, useState } from 'react'
 import { t } from '@shared/i18n'
-import type { ConversationEntry, EntryChannel } from '@shared/types'
+import type { BackgroundTask, ConversationEntry, EntryChannel } from '@shared/types'
 import { plural } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { ClaudeMark, modelDisplayName, useCatalog } from './AgentPickers'
@@ -415,6 +415,55 @@ export function ActivityGroup({
       )}
     </div>
   )
+}
+
+/**
+ * What the agent left running after its turn, at the foot of the conversation the way Claude Code
+ * shows it: a live summary over each command or subagent and how long it has been going.
+ */
+export function BackgroundActivity({ tasks }: { tasks: BackgroundTask[] }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  const commands = tasks.filter((task) => task.kind !== 'agent').length
+  const agents = tasks.length - commands
+  const summary = [
+    commands && plural(t('后台运行 {n} 条命令', { n: commands })),
+    agents && plural(t('后台运行 {n} 个子 agent', { n: agents })),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  return (
+    <div className="text-[13px]">
+      <div className="flex max-w-full items-center gap-2 text-muted-foreground" title={t('结束后 agent 会接着处理')}>
+        <ClaudeMark className="animate-[spin_3s_linear_infinite]" />
+        <span className="shimmer truncate">{summary}</span>
+      </div>
+      <div className="mt-1.5 ml-[7px]">
+        {tasks.map((task, index) => (
+          <div key={task.id} className="relative pl-4">
+            {index < tasks.length - 1 && <span className="absolute top-0 bottom-0 left-0 border-l" />}
+            <span className="absolute top-0 left-0 h-[13px] w-2.5 rounded-bl-md border-b border-l" />
+            <div className="flex items-center gap-2 py-[3px] font-mono text-[12.5px] text-muted-foreground" title={task.description}>
+              {task.kind === 'agent' && <Users className="size-3 shrink-0" />}
+              <span className="min-w-0 flex-1 truncate">{task.description}</span>
+              <span className="shrink-0 font-sans text-[11px] tabular-nums">{elapsed(now - task.startedAt)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function elapsed(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
 
 const outputOf = (steps: ConversationEntry[], call: ConversationEntry): ConversationEntry | undefined => {
