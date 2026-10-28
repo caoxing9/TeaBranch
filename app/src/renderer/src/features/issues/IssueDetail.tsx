@@ -325,6 +325,7 @@ function Chip({
 
 function Conversation({ issue, run, entries, live }: { issue: Issue; run?: IssueRun; entries: ConversationEntry[]; live: boolean }) {
   const turns = useMemo(() => buildTurns(entries, live), [entries, live])
+  const perform = useIssues((s) => s.perform)
   const layout = useTranscriptLayout((s) => s.layout)
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
@@ -357,7 +358,9 @@ function Conversation({ issue, run, entries, live }: { issue: Issue; run?: Issue
             renderItem={(item) => <ItemView item={item} hasPR={!!run?.prURL} issue={issue} busy={live} />}
           />
         ))}
-        {run?.background && <BackgroundActivity tasks={run.background} />}
+        {run?.background && (
+          <BackgroundActivity tasks={run.background} onStop={(taskId) => void perform(() => api.stopIssueBackground(issue.id, taskId))} />
+        )}
       </div>
     </div>
   )

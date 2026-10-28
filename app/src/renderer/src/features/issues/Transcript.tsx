@@ -7,8 +7,10 @@ import {
   Copy,
   FilePen,
   FileSearch,
+  Paperclip,
   Search,
   Settings2,
+  Square,
   Terminal,
   Users,
   Wrench,
@@ -16,6 +18,9 @@ import {
 import { type ReactNode, useEffect, useState } from 'react'
 import { t } from '@shared/i18n'
 import type { BackgroundTask, ConversationEntry, EntryChannel } from '@shared/types'
+import { markerSegments } from '@shared/attachments'
+import { useLightbox } from '@/components/Lightbox'
+import { api } from '@/lib/api'
 import { plural } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { ClaudeMark, modelDisplayName, useCatalog } from './AgentPickers'
@@ -222,13 +227,85 @@ function TaskNotice({ entry }: { entry: ConversationEntry }) {
   )
 }
 
+/** Thumbnails by path: a transcript re-renders often, and the files don't change. */
+const thumbnails = new Map<string, Promise<string | null>>()
+const thumbnail = (path: string): Promise<string | null> => {
+  let pending = thumbnails.get(path)
+  if (!pending) {
+    pending = api.readUpload(path).catch(() => null)
+    thumbnails.set(path, pending)
+  }
+  return pending
+}
+
+/** An attachment where its marker stood: the picture, or the file's name when it isn't one. */
+function Attachment({ path, paths }: { path: string; paths: string[] }) {
+  const [url, setUrl] = useState<string | null | undefined>(undefined)
+  useEffect(() => {
+    let live = true
+    void thumbnail(path).then((loaded) => live && setUrl(loaded))
+    return () => {
+      live = false
+    }
+  }, [path])
+  const name =
+    path
+      .split('/')
+      .pop()
+      ?.replace(/^\d{14}-/, '') ?? path
+  if (url === undefined) return <span className="inline-block h-16 w-16 animate-pulse rounded-md bg-foreground/[0.06] align-middle" />
+  if (!url)
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md bg-foreground/[0.06] px-1.5 align-middle text-[12px]" title={path}>
+        <Paperclip className="size-3" />
+        {name}
+      </span>
+    )
+  return (
+    <button
+      type="button"
+      title={name}
+      onClick={async () => {
+        // Every picture in the message, so ←/→ step through them.
+        const images = (
+          await Promise.all(paths.map(async (other) => ({ url: await thumbnail(other), name: other.split('/').pop() })))
+        ).filter((image): image is { url: string; name: string | undefined } => !!image.url)
+        useLightbox.getState().open(
+          images,
+          Math.max(
+            0,
+            images.findIndex((image) => image.url === url),
+          ),
+        )
+      }}
+      className="inline-block align-middle"
+    >
+      <img src={url} alt={name} className="max-h-40 max-w-60 rounded-md border object-contain" />
+    </button>
+  )
+}
+
+/** The text with each marker replaced by its attachment; any the text doesn't mark go at the end. */
+function WithAttachments({ text, attachments }: { text: string; attachments: string[] }) {
+  const segments = markerSegments(text, attachments.length)
+  const unmarked = attachments.map((_, index) => index + 1).filter((n) => !segments.includes(n))
+  return (
+    <>
+      {[...segments, ...(unmarked.length ? ['\n', ...unmarked] : [])].map((segment, index) =>
+        typeof segment === 'string' ? segment : <Attachment key={index} path={attachments[segment - 1]} paths={attachments} />,
+      )}
+    </>
+  )
+}
+
 function UserMessage({ entry, layout }: { entry: ConversationEntry; layout: 'document' | 'chat' }) {
   const [expanded, setExpanded] = useState(false)
-  const long = entry.text.length > 280 || entry.text.split('\n').length > 4
+  const attachments = entry.attachments ?? []
+  const long = !attachments.length && (entry.text.length > 280 || entry.text.split('\n').length > 4)
   const text = (
     <>
-      <div className={cn('selectable text-[13.5px] leading-relaxed break-words whitespace-pre-wrap', !expanded && 'line-clamp-4')}>
-        {entry.text}
+      <div className={cn('selectable text-[13.5px] leading-relaxed break-words whitespace-pre-wrap', long && !expanded && 'line-clamp-4')}>
+        {attachments.length ? <WithAttachments text={entry.text} attachments={attachments} /> : entry.text}
       </div>
       {long && (
         <button
@@ -421,7 +498,7 @@ export function ActivityGroup({
  * What the agent left running after its turn, at the foot of the conversation the way Claude Code
  * shows it: a live summary over each command or subagent and how long it has been going.
  */
-export function BackgroundActivity({ tasks }: { tasks: BackgroundTask[] }) {
+export function BackgroundActivity({ tasks, onStop }: { tasks: BackgroundTask[]; onStop: (taskId?: string) => void }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000)
@@ -437,19 +514,37 @@ export function BackgroundActivity({ tasks }: { tasks: BackgroundTask[] }) {
     .join(' · ')
   return (
     <div className="text-[13px]">
-      <div className="flex max-w-full items-center gap-2 text-muted-foreground" title={t('结束后 agent 会接着处理')}>
+      <div className="group flex max-w-full items-center gap-2 text-muted-foreground" title={t('结束后 agent 会接着处理')}>
         <ClaudeMark className="animate-[spin_3s_linear_infinite]" />
         <span className="shimmer truncate">{summary}</span>
+        {tasks.length > 1 && (
+          <button
+            type="button"
+            onClick={() => onStop()}
+            className="shrink-0 rounded px-1.5 py-0.5 text-[11.5px] opacity-0 group-hover:opacity-100 hover:bg-accent hover:text-err"
+          >
+            {t('全部停止')}
+          </button>
+        )}
       </div>
       <div className="mt-1.5 ml-[7px]">
         {tasks.map((task, index) => (
           <div key={task.id} className="relative pl-4">
             {index < tasks.length - 1 && <span className="absolute top-0 bottom-0 left-0 border-l" />}
             <span className="absolute top-0 left-0 h-[13px] w-2.5 rounded-bl-md border-b border-l" />
-            <div className="flex items-center gap-2 py-[3px] font-mono text-[12.5px] text-muted-foreground" title={task.description}>
+            <div className="group flex items-center gap-2 py-[3px] font-mono text-[12.5px] text-muted-foreground" title={task.description}>
               {task.kind === 'agent' && <Users className="size-3 shrink-0" />}
               <span className="min-w-0 flex-1 truncate">{task.description}</span>
               <span className="shrink-0 font-sans text-[11px] tabular-nums">{elapsed(now - task.startedAt)}</span>
+              <button
+                type="button"
+                title={t('停止')}
+                aria-label={t('停止')}
+                onClick={() => onStop(task.id)}
+                className="flex size-5 shrink-0 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-accent hover:text-err"
+              >
+                <Square className="size-2.5" fill="currentColor" />
+              </button>
             </div>
           </div>
         ))}

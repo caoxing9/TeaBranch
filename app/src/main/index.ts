@@ -196,6 +196,8 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   issueAgent.flush()
   chatAgent.flush()
+  issueAgent.killAll()
+  chatAgent.killAll()
   ptyHost.killAll()
   void cleanupAll().finally(() => app.exit(0))
 })

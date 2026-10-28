@@ -504,6 +504,8 @@ export interface ConversationEntry {
   connectedModel?: string
   /** Set on a `result` line: the run's numbers, so nothing parses the display text. */
   stats?: { turns: number; seconds: number; costUSD: number }
+  /** Set on a `user` line: the files sent with it, which its `[📎 N]` markers stand for. */
+  attachments?: string[]
   /** Set on a `tool` line: the call's id, which its subagent's steps point back to. */
   toolUseId?: string
   /** Set on a subagent's own steps: the `Agent` call that runs it. */
@@ -633,16 +635,22 @@ export interface Api {
   steerChatMessage(chatId: string, queuedId: string): Promise<void>
   unqueueChatMessage(chatId: string, queuedId: string): Promise<void>
   cancelChat(chatId: string): Promise<void>
+  /** Stop one of the chat agent's background tasks, or all of them without `taskId`. */
+  stopChatBackground(chatId: string, taskId?: string): Promise<void>
   deleteChat(chatId: string): Promise<void>
   updateChat(chatId: string, patch: { model?: AgentModel | null; access?: AgentAccess | null; title?: string }): Promise<void>
   /** Store pasted or dropped bytes with the issue's files; returns the saved path. */
   saveUpload(recordId: string, name: string, base64: string): Promise<string>
   /** Pick files from disk and copy them into the issue's files. */
   pickUploads(recordId: string): Promise<string[]>
+  /** An uploaded image as a data URL, for its thumbnail; null for anything else. */
+  readUpload(path: string): Promise<string | null>
   review(issue: Issue): Promise<void>
   sendLatestReview(issue: Issue): Promise<void>
   postLatestReview(recordId: string): Promise<void>
   cancelIssue(recordId: string): Promise<void>
+  /** Stop one of the issue agent's background tasks, or all of them without `taskId`. */
+  stopIssueBackground(recordId: string, taskId?: string): Promise<void>
   /** The PR as GitHub has it now; its checks are refreshed along the way. */
   prDetails(recordId: string): Promise<PRDetails>
   prAction(recordId: string, action: PRAction): Promise<void>

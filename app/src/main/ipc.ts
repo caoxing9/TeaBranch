@@ -18,7 +18,7 @@ import { chatAgent } from './services/chatAgent'
 import { claudeCatalog } from './services/claudeCatalog'
 import * as git from './services/git'
 import { issueAgent } from './services/issueAgent'
-import { saveUpload } from './services/issueContext'
+import { readUpload, saveUpload } from './services/issueContext'
 import { defaultPrompts } from './services/prompts'
 import * as ngrok from './services/ngrok'
 import * as processManager from './services/processManager'
@@ -322,6 +322,7 @@ const handlers: Api = {
   steerChatMessage: async (chatId, queuedId) => chatAgent.steer(chatId, queuedId),
   unqueueChatMessage: async (chatId, queuedId) => chatAgent.unqueue(chatId, queuedId),
   cancelChat: async (chatId) => chatAgent.cancel(chatId),
+  stopChatBackground: async (chatId, taskId) => chatAgent.stopBackground(chatId, taskId),
   deleteChat: async (chatId) => chatAgent.delete(chatId),
   updateChat: async (chatId, patch) => chatAgent.update(chatId, patch),
   saveUpload: async (recordId, name, base64) => {
@@ -334,10 +335,12 @@ const handlers: Api = {
     if (result.canceled) return []
     return result.filePaths.map((path) => saveUpload(recordId, basename(path), readFileSync(path)))
   },
+  readUpload: async (path) => readUpload(path),
   review: (issue) => issueAgent.review(issue),
   sendLatestReview: (issue) => issueAgent.sendLatestReview(issue),
   postLatestReview: (recordId) => issueAgent.postLatestReview(recordId),
   cancelIssue: async (recordId) => issueAgent.cancel(recordId),
+  stopIssueBackground: async (recordId, taskId) => issueAgent.stopBackground(recordId, taskId),
   prDetails: (recordId) => issueAgent.prDetails(recordId),
   prAction: (recordId, action) => issueAgent.prAction(recordId, action),
   refreshChecks: (recordId) => issueAgent.refreshChecks(recordId),

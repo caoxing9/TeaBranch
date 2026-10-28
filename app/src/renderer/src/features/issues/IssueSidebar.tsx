@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, GitBranch, ListChecks, MoreHorizontal, Pause, RefreshCw, Search } from 'lucide-react'
+import { ChevronDown, ChevronRight, GitBranch, ListChecks, MoreHorizontal, Pause, RefreshCw, Search, Terminal } from 'lucide-react'
 import { useRef, useState } from 'react'
 import type { Issue, IssuePhase, IssueRun, IssueShelf, Person } from '@shared/types'
 import { isActivePhase, phaseLabel } from '@shared/types'
@@ -460,6 +460,15 @@ function IssueRow({
               </>
             )}
             <div className="flex-1" />
+            {run?.background && (
+              <span
+                className="flex shrink-0 items-center gap-0.5 text-fg-3 tabular-nums"
+                title={t('后台还有 {n} 个任务在跑', { n: run.background.length })}
+              >
+                <Terminal className="size-3" />
+                {run.background.length}
+              </span>
+            )}
             {run && <CIDot run={run} />}
             {queuePosition ? (
               <span>{t('排队第 {n}', { n: queuePosition })}</span>

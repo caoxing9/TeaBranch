@@ -23,6 +23,8 @@ export interface Outcome {
   diagnosis?: string
   /** The model's context window, from the result's `modelUsage`. */
   contextWindow?: number
+  /** Every turn was already handed to `onTurn`: the process only outlived them. */
+  reported?: boolean
 }
 
 export interface Handle {
@@ -33,6 +35,8 @@ export interface Handle {
    * False when this process can't take one — not Claude, or already winding down.
    */
   steer?(message: string): boolean
+  /** Stop one of the agent's background tasks; the process carries on. */
+  stopTask?(taskId: string): void
 }
 
 export type Session = { kind: 'new' | 'resume'; id: string }
@@ -44,6 +48,12 @@ export const entry = (kind: EntryKind, channel: EntryChannel, text: string, isEr
   text,
   isError,
   at: Date.now(),
+})
+
+/** What you sent: the text with its `[📎 N]` markers, and the files they stand for. */
+export const userEntry = (channel: EntryChannel, text: string, attachments: string[] = []): ConversationEntry => ({
+  ...entry('user', channel, text),
+  attachments: attachments.length ? attachments : undefined,
 })
 
 export const truncate = (text: string, limit: number): string => (text.length > limit ? `${text.slice(0, limit)}…` : text)
@@ -111,10 +121,14 @@ export function runClaude(options: {
   /** What the agent has running in the background, each time that changes. */
   onBackground?: (tasks: BackgroundTask[]) => void
   /**
-   * A turn ended but background tasks keep the process alive: it takes a new message now, and
-   * starts a turn of its own when a task finishes.
+   * A turn ended but background tasks keep the process alive: the turn's outcome, settled now
+   * rather than at the exit. The process takes a new message from here, and starts a turn of its
+   * own when a task finishes.
    */
-  onIdle?: () => void
+  onTurn?: (outcome: Outcome) => void
+  /** After `onTurn`, the agent works again: a message went in, or a finished task woke it. */
+  onWake?: () => void
+  /** What's left since the last `onTurn`. */
   onExit: (outcome: Outcome) => void
 }): Handle {
   const effort = options.model.effort
@@ -134,6 +148,29 @@ export function runClaude(options: {
   let open = true
   // Between turns, waiting on background tasks.
   let idle = false
+  // What `onTurn` has handed over already: results by count, cost as the running total it reached.
+  let reportedResults = 0
+  let reportedCost = 0
+  // Claude's `total_cost_usd` counts the whole process, so each settlement takes the difference.
+  const settlement = (exit: ExitReason) => {
+    const outcome: Outcome = {
+      exit,
+      cancelled,
+      finalText: parser.results.slice(reportedResults).filter(Boolean).join('\n\n'),
+      costUSD: Math.max(0, parser.cost - reportedCost),
+      isError: parser.isError || !isCleanExit(exit),
+      contextWindow: parser.contextWindow,
+      reported: reportedResults > 0 && reportedResults === parser.results.length,
+    }
+    reportedResults = parser.results.length
+    reportedCost = parser.cost
+    return outcome
+  }
+  const wake = () => {
+    if (!idle) return
+    idle = false
+    options.onWake?.()
+  }
   const close = () => {
     open = false
     child.process.stdin?.end()
@@ -155,18 +192,17 @@ export function runClaude(options: {
         if (idle && open && !parser.background.length) close()
       }
       for (const item of parsed) {
+        // The agent's own output means it works again. Not a background subagent's steps, nor a
+        // task's notice: one that was stopped wakes nobody, and a finished one is followed by its turn.
+        if (item.kind !== 'result' && item.kind !== 'task' && !item.parentToolUseId) wake()
         options.onEntry(item)
-        if (item.kind !== 'result') {
-          idle = false
-          continue
-        }
-        if (!open) continue
+        if (item.kind !== 'result' || !open) continue
         // The turn is over. Claude still answers anything that came in too late to steer, then exits —
         // unless it left work in the background, which it waits for: until then it takes messages.
         if (!parser.background.length) close()
         else {
           idle = true
-          options.onIdle?.()
+          options.onTurn?.(settlement({ code: 0, signal: null }))
         }
       }
     },
@@ -175,23 +211,14 @@ export function runClaude(options: {
   const write = (text: string): boolean => {
     const stdin = child.process.stdin
     if (!open || !stdin?.writable) return false
-    idle = false
+    wake()
     stdin.write(`${JSON.stringify({ type: 'user', message: { role: 'user', content: text } })}\n`)
     return true
   }
   // A shell that failed to start closes the pipe; that surfaces as the exit, not as a crash here.
   child.process.stdin?.on('error', () => (open = false))
   write(prompt)
-  void child.exited.then((exit) =>
-    options.onExit({
-      exit,
-      cancelled,
-      finalText: parser.results.join('\n\n'),
-      costUSD: parser.cost,
-      isError: parser.isError || !isCleanExit(exit),
-      contextWindow: parser.contextWindow,
-    }),
-  )
+  void child.exited.then((exit) => options.onExit(settlement(exit)))
   return {
     pid: child.pid,
     cancel: () => {
@@ -200,6 +227,12 @@ export function runClaude(options: {
       killGroup(child.pid, 1000)
     },
     steer: write,
+    stopTask: (taskId) => {
+      const stdin = child.process.stdin
+      if (!open || !stdin?.writable) return
+      const request = { type: 'control_request', request_id: randomUUID(), request: { subtype: 'stop_task', task_id: taskId } }
+      stdin.write(`${JSON.stringify(request)}\n`)
+    },
   }
 }
 
@@ -271,15 +304,19 @@ export class StreamParser {
         })
       }
       case 'result': {
-        if (event.result) this.results.push(String(event.result))
+        // One per turn, empty or not: what's been settled is counted in these.
+        this.results.push(String(event.result ?? ''))
+        // The process's running total; the turn's own share is what it added.
+        const before = this.cost
         this.cost = Number(event.total_cost_usd ?? 0)
+        const turnCost = Math.max(0, this.cost - before)
         this.isError = event.is_error === true
         const models = Object.values((event.modelUsage ?? {}) as Record<string, { contextWindow?: number }>)
         const windows = models.map((model) => model.contextWindow ?? 0).filter(Boolean)
         if (windows.length) this.contextWindow = Math.max(...windows)
         const seconds = Number(event.duration_ms ?? 0) / 1000
-        const stats = { turns: Number(event.num_turns ?? 0), seconds: Math.round(seconds), costUSD: this.cost }
-        const summary = t('完成 · {turns} 轮 · {seconds}s · ${cost}', { ...stats, cost: this.cost.toFixed(2) })
+        const stats = { turns: Number(event.num_turns ?? 0), seconds: Math.round(seconds), costUSD: turnCost }
+        const summary = t('完成 · {turns} 轮 · {seconds}s · ${cost}', { ...stats, cost: turnCost.toFixed(2) })
         return [{ ...entry('result', this.channel, summary, this.isError), stats }]
       }
       default:

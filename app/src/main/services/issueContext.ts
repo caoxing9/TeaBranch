@@ -1,5 +1,5 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { extname, join } from 'node:path'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { extname, join, resolve, sep } from 'node:path'
 import type { Issue, IssueComment } from '@shared/types'
 import { httpFetch } from '../core/http'
 import { log } from '../core/log'
@@ -30,6 +30,27 @@ export const contextDir = (recordId: string): string => join(configDirectory, 'i
 
 /** Files the user attached to messages, kept apart so re-reading the issue doesn't wipe them. */
 export const uploadsDir = (recordId: string): string => join(configDirectory, 'issue-uploads', recordId)
+
+const imageTypes: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+}
+
+/** An upload as a data URL, for the transcript's thumbnail. Only images, only from the uploads folder. */
+export function readUpload(path: string): string | null {
+  const root = join(configDirectory, 'issue-uploads') + sep
+  const full = resolve(path)
+  const type = imageTypes[extname(full).toLowerCase()]
+  if (!full.startsWith(root) || !type) return null
+  try {
+    return `data:${type};base64,${readFileSync(full).toString('base64')}`
+  } catch {
+    return null
+  }
+}
 
 /** Save one upload under a name that doesn't collide; returns its path. */
 export function saveUpload(recordId: string, name: string, bytes: Buffer): string {

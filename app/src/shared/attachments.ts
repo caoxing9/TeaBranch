@@ -12,8 +12,20 @@ export function agentMessage(message: string, attachments: string[]): string {
   return `${message}\n\n<attachments>\n${list}\n</attachments>\nEach [📎 N] in the message stands where attachment N belongs. Open them with the Read tool.`
 }
 
-/** …and as the transcript shows it: the markers stay, the list after them goes by file name. */
-export const shownMessage = (message: string, attachments: string[]): string =>
-  attachments.length
-    ? `${message}\n\n${attachments.map((path, index) => `${attachmentMarker(index + 1)} ${path.split('/').pop()}`).join('  ')}`
-    : message
+/**
+ * …and as the transcript shows it: text, and where a marker stands the attachment's number (from
+ * 1), for the picture to go in its place. Markers past the attachments stay text.
+ */
+export function markerSegments(message: string, count: number): (string | number)[] {
+  const segments: (string | number)[] = []
+  let last = 0
+  for (const match of message.matchAll(/\[📎 (\d+)\]/g)) {
+    const n = Number(match[1])
+    if (n < 1 || n > count) continue
+    if (match.index > last) segments.push(message.slice(last, match.index))
+    segments.push(n)
+    last = match.index + match[0].length
+  }
+  if (last < message.length) segments.push(message.slice(last))
+  return segments
+}

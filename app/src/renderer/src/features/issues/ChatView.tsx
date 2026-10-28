@@ -87,7 +87,9 @@ export function ChatView({ chat }: { chat: Chat }) {
           {turns.map((turn) => (
             <TurnView key={turn.id} turn={turn} layout={layout} renderItem={(item) => <ChatItem item={item} />} />
           ))}
-          {chat.background && <BackgroundActivity tasks={chat.background} />}
+          {chat.background && (
+            <BackgroundActivity tasks={chat.background} onStop={(taskId) => void perform(() => api.stopChatBackground(chat.id, taskId))} />
+          )}
         </div>
       </div>
       <Composer

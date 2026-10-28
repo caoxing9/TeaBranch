@@ -215,6 +215,8 @@ export const ui: Record<string, string> = {
   '后台运行 {n} 条命令': 'Running {n} commands in the background',
   '后台运行 {n} 个子 agent': 'Running {n} subagents in the background',
   '结束后 agent 会接着处理': 'The agent picks up when they finish',
+  全部停止: 'Stop all',
+  '后台还有 {n} 个任务在跑': '{n} background tasks running',
   对话中: 'Chatting',
   '正在准备 {n} 个步骤': 'Preparing {n} steps',
   '完成了 {n} 个步骤': 'Finished {n} steps',
