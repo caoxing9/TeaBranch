@@ -18,13 +18,13 @@ import {
   Terminal,
   Wand2,
 } from 'lucide-react'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ConversationEntry, Issue, IssueRun } from '@shared/types'
 import { isActivePhase, triageLabel } from '@shared/types'
 import { Button, IconButton, MenuButton, Toggle } from '@/components/kit'
 import { AccessPicker, ModelPicker } from './AgentPickers'
 import { Composer } from './Composer'
-import { ActivityGroup, BackgroundActivity, buildTurns, type Item, TurnView } from './Transcript'
+import { ActivityGroup, BackgroundActivity, buildTurns, type Item, TurnView, useTranscriptScroll } from './Transcript'
 import { useTranscriptLayout } from '@/store/tabs'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
@@ -327,24 +327,10 @@ function Conversation({ issue, run, entries, live }: { issue: Issue; run?: Issue
   const turns = useMemo(() => buildTurns(entries, live), [entries, live])
   const perform = useIssues((s) => s.perform)
   const layout = useTranscriptLayout((s) => s.layout)
-  const scroller = useRef<HTMLDivElement>(null)
-  const pinned = useRef(true)
-
-  // Stay at the bottom while the user is there; leave them alone once they scroll up to read.
-  useLayoutEffect(() => {
-    const element = scroller.current
-    if (element && pinned.current) element.scrollTop = element.scrollHeight
-  }, [entries.length, run?.background?.length])
+  const { scroller, onScroll, floor } = useTranscriptScroll(turns, `${entries.length}:${run?.background?.length}`)
 
   return (
-    <div
-      ref={scroller}
-      onScroll={(event) => {
-        const element = event.currentTarget
-        pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 60
-      }}
-      className="min-h-0 flex-1 overflow-y-auto"
-    >
+    <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex max-w-[760px] flex-col gap-5 px-6 py-6">
         <IssueCard issue={issue} startOpen={!run} />
         <IssueComments recordId={issue.id} />
@@ -355,6 +341,7 @@ function Conversation({ issue, run, entries, live }: { issue: Issue; run?: Issue
             key={turn.id}
             turn={turn}
             layout={layout}
+            style={floor(turn.id)}
             renderItem={(item) => <ItemView item={item} hasPR={!!run?.prURL} issue={issue} busy={live} />}
           />
         ))}
