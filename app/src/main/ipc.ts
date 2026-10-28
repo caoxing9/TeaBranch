@@ -54,11 +54,14 @@ async function teableToken(): Promise<string> {
 }
 
 async function loadUser(token: string): Promise<TeableUser> {
+  const config = loadTeableConfig()
   try {
-    return await teable.me(loadTeableConfig(), token)
-  } catch {
-    // A token scoped to the table may not read the profile; reading the table is what matters.
-    await teable.fields(loadTeableConfig(), token)
+    return await teable.me(config, token)
+  } catch (error) {
+    // A token scoped to the table may not read the profile; reading the table is what matters —
+    // when there is one yet. Before that, the profile's error is the one worth showing.
+    if (!config.tableId) throw error
+    await teable.fields(config, token)
     return { id: 'token', name: t('已登录（令牌）') }
   }
 }

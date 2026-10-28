@@ -25,26 +25,6 @@ export function recordURL(config: TeableConfig, recordId: string): string {
   return `${apiBase(config)}/base/${config.baseId}/table/${config.tableId}${view}?recordId=${recordId}`
 }
 
-/** base/table/view ids out of a URL copied from the browser. */
-export function parseTableURL(raw: string): Partial<TeableConfig> | undefined {
-  let url: URL
-  try {
-    url = new URL(raw.trim())
-  } catch {
-    return undefined
-  }
-  const parts = url.pathname.split('/').filter(Boolean)
-  const after = (key: string): string | undefined => {
-    const index = parts.indexOf(key)
-    return index >= 0 ? parts[index + 1] : undefined
-  }
-  const baseId = after('base')
-  const tableId = after('table')
-  if (!baseId || !tableId) return undefined
-  const tableIndex = parts.indexOf('table')
-  return { baseURL: url.origin, baseId, tableId, viewId: parts[tableIndex + 2] }
-}
-
 async function request(
   config: TeableConfig,
   token: string,
@@ -84,8 +64,22 @@ async function request(
   return text ? JSON.parse(text) : {}
 }
 
+/**
+ * Who the token belongs to. `/auth/user` is the endpoint open to access tokens — `/auth/user/me`
+ * serves browser sessions and turns personal access tokens away — so that goes first, and the
+ * other only for servers older than it.
+ */
 export async function me(config: TeableConfig, token: string): Promise<TeableUser> {
-  const user = (await request(config, token, 'GET', '/api/auth/user/me')) as Partial<TeableUser>
+  let user: Partial<TeableUser>
+  try {
+    user = (await request(config, token, 'GET', '/api/auth/user')) as Partial<TeableUser>
+  } catch (error) {
+    try {
+      user = (await request(config, token, 'GET', '/api/auth/user/me')) as Partial<TeableUser>
+    } catch {
+      throw error
+    }
+  }
   if (!user.id) throw new TeaBranchError(t('Teable 返回的用户信息格式不对'))
   return { id: user.id, name: user.name ?? user.id, email: user.email, avatar: user.avatar ?? undefined }
 }
