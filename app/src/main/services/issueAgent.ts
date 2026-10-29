@@ -20,7 +20,7 @@ import type {
   WorktreeProgress,
 } from '@shared/types'
 import { agentModelLabel, isActivePhase, triageLabel, triageVerdict } from '@shared/types'
-import { agentMessage, shownMessage } from '@shared/attachments'
+import { agentMessage } from '@shared/attachments'
 import { ciFailures, ciPending, parseChecks } from '@shared/ci'
 import { t } from '@shared/i18n'
 import { state } from '../core/appState'
@@ -38,6 +38,7 @@ import {
   runCodexReview,
   sessionContextUsed,
   truncate,
+  userEntry,
 } from './agentRunner'
 import { worktreeDbInfo } from './git'
 import { withBranchLock } from './processManager'
@@ -75,6 +76,13 @@ class IssueAgent {
   private transcripts = new Map<string, ConversationEntry[]>()
   /** Live agent processes. At most one per issue: a session can't be resumed twice at once. */
   private handles = new Map<string, Handle>()
+  /**
+   * Agents whose turn is over but whose process lives on for the background tasks it started — dev
+   * servers, a watch. The issue has settled; the next message goes into this process.
+   */
+  private resting = new Map<string, Handle>()
+  /** What settles the agent's next turn: the step that started it, or a follow-up once it rested. */
+  private finishing = new Map<string, (outcome: Outcome) => void>()
   private waiting: Issue[] = []
   /** Issues taken off the queue and not settled yet: the slots N counts. */
   private slots: string[] = []
@@ -245,7 +253,7 @@ class IssueAgent {
     // Too late for this turn: it stays queued and goes out once the issue settles.
     if (!handle.steer?.(agentMessage(queued.text, queued.attachments))) return
     this.unqueue(issue.id, queuedId)
-    this.append(issue.id, entry('user', 'agent', shownMessage(queued.text, queued.attachments)))
+    this.append(issue.id, userEntry('agent', queued.text, queued.attachments))
   }
 
   unqueue(recordId: string, queuedId: string): void {
@@ -262,7 +270,7 @@ class IssueAgent {
     const cwd = this.worktreePath(run)
     if (!cwd) throw new TeaBranchError(t('找不到 worktree：{branch}', { branch: run.branch }))
     const config = loadTeableConfig()
-    this.append(issue.id, entry('user', 'agent', shownMessage(display ?? message, attachments)))
+    this.append(issue.id, userEntry('agent', display ?? message, attachments))
     message = agentMessage(message, attachments)
     this.update(issue.id, (r) => {
       r.phase = 'fixing'
@@ -291,6 +299,20 @@ class IssueAgent {
     this.update(recordId, (run) => {
       run.shelf = shelf ?? undefined
     })
+    // Filed as done: what it left running for you to try goes with it.
+    if (shelf === 'done') this.stopBackground(recordId)
+  }
+
+  /** Stop one background task, or all of them; the session stays, and resumes on the next message. */
+  stopBackground(recordId: string, taskId?: string): void {
+    const handle = this.resting.get(recordId) ?? this.handles.get(recordId)
+    const tasks = this.runs[recordId]?.background ?? []
+    for (const task of tasks) if (!taskId || task.id === taskId) handle?.stopTask?.(task.id)
+  }
+
+  /** On quit: agents and whatever they left running in the background. */
+  killAll(): void {
+    for (const handle of [...this.handles.values(), ...this.resting.values()]) handle.cancel()
   }
 
   setAccess(recordId: string, access: AgentAccess | null): void {
@@ -308,6 +330,7 @@ class IssueAgent {
   cancel(recordId: string): void {
     this.waiting = this.waiting.filter((issue) => issue.id !== recordId)
     this.handles.get(recordId)?.cancel()
+    this.resting.get(recordId)?.cancel()
     this.update(recordId, (run) => {
       if (isActivePhase(run.phase) || run.phase === 'paused') run.phase = 'cancelled'
       run.pausedFrom = undefined
@@ -729,7 +752,18 @@ class IssueAgent {
     // New work: where it lands is up to how this run ends, not where you filed the last one.
     run.shelf = undefined
     run.pausedFrom = undefined
-    const handle = runClaude({
+    // The session's process is still alive for its background tasks: a second one would fork the
+    // session, so the prompt goes into this one.
+    const resting = this.resting.get(issue.id)
+    if (resting) {
+      if (!resting.steer?.(prompt)) throw new TeaBranchError(t('Agent 正在收尾，等它退出再试'))
+      this.finishing.set(issue.id, onExit)
+      this.changed()
+      return
+    }
+    this.finishing.set(issue.id, onExit)
+    const finish = (outcome: Outcome) => (this.finishing.get(issue.id) ?? onExit)(outcome)
+    const handle: Handle = runClaude({
       prompt,
       cwd,
       session: { kind: sessionExists(run.sessionId, cwd) ? 'resume' : 'new', id: run.sessionId },
@@ -749,18 +783,42 @@ class IssueAgent {
         this.update(issue.id, (current) => {
           current.background = tasks.length ? tasks : undefined
         }),
-      onIdle: () => this.steerNext(issue),
-      onExit: (outcome) => {
+      // The turn is over though the process lives on: settle it now, and free its slot.
+      onTurn: (outcome) => {
+        // It woke while a reviewer held the issue: its turn is in the transcript, nothing to settle.
+        if (this.handles.get(issue.id) !== handle) {
+          this.update(issue.id, (current) => {
+            current.costUSD += outcome.costUSD
+          })
+          return
+        }
         this.handles.delete(issue.id)
-        if (this.runs[issue.id]?.background)
-          this.update(issue.id, (current) => {
-            current.background = undefined
-          })
-        if (outcome.contextWindow)
-          this.update(issue.id, (current) => {
-            current.context = { used: current.context?.used ?? 0, window: outcome.contextWindow }
-          })
-        onExit(outcome)
+        this.resting.set(issue.id, handle)
+        finish(outcome)
+      },
+      // A message went in, or a finished task woke it: the issue is being worked on again.
+      onWake: () => {
+        if (this.resting.get(issue.id) !== handle || this.handles.has(issue.id)) return
+        this.resting.delete(issue.id)
+        this.handles.set(issue.id, handle)
+        this.finishing.set(issue.id, (outcome) => void this.agentFinished(issue, outcome, loadTeableConfig()))
+        this.update(issue.id, (current) => {
+          current.phase = 'fixing'
+          current.shelf = undefined
+          current.lastError = undefined
+        })
+      },
+      onExit: (outcome) => {
+        const rested = this.resting.get(issue.id) === handle
+        if (rested) this.resting.delete(issue.id)
+        else if (this.handles.get(issue.id) === handle) this.handles.delete(issue.id)
+        this.update(issue.id, (current) => {
+          current.background = undefined
+          if (outcome.contextWindow) current.context = { used: current.context?.used ?? 0, window: outcome.contextWindow }
+        })
+        // Its last turn was settled when it ended; only the background outlived it.
+        if (rested || outcome.reported) return this.drain(issue)
+        finish(outcome)
       },
     })
     this.handles.set(issue.id, handle)
@@ -948,14 +1006,6 @@ class IssueAgent {
       this.settle()
       this.drain(issue)
     }
-  }
-
-  /** Between turns while background tasks run: the agent takes the next queued message now. */
-  private steerNext(issue: Issue): void {
-    const run = this.runs[issue.id]
-    const next = run?.queued?.[0]
-    if (!next || run.phase === 'cancelled' || run.phase === 'paused') return
-    this.steer(issue, next.id).catch((error) => this.append(issue.id, entry('error', 'agent', errorMessage(error), true)))
   }
 
   /** Once the issue settles, what you typed while it worked goes to the agent, a message a turn. */

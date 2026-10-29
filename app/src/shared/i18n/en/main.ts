@@ -42,6 +42,7 @@ export const main: Record<string, string> = {
   'PR 待审查': 'PR open',
   'Review 中': 'Reviewing',
   等你回复: 'Your turn',
+  'Agent 正在收尾，等它退出再试': 'The agent is wrapping up; try again once it exits',
   失败: 'Failed',
   已取消: 'Cancelled',
   '确认是 bug': 'Confirmed bug',

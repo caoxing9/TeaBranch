@@ -7,15 +7,20 @@ import {
   Copy,
   FilePen,
   FileSearch,
+  Paperclip,
   Search,
   Settings2,
+  Square,
   Terminal,
   Users,
   Wrench,
 } from 'lucide-react'
-import { type ReactNode, useEffect, useState } from 'react'
+import { type CSSProperties, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
-import type { ConversationEntry, EntryChannel } from '@shared/types'
+import type { BackgroundTask, ConversationEntry, EntryChannel } from '@shared/types'
+import { markerSegments } from '@shared/attachments'
+import { useLightbox } from '@/components/Lightbox'
+import { api } from '@/lib/api'
 import { plural } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { ClaudeMark, modelDisplayName, useCatalog } from './AgentPickers'
@@ -142,9 +147,66 @@ export function buildTurns(entries: ConversationEntry[], live: boolean): Turn[] 
   return turns
 }
 
+// MARK: - Scrolling
+
+/**
+ * Scrolling the way Claude's apps do it: the message you send rises to the top of the view and the
+ * reply fills in under it; past a screenful the view follows the bottom, until you scroll up to read.
+ *
+ * The trick is a floor under the turn you started here — at least a view tall — so "the bottom" is
+ * your message at the top. A conversation opened with history gets no floor: no empty screen under
+ * an old answer.
+ */
+export function useTranscriptScroll(turns: Turn[], change: unknown) {
+  const scroller = useRef<HTMLDivElement>(null)
+  const pinned = useRef(true)
+  const [viewHeight, setViewHeight] = useState(0)
+  const last = turns.at(-1)
+  const [openedAt] = useState(() => last?.id)
+  const sent = last?.user && last.id !== openedAt ? last.id : undefined
+
+  useLayoutEffect(() => {
+    const element = scroller.current
+    if (!element) return
+    const observer = new ResizeObserver(() => setViewHeight(element.clientHeight))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  // Sending brings you back down, however far up you'd scrolled.
+  useLayoutEffect(() => {
+    if (sent) pinned.current = true
+  }, [sent])
+
+  useLayoutEffect(() => {
+    const element = scroller.current
+    if (element && pinned.current) element.scrollTop = element.scrollHeight
+  }, [turns.length, change, sent, viewHeight])
+
+  return {
+    scroller,
+    onScroll: (event: React.UIEvent<HTMLDivElement>) => {
+      const element = event.currentTarget
+      pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 60
+    },
+    /** For the turn with that id: the floor, less the transcript's 24px padding top and bottom. */
+    floor: (id: string): CSSProperties | undefined => (id === sent && viewHeight ? { minHeight: viewHeight - 48 } : undefined),
+  }
+}
+
 // MARK: - Turn
 
-export function TurnView({ turn, layout, renderItem }: { turn: Turn; layout: 'document' | 'chat'; renderItem: (item: Item) => ReactNode }) {
+export function TurnView({
+  turn,
+  layout,
+  style,
+  renderItem,
+}: {
+  turn: Turn
+  layout: 'document' | 'chat'
+  style?: CSSProperties
+  renderItem: (item: Item) => ReactNode
+}) {
   const catalog = useCatalog((s) => s.catalog)
   const [open, setOpen] = useState(false)
   const model = turn.model ? modelDisplayName(turn.model, catalog) : undefined
@@ -153,7 +215,7 @@ export function TurnView({ turn, layout, renderItem }: { turn: Turn; layout: 'do
   const work = turn.work.map((item) => <div key={itemId(item)}>{render(item)}</div>)
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" style={style}>
       {turn.user && <UserMessage entry={turn.user} layout={layout} />}
       {turn.wake && <TaskNotice entry={turn.wake} />}
       {turn.live && <WorkingLine startedAt={turn.startedAt} model={model} />}
@@ -222,13 +284,85 @@ function TaskNotice({ entry }: { entry: ConversationEntry }) {
   )
 }
 
+/** Thumbnails by path: a transcript re-renders often, and the files don't change. */
+const thumbnails = new Map<string, Promise<string | null>>()
+const thumbnail = (path: string): Promise<string | null> => {
+  let pending = thumbnails.get(path)
+  if (!pending) {
+    pending = api.readUpload(path).catch(() => null)
+    thumbnails.set(path, pending)
+  }
+  return pending
+}
+
+/** An attachment where its marker stood: the picture, or the file's name when it isn't one. */
+function Attachment({ path, paths }: { path: string; paths: string[] }) {
+  const [url, setUrl] = useState<string | null | undefined>(undefined)
+  useEffect(() => {
+    let live = true
+    void thumbnail(path).then((loaded) => live && setUrl(loaded))
+    return () => {
+      live = false
+    }
+  }, [path])
+  const name =
+    path
+      .split('/')
+      .pop()
+      ?.replace(/^\d{14}-/, '') ?? path
+  if (url === undefined) return <span className="inline-block h-16 w-16 animate-pulse rounded-md bg-foreground/[0.06] align-middle" />
+  if (!url)
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md bg-foreground/[0.06] px-1.5 align-middle text-[12px]" title={path}>
+        <Paperclip className="size-3" />
+        {name}
+      </span>
+    )
+  return (
+    <button
+      type="button"
+      title={name}
+      onClick={async () => {
+        // Every picture in the message, so ←/→ step through them.
+        const images = (
+          await Promise.all(paths.map(async (other) => ({ url: await thumbnail(other), name: other.split('/').pop() })))
+        ).filter((image): image is { url: string; name: string | undefined } => !!image.url)
+        useLightbox.getState().open(
+          images,
+          Math.max(
+            0,
+            images.findIndex((image) => image.url === url),
+          ),
+        )
+      }}
+      className="inline-block align-middle"
+    >
+      <img src={url} alt={name} className="max-h-40 max-w-60 rounded-md border object-contain" />
+    </button>
+  )
+}
+
+/** The text with each marker replaced by its attachment; any the text doesn't mark go at the end. */
+function WithAttachments({ text, attachments }: { text: string; attachments: string[] }) {
+  const segments = markerSegments(text, attachments.length)
+  const unmarked = attachments.map((_, index) => index + 1).filter((n) => !segments.includes(n))
+  return (
+    <>
+      {[...segments, ...(unmarked.length ? ['\n', ...unmarked] : [])].map((segment, index) =>
+        typeof segment === 'string' ? segment : <Attachment key={index} path={attachments[segment - 1]} paths={attachments} />,
+      )}
+    </>
+  )
+}
+
 function UserMessage({ entry, layout }: { entry: ConversationEntry; layout: 'document' | 'chat' }) {
   const [expanded, setExpanded] = useState(false)
-  const long = entry.text.length > 280 || entry.text.split('\n').length > 4
+  const attachments = entry.attachments ?? []
+  const long = !attachments.length && (entry.text.length > 280 || entry.text.split('\n').length > 4)
   const text = (
     <>
-      <div className={cn('selectable text-[13.5px] leading-relaxed break-words whitespace-pre-wrap', !expanded && 'line-clamp-4')}>
-        {entry.text}
+      <div className={cn('selectable text-[13.5px] leading-relaxed break-words whitespace-pre-wrap', long && !expanded && 'line-clamp-4')}>
+        {attachments.length ? <WithAttachments text={entry.text} attachments={attachments} /> : entry.text}
       </div>
       {long && (
         <button
@@ -415,6 +549,73 @@ export function ActivityGroup({
       )}
     </div>
   )
+}
+
+/**
+ * What the agent left running after its turn, at the foot of the conversation the way Claude Code
+ * shows it: a live summary over each command or subagent and how long it has been going.
+ */
+export function BackgroundActivity({ tasks, onStop }: { tasks: BackgroundTask[]; onStop: (taskId?: string) => void }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  const commands = tasks.filter((task) => task.kind !== 'agent').length
+  const agents = tasks.length - commands
+  const summary = [
+    commands && plural(t('后台运行 {n} 条命令', { n: commands })),
+    agents && plural(t('后台运行 {n} 个子 agent', { n: agents })),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  return (
+    <div className="text-[13px]">
+      <div className="group flex max-w-full items-center gap-2 text-muted-foreground" title={t('结束后 agent 会接着处理')}>
+        <ClaudeMark className="animate-[spin_3s_linear_infinite]" />
+        <span className="shimmer truncate">{summary}</span>
+        {tasks.length > 1 && (
+          <button
+            type="button"
+            onClick={() => onStop()}
+            className="shrink-0 rounded px-1.5 py-0.5 text-[11.5px] opacity-0 group-hover:opacity-100 hover:bg-accent hover:text-err"
+          >
+            {t('全部停止')}
+          </button>
+        )}
+      </div>
+      <div className="mt-1.5 ml-[7px]">
+        {tasks.map((task, index) => (
+          <div key={task.id} className="relative pl-4">
+            {index < tasks.length - 1 && <span className="absolute top-0 bottom-0 left-0 border-l" />}
+            <span className="absolute top-0 left-0 h-[13px] w-2.5 rounded-bl-md border-b border-l" />
+            <div className="group flex items-center gap-2 py-[3px] font-mono text-[12.5px] text-muted-foreground" title={task.description}>
+              {task.kind === 'agent' && <Users className="size-3 shrink-0" />}
+              <span className="min-w-0 flex-1 truncate">{task.description}</span>
+              <span className="shrink-0 font-sans text-[11px] tabular-nums">{elapsed(now - task.startedAt)}</span>
+              <button
+                type="button"
+                title={t('停止')}
+                aria-label={t('停止')}
+                onClick={() => onStop(task.id)}
+                className="flex size-5 shrink-0 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-accent hover:text-err"
+              >
+                <Square className="size-2.5" fill="currentColor" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function elapsed(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
 
 const outputOf = (steps: ConversationEntry[], call: ConversationEntry): ConversationEntry | undefined => {

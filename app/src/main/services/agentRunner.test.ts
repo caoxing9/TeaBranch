@@ -42,4 +42,13 @@ describe('StreamParser', () => {
       ['tool', 'inner', 'call'],
     ])
   })
+
+  it('prices each turn by what it added to the process total', () => {
+    const parser = new StreamParser('agent')
+    const [first] = feed(parser, [{ type: 'result', result: 'waiting', total_cost_usd: 0.5 }])
+    const [second] = feed(parser, [{ type: 'result', result: '', total_cost_usd: 0.75 }])
+    expect([first.stats?.costUSD, second.stats?.costUSD]).toEqual([0.5, 0.25])
+    // An empty result is still a turn: settlement counts turns, not texts.
+    expect(parser.results).toEqual(['waiting', ''])
+  })
 })
