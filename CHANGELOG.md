@@ -1,3 +1,10 @@
+# [0.15.0](https://github.com/caoxing9/TeaBranch/compare/v0.14.0...v0.15.0) (2026-10-29)
+
+
+### Features
+
+* background tasks at the foot of the conversation; log toolbar fits narrow panes ([#11](https://github.com/caoxing9/TeaBranch/issues/11)) ([a9469a0](https://github.com/caoxing9/TeaBranch/commit/a9469a07d4a2b0d9202baac2447d858e1f2a8f40))
+
 # [0.14.0](https://github.com/caoxing9/TeaBranch/compare/v0.13.0...v0.14.0) (2026-10-27)
 
 
