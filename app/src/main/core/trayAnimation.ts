@@ -1,4 +1,4 @@
-import { type NativeImage, nativeImage, nativeTheme, type Tray } from 'electron'
+import { type NativeImage, nativeImage, type Tray } from 'electron'
 import { t } from '@shared/i18n'
 
 /**
@@ -7,11 +7,15 @@ import { t } from '@shared/i18n'
  * so there are no extra assets; idle, the plain template icon comes back. Nothing moves across the
  * icon and nothing shows through the vein cut-outs, so at menu-bar size it reads as calm, not as
  * flicker.
+ *
+ * Frames are template images, like the idle icon: macOS inks them to suit the menu bar. Painting
+ * the ink ourselves went by the app's light/dark theme, which isn't the menu bar's — a light app
+ * under a dark menu bar (a dark wallpaper is enough) drew a black leaf on black, leaving only the
+ * spark. The spark gives up its colour for that; its breathing still says "working".
  */
 
 const FRAMES = 30
 const FPS = 15
-const SPARK: [number, number, number] = [255, 176, 72]
 /** Supersampling per axis, to anti-alias the spark. */
 const SAMPLES = 4
 
@@ -28,12 +32,11 @@ function spark(x: number, y: number, cx: number, cy: number, r: number): number 
   return inside / (SAMPLES * SAMPLES)
 }
 
-export function animatedFrames(base: NativeImage, dark: boolean): NativeImage[] {
+export function animatedFrames(base: NativeImage): NativeImage[] {
   const icon = base.toBitmap({ scaleFactor: 2 }) // BGRA, in pixels
   // getSize() is in points; the @2x bitmap is twice that.
   const width = base.getSize().width * 2
   const height = icon.length / 4 / width
-  const ink = dark ? 255 : 0
   const cx = width * 0.22
   const cy = height * 0.22
   const radius = Math.min(width, height) * 0.2
@@ -49,16 +52,13 @@ export function animatedFrames(base: NativeImage, dark: boolean): NativeImage[] 
         const i = (y * width + x) * 4
         const ia = icon[i + 3] / 255
         const sa = spark(x, y, cx, cy, r) * strength
-        // Icon over spark ("source over"), premultiplied the way macOS wants it.
-        const a = ia + sa * (1 - ia)
-        const mix = (channel: number) => Math.round(ink * ia + channel * sa * (1 - ia))
-        out[i] = mix(SPARK[2])
-        out[i + 1] = mix(SPARK[1])
-        out[i + 2] = mix(SPARK[0])
-        out[i + 3] = Math.round(a * 255)
+        // Icon over spark ("source over"); a template only reads the alpha, the colour stays black.
+        out[i + 3] = Math.round((ia + sa * (1 - ia)) * 255)
       }
     }
-    return nativeImage.createFromBitmap(out, { width, height, scaleFactor: 2 })
+    const image = nativeImage.createFromBitmap(out, { width, height, scaleFactor: 2 })
+    image.setTemplateImage(true)
+    return image
   })
 }
 
@@ -66,15 +66,11 @@ export function animatedFrames(base: NativeImage, dark: boolean): NativeImage[] 
 export function trayActivity(tray: Tray, idle: NativeImage) {
   let timer: NodeJS.Timeout | null = null
   let frames: NativeImage[] = []
-  let framesDark: boolean | null = null
   let frame = 0
   return (count: number) => {
     if (count > 0) {
       tray.setToolTip(t('TeaBranch · {count} 个 agent 在跑', { count }))
-      if (framesDark !== nativeTheme.shouldUseDarkColors) {
-        framesDark = nativeTheme.shouldUseDarkColors
-        frames = animatedFrames(idle, framesDark)
-      }
+      if (!frames.length) frames = animatedFrames(idle)
       timer ??= setInterval(() => {
         frame = (frame + 1) % frames.length
         tray.setImage(frames[frame])
