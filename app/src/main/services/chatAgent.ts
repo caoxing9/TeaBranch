@@ -2,14 +2,14 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { agentMessage, shownMessage } from '@shared/attachments'
+import { agentMessage } from '@shared/attachments'
 import { t } from '@shared/i18n'
 import type { AgentAccess, AgentModel, Chat, ConversationEntry, QueuedMessage } from '@shared/types'
 import { state } from '../core/appState'
 import { emit } from '../core/events'
 import { TeaBranchError } from '../core/log'
 import { deleteChatTranscript, loadChats, loadChatTranscript, loadTeableConfig, saveChats, saveChatTranscript } from '../core/settingsStore'
-import { entry, type Handle, runClaude } from './agentRunner'
+import { entry, type Handle, runClaude, userEntry } from './agentRunner'
 import { uploadsDir } from './issueContext'
 
 /**
@@ -20,6 +20,8 @@ class ChatAgent {
   private chats: Record<string, Chat> = loadChats()
   private transcripts = new Map<string, ConversationEntry[]>()
   private handles = new Map<string, Handle>()
+  /** Turn over, process alive for its background tasks: the next message goes into it. */
+  private resting = new Map<string, Handle>()
   private dirty = new Set<string>()
   private flushTimer: NodeJS.Timeout | null = null
 
@@ -93,7 +95,7 @@ class ChatAgent {
     // Too late for this turn: it stays queued and goes out the moment the turn ends.
     if (handle && !handle.steer?.(agentMessage(queued.text, queued.attachments))) return
     this.unqueue(id, queuedId)
-    if (handle) this.append(id, entry('user', 'agent', shownMessage(queued.text, queued.attachments)))
+    if (handle) this.append(id, userEntry('agent', queued.text, queued.attachments))
     else this.send(id, queued.text, queued.attachments)
   }
 
@@ -105,7 +107,19 @@ class ChatAgent {
 
   private send(id: string, message: string, attachments: string[] = []): void {
     const chat = this.get(id)
-    this.append(id, entry('user', 'agent', shownMessage(message, attachments)))
+    // Its process still lives for background tasks: a second one would fork the session.
+    const resting = this.resting.get(id)
+    if (resting) {
+      if (!resting.steer?.(agentMessage(message, attachments))) {
+        // Winding down after its last task: it goes out once the process is gone.
+        chat.queued = [...(chat.queued ?? []), { id: randomUUID(), text: message, attachments }]
+        return this.changed()
+      }
+      this.append(id, userEntry('agent', message, attachments))
+      chat.updatedAt = Date.now()
+      return this.changed()
+    }
+    this.append(id, userEntry('agent', message, attachments))
     if (untitled.has(chat.title)) chat.title = message.replace(/\s+/g, ' ').slice(0, 40)
     chat.running = true
     chat.updatedAt = Date.now()
@@ -113,7 +127,7 @@ class ChatAgent {
 
     const config = loadTeableConfig()
     const uploads = uploadsDir(`chat-${id}`)
-    const handle = runClaude({
+    const handle: Handle = runClaude({
       prompt: agentMessage(message, attachments),
       cwd: chat.cwd,
       session: { kind: sessionExists(chat.sessionId, chat.cwd) ? 'resume' : 'new', id: chat.sessionId },
@@ -135,13 +149,32 @@ class ChatAgent {
         current.background = tasks.length ? tasks : undefined
         this.changed()
       },
-      // Waiting on background tasks: what was typed during the turn goes in now.
-      onIdle: () => {
-        const next = this.chats[id]?.queued?.[0]
+      // The turn is over though background tasks keep the process: the chat waits for you now.
+      onTurn: (outcome) => {
+        const current = this.chats[id]
+        this.handles.delete(id)
+        this.resting.set(id, handle)
+        if (!current) return
+        current.running = false
+        current.costUSD += outcome.costUSD
+        current.updatedAt = Date.now()
+        this.changed()
+        // What was typed during the turn goes in now.
+        const next = current.queued?.[0]
         if (next) this.steer(id, next.id)
+      },
+      onWake: () => {
+        if (this.resting.get(id) !== handle) return
+        this.resting.delete(id)
+        this.handles.set(id, handle)
+        const current = this.chats[id]
+        if (!current) return
+        current.running = true
+        this.changed()
       },
       onExit: (outcome) => {
         this.handles.delete(id)
+        this.resting.delete(id)
         const current = this.chats[id]
         if (!current) return
         current.running = false
@@ -150,7 +183,8 @@ class ChatAgent {
         if (outcome.contextWindow) current.context = { used: current.context?.used ?? 0, window: outcome.contextWindow }
         current.updatedAt = Date.now()
         if (outcome.cancelled) this.append(id, entry('system', 'agent', t('已停止')))
-        else if (outcome.isError && !outcome.finalText) this.append(id, entry('error', 'agent', outcome.diagnosis ?? t('agent 异常退出')))
+        else if (outcome.isError && !outcome.finalText && !outcome.reported)
+          this.append(id, entry('error', 'agent', outcome.diagnosis ?? t('agent 异常退出')))
         this.changed()
         // What was typed during the turn goes next. After a stop it waits for you instead.
         const next = current.queued?.[0]
@@ -162,6 +196,18 @@ class ChatAgent {
 
   cancel(id: string): void {
     this.handles.get(id)?.cancel()
+    this.resting.get(id)?.cancel()
+  }
+
+  /** Stop one background task, or all of them; the session stays. */
+  stopBackground(id: string, taskId?: string): void {
+    const handle = this.resting.get(id) ?? this.handles.get(id)
+    for (const task of this.chats[id]?.background ?? []) if (!taskId || task.id === taskId) handle?.stopTask?.(task.id)
+  }
+
+  /** On quit: agents and whatever they left running in the background. */
+  killAll(): void {
+    for (const handle of [...this.handles.values(), ...this.resting.values()]) handle.cancel()
   }
 
   delete(id: string): void {

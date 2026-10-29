@@ -18,7 +18,7 @@ import { chatAgent } from './services/chatAgent'
 import { claudeCatalog } from './services/claudeCatalog'
 import * as git from './services/git'
 import { issueAgent } from './services/issueAgent'
-import { saveUpload } from './services/issueContext'
+import { readUpload, saveUpload } from './services/issueContext'
 import { defaultPrompts } from './services/prompts'
 import * as ngrok from './services/ngrok'
 import * as processManager from './services/processManager'
@@ -54,11 +54,14 @@ async function teableToken(): Promise<string> {
 }
 
 async function loadUser(token: string): Promise<TeableUser> {
+  const config = loadTeableConfig()
   try {
-    return await teable.me(loadTeableConfig(), token)
-  } catch {
-    // A token scoped to the table may not read the profile; reading the table is what matters.
-    await teable.fields(loadTeableConfig(), token)
+    return await teable.me(config, token)
+  } catch (error) {
+    // A token scoped to the table may not read the profile; reading the table is what matters —
+    // when there is one yet. Before that, the profile's error is the one worth showing.
+    if (!config.tableId) throw error
+    await teable.fields(config, token)
     return { id: 'token', name: t('已登录（令牌）') }
   }
 }
@@ -322,6 +325,7 @@ const handlers: Api = {
   steerChatMessage: async (chatId, queuedId) => chatAgent.steer(chatId, queuedId),
   unqueueChatMessage: async (chatId, queuedId) => chatAgent.unqueue(chatId, queuedId),
   cancelChat: async (chatId) => chatAgent.cancel(chatId),
+  stopChatBackground: async (chatId, taskId) => chatAgent.stopBackground(chatId, taskId),
   deleteChat: async (chatId) => chatAgent.delete(chatId),
   updateChat: async (chatId, patch) => chatAgent.update(chatId, patch),
   saveUpload: async (recordId, name, base64) => {
@@ -334,10 +338,12 @@ const handlers: Api = {
     if (result.canceled) return []
     return result.filePaths.map((path) => saveUpload(recordId, basename(path), readFileSync(path)))
   },
+  readUpload: async (path) => readUpload(path),
   review: (issue) => issueAgent.review(issue),
   sendLatestReview: (issue) => issueAgent.sendLatestReview(issue),
   postLatestReview: (recordId) => issueAgent.postLatestReview(recordId),
   cancelIssue: async (recordId) => issueAgent.cancel(recordId),
+  stopIssueBackground: async (recordId, taskId) => issueAgent.stopBackground(recordId, taskId),
   prDetails: (recordId) => issueAgent.prDetails(recordId),
   prAction: (recordId, action) => issueAgent.prAction(recordId, action),
   refreshChecks: (recordId) => issueAgent.refreshChecks(recordId),

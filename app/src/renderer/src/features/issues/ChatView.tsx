@@ -1,6 +1,6 @@
 import { CircleAlert, Folder, GitBranch, MessageSquarePlus, MoreHorizontal } from 'lucide-react'
 import { t } from '@shared/i18n'
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo } from 'react'
 import type { Chat, ConversationEntry } from '@shared/types'
 import { EmptyState, MenuButton } from '@/components/kit'
 import { api } from '@/lib/api'
@@ -9,7 +9,7 @@ import { useIssues } from '@/store/issues'
 import { useTabs, useTranscriptLayout } from '@/store/tabs'
 import { AccessPicker, ModelPicker } from './AgentPickers'
 import { Composer } from './Composer'
-import { ActivityGroup, BackgroundActivity, buildTurns, type Item, TurnView } from './Transcript'
+import { ActivityGroup, BackgroundActivity, buildTurns, type Item, TurnView, useTranscriptScroll } from './Transcript'
 import { Markdown } from './Markdown'
 
 const home = (path: string) => path.replace(/^\/Users\/[^/]+/, '~')
@@ -23,14 +23,9 @@ export function ChatView({ chat }: { chat: Chat }) {
   const perform = useIssues((s) => s.perform)
   const layout = useTranscriptLayout((s) => s.layout)
   const turns = useMemo(() => buildTurns(entries, chat.running), [entries, chat.running])
-  const scroller = useRef<HTMLDivElement>(null)
-  const pinned = useRef(true)
+  const { scroller, onScroll, floor } = useTranscriptScroll(turns, `${entries.length}:${chat.background?.length}`)
 
   useEffect(() => void loadTranscript(chat.id), [chat.id, loadTranscript])
-  useLayoutEffect(() => {
-    const element = scroller.current
-    if (element && pinned.current) element.scrollTop = element.scrollHeight
-  }, [entries.length])
 
   return (
     <div className="flex h-full flex-col">
@@ -66,14 +61,7 @@ export function ChatView({ chat }: { chat: Chat }) {
           </MenuButton>
         </div>
       </header>
-      <div
-        ref={scroller}
-        onScroll={(event) => {
-          const element = event.currentTarget
-          pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 60
-        }}
-        className="min-h-0 flex-1 overflow-y-auto"
-      >
+      <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-[760px] flex-col gap-5 px-6 py-6">
           {entries.length === 0 && (
             <div className="pt-16">
@@ -85,9 +73,11 @@ export function ChatView({ chat }: { chat: Chat }) {
             </div>
           )}
           {turns.map((turn) => (
-            <TurnView key={turn.id} turn={turn} layout={layout} renderItem={(item) => <ChatItem item={item} />} />
+            <TurnView key={turn.id} turn={turn} layout={layout} style={floor(turn.id)} renderItem={(item) => <ChatItem item={item} />} />
           ))}
-          {chat.background && <BackgroundActivity tasks={chat.background} />}
+          {chat.background && (
+            <BackgroundActivity tasks={chat.background} onStop={(taskId) => void perform(() => api.stopChatBackground(chat.id, taskId))} />
+          )}
         </div>
       </div>
       <Composer
