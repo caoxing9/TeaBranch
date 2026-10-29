@@ -15,7 +15,7 @@ import {
   Users,
   Wrench,
 } from 'lucide-react'
-import { type ReactNode, useEffect, useState } from 'react'
+import { type CSSProperties, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 import type { BackgroundTask, ConversationEntry, EntryChannel } from '@shared/types'
 import { markerSegments } from '@shared/attachments'
@@ -147,9 +147,66 @@ export function buildTurns(entries: ConversationEntry[], live: boolean): Turn[] 
   return turns
 }
 
+// MARK: - Scrolling
+
+/**
+ * Scrolling the way Claude's apps do it: the message you send rises to the top of the view and the
+ * reply fills in under it; past a screenful the view follows the bottom, until you scroll up to read.
+ *
+ * The trick is a floor under the turn you started here — at least a view tall — so "the bottom" is
+ * your message at the top. A conversation opened with history gets no floor: no empty screen under
+ * an old answer.
+ */
+export function useTranscriptScroll(turns: Turn[], change: unknown) {
+  const scroller = useRef<HTMLDivElement>(null)
+  const pinned = useRef(true)
+  const [viewHeight, setViewHeight] = useState(0)
+  const last = turns.at(-1)
+  const [openedAt] = useState(() => last?.id)
+  const sent = last?.user && last.id !== openedAt ? last.id : undefined
+
+  useLayoutEffect(() => {
+    const element = scroller.current
+    if (!element) return
+    const observer = new ResizeObserver(() => setViewHeight(element.clientHeight))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  // Sending brings you back down, however far up you'd scrolled.
+  useLayoutEffect(() => {
+    if (sent) pinned.current = true
+  }, [sent])
+
+  useLayoutEffect(() => {
+    const element = scroller.current
+    if (element && pinned.current) element.scrollTop = element.scrollHeight
+  }, [turns.length, change, sent, viewHeight])
+
+  return {
+    scroller,
+    onScroll: (event: React.UIEvent<HTMLDivElement>) => {
+      const element = event.currentTarget
+      pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 60
+    },
+    /** For the turn with that id: the floor, less the transcript's 24px padding top and bottom. */
+    floor: (id: string): CSSProperties | undefined => (id === sent && viewHeight ? { minHeight: viewHeight - 48 } : undefined),
+  }
+}
+
 // MARK: - Turn
 
-export function TurnView({ turn, layout, renderItem }: { turn: Turn; layout: 'document' | 'chat'; renderItem: (item: Item) => ReactNode }) {
+export function TurnView({
+  turn,
+  layout,
+  style,
+  renderItem,
+}: {
+  turn: Turn
+  layout: 'document' | 'chat'
+  style?: CSSProperties
+  renderItem: (item: Item) => ReactNode
+}) {
   const catalog = useCatalog((s) => s.catalog)
   const [open, setOpen] = useState(false)
   const model = turn.model ? modelDisplayName(turn.model, catalog) : undefined
@@ -158,7 +215,7 @@ export function TurnView({ turn, layout, renderItem }: { turn: Turn; layout: 'do
   const work = turn.work.map((item) => <div key={itemId(item)}>{render(item)}</div>)
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" style={style}>
       {turn.user && <UserMessage entry={turn.user} layout={layout} />}
       {turn.wake && <TaskNotice entry={turn.wake} />}
       {turn.live && <WorkingLine startedAt={turn.startedAt} model={model} />}

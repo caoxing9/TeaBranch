@@ -4,8 +4,8 @@ import HardBreak from '@tiptap/extension-hard-break'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
 import { Placeholder, UndoRedo } from '@tiptap/extensions'
-import { EditorContent, useEditor, useEditorState } from '@tiptap/react'
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { EditorContent, useEditor, useEditorState, type UseEditorOptions } from '@tiptap/react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { attachmentMarker } from '@shared/attachments'
 import { useLightbox } from '@/components/Lightbox'
 
@@ -98,7 +98,10 @@ export function useMessageEditor({
     latest.current = { onSubmit, onFiles }
   })
 
-  const editor = useEditor({
+  // Built once and handed over as the same object every render: useEditor compares options by identity
+  // and, on any difference, resets the view's props — which cancels an input method's composition
+  // mid-word (Backspace through pinyin while the store ticks, and the letters land as text).
+  const [options] = useState<UseEditorOptions>(() => ({
     extensions: [
       Document,
       Paragraph,
@@ -147,7 +150,8 @@ export function useMessageEditor({
         return true
       },
     },
-  })
+  }))
+  const editor = useEditor(options)
 
   // The placeholder is a decoration: redraw it when it changes (busy ⇄ idle).
   useEffect(() => {
