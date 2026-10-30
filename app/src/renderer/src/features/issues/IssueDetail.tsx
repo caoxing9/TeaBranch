@@ -35,7 +35,7 @@ import { useIssues } from '@/store/issues'
 import { CIStatus } from './CIStatus'
 import { PhaseBadge, shelfMenu } from './IssueSidebar'
 import { Attachments, AttachmentsLabel, Comments } from './IssueExtras'
-import { IssuePanel, RunControl } from './IssuePanel'
+import { IssuePanel, RunControl, showBrowserTab } from './IssuePanel'
 import { Markdown } from './Markdown'
 import { AgentAvatar, PeopleStack, PersonAvatar } from '@/components/person'
 import { peopleByField } from '@/lib/people'
@@ -63,6 +63,7 @@ export function IssueDetail({ issue }: { issue: Issue }) {
     localStorage.setItem('teabranch.issuePanel', panel ? 'closed' : 'open')
     setPanel(!panel)
   }
+  const [wide, setWide] = useState(false)
 
   return (
     <div className="flex h-full flex-col">
@@ -100,8 +101,8 @@ export function IssueDetail({ issue }: { issue: Issue }) {
           )}
         </div>
         {panel && (
-          <div className="w-[380px] shrink-0 border-l bg-sidebar/50">
-            <IssuePanel key={issue.id} issue={issue} run={run} />
+          <div className={cx('shrink-0 border-l bg-sidebar/50', wide ? 'w-[min(60%,1100px)]' : 'w-[380px]')}>
+            <IssuePanel key={issue.id} issue={issue} run={run} onWide={setWide} />
           </div>
         )}
       </div>
@@ -225,7 +226,13 @@ function Header({
         {run && (
           <>
             <span className="mr-1 border-r pr-2">
-              <RunControl branch={run.branch} />
+              <RunControl
+                branch={run.branch}
+                onPreview={() => {
+                  showBrowserTab()
+                  if (!panel) onTogglePanel()
+                }}
+              />
             </span>
             <IconButton label={t('Review 当前分支')} disabled={busy} onClick={() => void perform(() => api.review(issue))}>
               <BadgeCheck className="size-4" />

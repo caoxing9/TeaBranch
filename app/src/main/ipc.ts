@@ -29,6 +29,7 @@ import * as teable from './services/teable'
 import * as teableAuth from './services/teableAuth'
 import * as terminal from './services/terminal'
 import * as worktrees from './services/worktree'
+import * as browser from './services/browser'
 
 let categories = loadCategories()
 let teableUser: TeableUser | null = null
@@ -64,16 +65,6 @@ async function loadUser(token: string): Promise<TeableUser> {
     await teable.fields(config, token)
     return { id: 'token', name: t('已登录（令牌）') }
   }
-}
-
-/** `*.localhost` per branch, so each branch gets its own cookie jar. */
-export function previewURL(branch: string, port: number): string {
-  const slug = branch
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-  return `http://${slug}.localhost:${port}`
 }
 
 export const setCategory = (branch: string, category: DevCategory): void => {
@@ -130,6 +121,7 @@ const handlers: Api = {
       state.removeEnvironment(branch)
       logs.remove(branch)
     })
+    browser.close(branch)
     emitSoon('branchesChanged')
   },
   createWorktree: async (branch, dbMode) => {
@@ -149,8 +141,16 @@ const handlers: Api = {
   openEditor: async (branch) => terminal.openInVSCode(await worktreeOf(branch)),
   openPreview: async (branch) => {
     const port = state.environment(branch)?.port
-    if (port) await shell.openExternal(previewURL(branch, port))
+    if (port) await shell.openExternal(browser.previewURL(branch, port))
   },
+  browserState: async (branch) => browser.browserState(branch),
+  showBrowser: async (branch, bounds) => browser.show(branch, bounds),
+  hideBrowser: async (branch) => browser.hide(branch),
+  browserNavigate: (branch, address) => browser.navigate(branch, address),
+  browserBack: async (branch) => browser.goBack(branch),
+  browserForward: async (branch) => browser.goForward(branch),
+  browserReload: async (branch) => browser.reload(branch),
+  browserDevTools: async (branch) => browser.openDevTools(branch),
   revealInFinder: async (branch) => shell.showItemInFolder(await worktreeOf(branch)),
   revealAgentFiles: async (branch) => {
     const root = scratchRoot(await worktreeOf(branch))

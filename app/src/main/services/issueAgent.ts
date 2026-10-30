@@ -42,6 +42,7 @@ import {
 } from './agentRunner'
 import { worktreeDbInfo } from './git'
 import { withBranchLock } from './processManager'
+import { browserEnvironment } from './browserBridge'
 import { contextDir, contextPrompt, prepareIssueContext, uploadsDir } from './issueContext'
 import {
   fixAfterTriagePrompt,
@@ -52,6 +53,7 @@ import {
   resumePrompt,
   reviewPrompt,
   systemPrompt,
+  BROWSER_PROMPT,
   triagePrompt,
 } from './prompts'
 import * as teable from './teable'
@@ -747,6 +749,13 @@ class IssueAgent {
     }
   }
 
+  /** The branch's browser in the app, through `tb-browser`; screenshots go beside the uploads. */
+  private browser(issue: Issue, branch: string, prompt?: string): { env: Record<string, string>; appendSystemPrompt?: string } {
+    const env = browserEnvironment(issue.id, { branch, dir: join(uploadsDir(issue.id), 'browser') })
+    if (!env.TEABRANCH_BROWSER) return { env, appendSystemPrompt: prompt }
+    return { env, appendSystemPrompt: prompt ? `${prompt}\n\n${BROWSER_PROMPT}` : BROWSER_PROMPT }
+  }
+
   private startAgent(issue: Issue, prompt: string, cwd: string, config: TeableConfig, onExit: (outcome: Outcome) => void): void {
     const run = this.runs[issue.id]
     // New work: where it lands is up to how this run ends, not where you filed the last one.
@@ -763,6 +772,7 @@ class IssueAgent {
     }
     this.finishing.set(issue.id, onExit)
     const finish = (outcome: Outcome) => (this.finishing.get(issue.id) ?? onExit)(outcome)
+    const { env, appendSystemPrompt } = this.browser(issue, run.branch, systemPrompt(issue))
     const handle: Handle = runClaude({
       prompt,
       cwd,
@@ -770,9 +780,10 @@ class IssueAgent {
       model: run.model ?? config.fixModel,
       access: run.access ?? config.access,
       baseCommand: state.settings.agentCommand,
-      appendSystemPrompt: systemPrompt(issue),
+      appendSystemPrompt,
       // The issue's downloaded attachments live outside the worktree; let the agent read them.
       extraArgs: [contextDir(issue.id), uploadsDir(issue.id)].filter(existsSync).flatMap((dir) => ['--add-dir', dir]),
+      env,
       channel: 'agent',
       onEntry: (line) => this.append(issue.id, line),
       onContext: (used) =>
@@ -951,6 +962,7 @@ class IssueAgent {
             session: { kind: 'new', id: randomUUID() },
             model: config.reviewModel,
             baseCommand: state.settings.agentCommand,
+            ...this.browser(issue, run.branch),
             extraArgs: ['--disallowedTools', 'Edit,Write,NotebookEdit,MultiEdit'],
             channel: 'review',
             onEntry,

@@ -560,6 +560,15 @@ export interface Api {
   openAgent(branch: string): Promise<void>
   openEditor(branch: string): Promise<void>
   openPreview(branch: string): Promise<void>
+  /** The branch's in-app browser: state, and placing it over the panel (window coordinates). */
+  browserState(branch: string): Promise<BrowserState>
+  showBrowser(branch: string, bounds: { x: number; y: number; width: number; height: number }): Promise<void>
+  hideBrowser(branch: string): Promise<void>
+  browserNavigate(branch: string, address: string): Promise<void>
+  browserBack(branch: string): Promise<void>
+  browserForward(branch: string): Promise<void>
+  browserReload(branch: string): Promise<void>
+  browserDevTools(branch: string): Promise<void>
   revealInFinder(branch: string): Promise<void>
   revealAgentFiles(branch: string): Promise<boolean>
   branchesWithTerminal(): Promise<string[]>
@@ -707,6 +716,18 @@ export interface Chat {
   updatedAt: number
 }
 
+/** A branch's in-app browser, for its panel. */
+export interface BrowserState {
+  branch: string
+  url: string
+  title: string
+  loading: boolean
+  canGoBack: boolean
+  canGoForward: boolean
+  /** Last time the agent drove it. */
+  agentAt?: number
+}
+
 export interface Events {
   terminalData: { id: string; data: string; seq: number }
   terminalExit: { id: string; code: number }
@@ -721,6 +742,7 @@ export interface Events {
   chatTranscript: { chatId: string; entries: ConversationEntry[] }
   /** A device-flow sign-in finished; `error` when it didn't succeed. */
   teableSignedIn: { error?: string }
+  browser: BrowserState
   menu: 'newBranch' | 'settings' | 'showBranches' | 'showIssues' | 'toggleTerminal' | 'newTerminal'
 }
 
