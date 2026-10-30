@@ -1,3 +1,10 @@
+# [0.16.0](https://github.com/caoxing9/TeaBranch/compare/v0.15.0...v0.16.0) (2026-10-30)
+
+
+### Features
+
+* in-app browser the issue agent drives with tb-browser; log toolbar never spills out ([#14](https://github.com/caoxing9/TeaBranch/issues/14)) ([97f3163](https://github.com/caoxing9/TeaBranch/commit/97f3163e52ec0f87c2315f1aeb028cc3dbbacd3b))
+
 # [0.15.0](https://github.com/caoxing9/TeaBranch/compare/v0.14.0...v0.15.0) (2026-10-29)
 
 
