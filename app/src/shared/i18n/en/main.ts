@@ -51,6 +51,8 @@ export const main: Record<string, string> = {
   信息不足: 'Needs more info',
 
   // IPC and app errors
+  '分支的 dev server 没在运行': "The branch's dev server isn't running",
+  '只能打开本机地址：{url}': 'Only addresses on this machine open: {url}',
   没有设置仓库路径: 'No project path set',
   '未登录 Teable': 'Not signed in to Teable',
   '已登录（令牌）': 'Signed in (token)',

@@ -104,6 +104,11 @@ export const systemPrompt = (issue: Issue): string =>
 
 Don't leave long-running processes in the background — dev servers, emulators, watchers: they keep this session busy until they exit, and TeaBranch starts the branch's dev servers itself from the issue header. Start one only when you were asked to get something running to try by hand; then say what you left running and how to reach it.`
 
+/** Appended to the system prompt when the agent has the branch's browser in the app. */
+export const BROWSER_PROMPT = `This branch has its own browser inside TeaBranch, and the user can watch it. Drive it from Bash with \`tb-browser\` (\`tb-browser help\` lists every command): \`tb-browser start\` starts the branch's dev servers through TeaBranch and waits until they serve (use it instead of starting them yourself), \`open /path\` opens a page on them, \`snapshot\` prints the accessibility tree with refs, \`click e12\`, \`fill e12 "text"\`, \`press Enter\`, \`screenshot\` prints a PNG path you can Read, \`console\` shows the page's errors. Take a new snapshot after anything that changes the page.
+
+Use it when the question is how the app behaves in a real browser — focus and blur, overlays, clicks outside, drag, layout, what is saved after reopening — and unit tests or jsdom can't settle it. Say what you did and what you saw, with the screenshot paths. It only opens addresses on this machine.`
+
 /**
  * The check before any fix: is it still there on the latest code, and is it a bug at all? It ends
  * with a TRIAGE line that decides whether the fix starts by itself.

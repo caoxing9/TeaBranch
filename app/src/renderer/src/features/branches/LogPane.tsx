@@ -118,7 +118,7 @@ export function LogPane({ branch }: { branch: string }) {
         label: (
           <span className="flex items-center gap-1">
             {source}
-            <span className="text-[10px] text-muted-foreground tabular-nums">{counts[source]}</span>
+            <span className="hidden text-[10px] text-muted-foreground tabular-nums @md:inline">{counts[source]}</span>
           </span>
         ),
       })),
@@ -126,8 +126,11 @@ export function LogPane({ branch }: { branch: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-border px-3">
-        <Segmented value={tab} options={tabs} onChange={setTab} className="w-auto shrink-0" />
+      {/* Narrow pane: counts drop first, then the search shrinks, then the tabs scroll. Nothing spills out. */}
+      <div className="@container flex h-9 shrink-0 items-center gap-1.5 border-b border-border px-3">
+        <div className="min-w-0 shrink overflow-x-auto [scrollbar-width:none]">
+          <Segmented value={tab} options={tabs} onChange={setTab} className="w-max" />
+        </div>
         {errors > 0 && (
           <button
             type="button"
@@ -141,12 +144,13 @@ export function LogPane({ branch }: { branch: string }) {
               }
             }}
           >
-            {plural(t('{n} 个错误', { n: errors }))}
+            <span className="@md:hidden">{errors}</span>
+            <span className="hidden @md:inline">{plural(t('{n} 个错误', { n: errors }))}</span>
           </button>
         )}
         <div className="min-w-2 flex-1" />
         {/* The search gives way first when the pane is narrow. */}
-        <div className="flex h-[26px] w-56 min-w-24 shrink items-center gap-1.5 rounded-md bg-fill px-2">
+        <div className="flex h-[26px] w-56 min-w-20 shrink items-center gap-1.5 rounded-md bg-fill px-2">
           <Search className="size-3.5 text-fg-3" />
           <input
             value={query}

@@ -114,6 +114,8 @@ export function runClaude(options: {
   baseCommand: string
   appendSystemPrompt?: string
   extraArgs?: string[]
+  /** On top of the model's. */
+  env?: Record<string, string>
   channel: EntryChannel
   onEntry: (entry: ConversationEntry) => void
   /** Tokens now in context, after each model call. */
@@ -178,7 +180,7 @@ export function runClaude(options: {
   const child = spawnShell(
     commandLine(baseCommand, args),
     options.cwd,
-    modelEnvironment(options.model),
+    { ...modelEnvironment(options.model), ...options.env },
     (line, stream) => {
       if (stream === 'stderr') {
         if (line.trim()) options.onEntry(entry('system', options.channel, line.trim(), true))

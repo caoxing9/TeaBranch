@@ -1,5 +1,6 @@
 import { ChevronDown, Code2, FileDiff, GitCommitHorizontal, Globe, Play, RefreshCw, Square, Terminal } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { create } from 'zustand'
 import type { BranchChanges, Issue, IssueRun } from '@shared/types'
 import { isLive } from '@shared/types'
 import { Button, IconButton, type MenuEntry, MenuButton, Segmented, Spinner, StatusDot } from '@/components/kit'
@@ -12,18 +13,32 @@ import { statusOf, useApp } from '@/store/app'
 import { useIssues } from '@/store/issues'
 import { Attachments } from './IssueExtras'
 import { Markdown } from './Markdown'
+import { BrowserTab } from './BrowserTab'
 import { PRTab } from './PRTab'
 import { LogPane } from '../branches/LogPane'
 import { statusColor } from '../branches/BranchSidebar'
 
-type Tab = 'run' | 'changes' | 'pr' | 'details'
+type Tab = 'run' | 'browser' | 'changes' | 'pr' | 'details'
+
+/** A tab asked for from outside the panel — the header's preview asks for the browser. */
+const useRequestedTab = create<{ tab?: Tab; at: number }>(() => ({ at: 0 }))
+
+export const showBrowserTab = (): void => useRequestedTab.setState({ tab: 'browser', at: Date.now() })
 
 /**
  * Everything reviewing an issue needs beside its conversation: run the fix, see what it changed,
  * read the record — without leaving for the branch page.
  */
-export function IssuePanel({ issue, run }: { issue: Issue; run?: IssueRun }) {
+export function IssuePanel({ issue, run, onWide }: { issue: Issue; run?: IssueRun; onWide?: (wide: boolean) => void }) {
   const [tab, setTab] = useState<Tab>(run ? 'run' : 'details')
+  // Asked for just now — also when the request is what opened the panel; an old one is spent.
+  const requested = useRequestedTab()
+  useEffect(() => {
+    if (requested.tab && Date.now() - requested.at < 1000) setTab(requested.tab)
+  }, [requested])
+  // A page needs room: the panel widens while the browser shows.
+  const wide = tab === 'browser' && !!run
+  useEffect(() => onWide?.(wide), [wide, onWide])
   return (
     <div className="flex h-full flex-col">
       <div className="shrink-0 border-b px-3 py-2">
@@ -32,6 +47,7 @@ export function IssuePanel({ issue, run }: { issue: Issue; run?: IssueRun }) {
           onChange={setTab}
           options={[
             { value: 'run', label: t('运行') },
+            ...(run ? [{ value: 'browser' as const, label: t('浏览器') }] : []),
             { value: 'changes', label: t('改动') },
             ...(run?.prURL ? [{ value: 'pr' as const, label: 'PR' }] : []),
             { value: 'details', label: t('详情') },
@@ -45,6 +61,8 @@ export function IssuePanel({ issue, run }: { issue: Issue; run?: IssueRun }) {
           <div className="p-6 text-center text-[12.5px] text-muted-foreground">{t('开始修复后，这里可以运行它的分支、查看改动。')}</div>
         ) : tab === 'run' ? (
           <RunTab branch={run.branch} />
+        ) : tab === 'browser' ? (
+          <BrowserTab key={run.branch} branch={run.branch} />
         ) : tab === 'pr' && run.prURL ? (
           <PRTab issue={issue} run={run} />
         ) : (
@@ -59,7 +77,7 @@ export function IssuePanel({ issue, run }: { issue: Issue; run?: IssueRun }) {
  * The issue branch's dev server, from the header: one press starts it and opens the preview once
  * it is up; while it runs the same button is the preview. The rest is in the menu beside it.
  */
-export function RunControl({ branch: name }: { branch: string }) {
+export function RunControl({ branch: name, onPreview }: { branch: string; onPreview?: () => void }) {
   const app = useApp()
   const branch = app.branches.find((candidate) => candidate.name === name)
   const status = branch ? statusOf(branch) : 'stopped'
@@ -68,7 +86,8 @@ export function RunControl({ branch: name }: { branch: string }) {
   useEffect(() => {
     if (!previewWhenUp || status !== 'running') return
     setPreviewWhenUp(false)
-    void app.run(null, () => api.openPreview(name))
+    if (onPreview) onPreview()
+    else void app.run(null, () => api.openPreview(name))
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- fire on the status change, not on every store update
   }, [previewWhenUp, status, name])
 
@@ -88,7 +107,11 @@ export function RunControl({ branch: name }: { branch: string }) {
   const menu = (): MenuEntry[] => [
     { label: t('在分支页打开'), onSelect: () => app.set({ section: 'branches', selectedBranch: name }) },
     'separator',
-    { label: t('打开预览'), disabled: status !== 'running' || !port, onSelect: () => act(() => api.openPreview(name)) },
+    {
+      label: onPreview ? t('在系统浏览器打开') : t('打开预览'),
+      disabled: status !== 'running' || !port,
+      onSelect: () => act(() => api.openPreview(name)),
+    },
     { label: t('重启'), disabled: !live || app.busy.has(name), onSelect: () => void app.restart(name) },
     { label: live ? t('停止') : t('启动'), disabled: app.busy.has(name), onSelect: () => void app.toggle(branch) },
     'separator',
@@ -99,7 +122,7 @@ export function RunControl({ branch: name }: { branch: string }) {
   return (
     <div className="flex items-center">
       {status === 'running' ? (
-        <Button icon={<Globe className="size-3.5" />} title={t('打开预览')} onClick={() => act(() => api.openPreview(name))}>
+        <Button icon={<Globe className="size-3.5" />} title={t('打开预览')} onClick={onPreview ?? (() => act(() => api.openPreview(name)))}>
           {t('预览')}
           {port ? ` :${port}` : ''}
         </Button>

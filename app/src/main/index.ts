@@ -13,6 +13,8 @@ import { applyLocale, onLocaleChange } from './core/locale'
 import { state } from './core/appState'
 import * as ptyHost from './services/ptyHost'
 import { cleanupAll, startReconcileLoop } from './services/processManager'
+import { setBrowserWindow } from './services/browser'
+import { startBrowserBridge } from './services/browserBridge'
 
 let window: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -39,6 +41,7 @@ function createWindow(): void {
     },
   })
   setEventTarget(window)
+  setBrowserWindow(window)
 
   window.once('ready-to-show', () => window?.show())
   // Development only: the renderer's console and load failures, in the terminal that started us.
@@ -167,6 +170,7 @@ function buildTray(): void {
 void app.whenReady().then(async () => {
   await resolveUserPath()
   registerIpc()
+  startBrowserBridge()
   // A worktree an issue agent works in belongs in the "开发中" lane.
   setOnBranchCreated((branch) => {
     setCategory(branch, 'developing')

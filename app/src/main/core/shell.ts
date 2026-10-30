@@ -35,6 +35,9 @@ export async function resolveUserPath(): Promise<void> {
   }
 }
 
+/** The login shell's PATH, for a child that puts its own directory in front. */
+export const userPATH = (): string => userPath
+
 export function childEnvironment(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   return { ...process.env, PATH: userPath, ...extra }
 }
