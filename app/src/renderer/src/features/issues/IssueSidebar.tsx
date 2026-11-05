@@ -12,6 +12,7 @@ import { PeopleStack, PersonAvatar } from '@/components/person'
 import { cx } from '@/lib/format'
 import { useChats } from '@/store/chats'
 import { fixable, useIssues, visibleIssues } from '@/store/issues'
+import { useAutopilot } from '@/store/autopilot'
 import { IssueFilterButton } from './IssueFilter'
 import { CIDot } from './CIStatus'
 import { QueueBar } from './QueuePanel'
@@ -251,6 +252,10 @@ export function IssueSidebar() {
               {
                 label: t('Issue 设置…'),
                 onSelect: () => useIssues.setState({ showSettings: true }),
+              },
+              {
+                label: t('托管…'),
+                onSelect: () => void useAutopilot.getState().show(),
               },
               ...(state.user
                 ? [

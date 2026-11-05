@@ -5,6 +5,9 @@
  */
 export const attachmentMarker = (n: number): string => `[📎 ${n}]`
 
+/** Where files pasted into a message go before the thing they belong to exists — a probe not started yet. */
+export const DRAFT_UPLOADS = 'draft'
+
 /** The message as the agent reads it: markers in the text, the paths they stand for after it. */
 export function agentMessage(message: string, attachments: string[]): string {
   if (!attachments.length) return message

@@ -343,7 +343,7 @@ function Attachment({ path, paths }: { path: string; paths: string[] }) {
 }
 
 /** The text with each marker replaced by its attachment; any the text doesn't mark go at the end. */
-function WithAttachments({ text, attachments }: { text: string; attachments: string[] }) {
+export function WithAttachments({ text, attachments }: { text: string; attachments: string[] }) {
   const segments = markerSegments(text, attachments.length)
   const unmarked = attachments.map((_, index) => index + 1).filter((n) => !segments.includes(n))
   return (

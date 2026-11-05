@@ -49,6 +49,15 @@ const Attachment = Node.create({
   },
 })
 
+/** A pasted or picked file as base64, the form `saveUpload` takes over IPC. */
+export const readAsBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '')
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+
 const composerStorage = (editor: Editor): { placeholder: string } =>
   (editor.storage as unknown as Record<string, { placeholder: string }>).composerKeys
 

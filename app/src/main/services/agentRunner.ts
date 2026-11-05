@@ -37,6 +37,8 @@ export interface Handle {
   steer?(message: string): boolean
   /** Stop one of the agent's background tasks; the process carries on. */
   stopTask?(taskId: string): void
+  /** Settles once the process is gone — before resuming its session in another one. */
+  exited: Promise<unknown>
 }
 
 export type Session = { kind: 'new' | 'resume'; id: string }
@@ -223,6 +225,7 @@ export function runClaude(options: {
   void child.exited.then((exit) => options.onExit(settlement(exit)))
   return {
     pid: child.pid,
+    exited: child.exited,
     cancel: () => {
       cancelled = true
       open = false
@@ -448,6 +451,7 @@ export function runCodexReview(options: {
   })
   return {
     pid: child.pid,
+    exited: child.exited,
     cancel: () => {
       cancelled = true
       killGroup(child.pid, 1000)

@@ -9,74 +9,80 @@
  * app's own shorthands below (`fg`, `fill`, `brand`, …) are aliases onto the same variables, so
  * there is one palette, not two.
  */
+/*
+ * Warm neutrals and a terracotta accent, after claude.ai: cream surfaces in the light theme, warm
+ * charcoal in the dark one, the same orange for everything that acts.
+ */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-  --brand: oklch(0.6 0.19 255);
-  --log: oklch(0.985 0 0);
-  --link: oklch(0.5 0.19 255);
+  --radius: 0.75rem;
+  --background: #faf9f5;
+  --foreground: #141413;
+  --card: #ffffff;
+  --card-foreground: #141413;
+  --popover: #ffffff;
+  --popover-foreground: #141413;
+  --primary: #c96442;
+  --primary-foreground: #ffffff;
+  --secondary: #f0eee6;
+  --secondary-foreground: #141413;
+  --muted: #f0eee6;
+  --muted-foreground: #6f6e68;
+  --accent: #efede4;
+  --accent-foreground: #141413;
+  --destructive: oklch(0.55 0.2 27);
+  --border: #e6e3d9;
+  --input: #e0ddd2;
+  --ring: #b9b5a7;
+  --sidebar: #f4f3ee;
+  --sidebar-foreground: #141413;
+  --sidebar-primary: #c96442;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e9e7dd;
+  --sidebar-accent-foreground: #141413;
+  --sidebar-border: #e6e3d9;
+  --sidebar-ring: #b9b5a7;
+  --brand: #d97757;
+  --log: #f5f4ee;
+  --link: oklch(0.5 0.15 250);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-  --brand: oklch(0.68 0.16 255);
-  --log: oklch(0.17 0 0);
-  --link: oklch(0.78 0.12 230);
+  --background: #262624;
+  --foreground: #edebe3;
+  --card: #30302e;
+  --card-foreground: #edebe3;
+  --popover: #30302e;
+  --popover-foreground: #edebe3;
+  --primary: #d97757;
+  --primary-foreground: #ffffff;
+  --secondary: #393937;
+  --secondary-foreground: #edebe3;
+  --muted: #393937;
+  --muted-foreground: #a3a29b;
+  --accent: #3b3b38;
+  --accent-foreground: #edebe3;
+  --destructive: oklch(0.7 0.19 22);
+  --border: rgb(255 255 255 / 10%);
+  --input: rgb(255 255 255 / 14%);
+  --ring: #6e6d66;
+  --sidebar: #1f1e1d;
+  --sidebar-foreground: #edebe3;
+  --sidebar-primary: #d97757;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #34332f;
+  --sidebar-accent-foreground: #edebe3;
+  --sidebar-border: rgb(255 255 255 / 8%);
+  --sidebar-ring: #6e6d66;
+  --brand: #d97757;
+  --log: #1f1e1d;
+  --link: oklch(0.78 0.1 240);
 }
 
 @theme inline {
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  /* Greetings and page titles: a text serif, the way claude.ai sets its headings. */
+  --font-display: 'Tiempos Text', Charter, Georgia, 'Songti SC', STSong, serif;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -147,6 +153,8 @@ html,
 body,
 #root {
   height: 100%;
+  /* A window, not a page: each pane scrolls itself, and a popup past the edge never shifts the layout. */
+  overflow: hidden;
 }
 
 body {

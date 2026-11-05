@@ -4,8 +4,11 @@ import type { AppSettings, Branch, BranchUsage, DbMode, DevCategory, NgrokTunnel
 import { isLive } from '@shared/types'
 import { api, messageOf, on } from '@/lib/api'
 
-export type Section = 'branches' | 'issues' | 'queue'
+export type Section = 'branches' | 'issues' | 'queue' | 'autopilot'
 export type Theme = 'system' | 'light' | 'dark'
+
+/** Set before the reload a language change needs, so the settings dialog comes back in the new language. */
+export const REOPEN_SETTINGS_KEY = 'teabranch.reopenSettings'
 export type SortKey = 'name' | 'status' | 'category'
 
 const statusRank = { running: 0, building: 1, error: 2, stopped: 3 }
@@ -75,7 +78,8 @@ let listening = false
 export const useApp = create<AppStore>((set, get) => ({
   ready: false,
   settings: null,
-  section: stored<Section>('teabranch.section', 'issues'),
+  // The queue was a section of its own before it became autopilot's workers.
+  section: ((section) => (section === 'queue' ? 'autopilot' : section))(stored<Section>('teabranch.section', 'issues')),
   branches: [],
   categories: {},
   selectedBranch: null,
@@ -120,7 +124,7 @@ export const useApp = create<AppStore>((set, get) => ({
   async init() {
     applyTheme(get().theme)
     const [settings, ngrok] = await Promise.all([api.getSettings(), api.ngrok()])
-    set({ settings, ngrok, ready: true })
+    set({ settings, ngrok, ready: true, showSettings: get().showSettings || reopenSettings() })
     // StrictMode runs the mounting effect twice in dev; a second set of listeners doubles every event.
     if (listening) return
     listening = true
@@ -246,6 +250,17 @@ export const useApp = create<AppStore>((set, get) => ({
     }
   },
 }))
+
+/** Whether the window reloaded for a language change made in the settings dialog. */
+function reopenSettings(): boolean {
+  try {
+    const flagged = sessionStorage.getItem(REOPEN_SETTINGS_KEY) === '1'
+    sessionStorage.removeItem(REOPEN_SETTINGS_KEY)
+    return flagged
+  } catch {
+    return false
+  }
+}
 
 const systemDark = window.matchMedia('(prefers-color-scheme: dark)')
 

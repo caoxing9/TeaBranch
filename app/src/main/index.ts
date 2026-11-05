@@ -15,6 +15,7 @@ import * as ptyHost from './services/ptyHost'
 import { cleanupAll, startReconcileLoop } from './services/processManager'
 import { setBrowserWindow } from './services/browser'
 import { startBrowserBridge } from './services/browserBridge'
+import * as autopilot from './services/autopilot'
 
 let window: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -43,7 +44,10 @@ function createWindow(): void {
   setEventTarget(window)
   setBrowserWindow(window)
 
-  window.once('ready-to-show', () => window?.show())
+  // Started at login for autopilot: it works from the tray; the window waits until you open it.
+  window.once('ready-to-show', () => {
+    if (!app.getLoginItemSettings().wasOpenedAtLogin) window?.show()
+  })
   // Development only: the renderer's console and load failures, in the terminal that started us.
   if (!app.isPackaged) {
     window.webContents.on('console-message', (event) => log.info(`renderer ${event.level}: ${event.message}`))
@@ -122,6 +126,7 @@ function buildMenu(): void {
         submenu: [
           { label: t('分支'), accelerator: 'Cmd+1', click: () => sendMenu('showBranches') },
           { label: 'Issues', accelerator: 'Cmd+2', click: () => sendMenu('showIssues') },
+          { label: t('托管…'), accelerator: 'Cmd+3', click: () => sendMenu('autopilot') },
           { type: 'separator' },
           { label: t('终端'), accelerator: 'Cmd+J', click: () => sendMenu('toggleTerminal') },
           { label: t('新建终端'), accelerator: 'Cmd+`', click: () => sendMenu('newTerminal') },
@@ -160,6 +165,7 @@ function buildTray(): void {
     tray?.popUpContextMenu(
       Menu.buildFromTemplate([
         { label: t('显示 TeaBranch'), click: showWindow },
+        { label: t('托管…'), click: () => sendMenu('autopilot') },
         { type: 'separator' },
         { label: t('退出 TeaBranch'), click: () => app.quit() },
       ]),
@@ -184,6 +190,7 @@ void app.whenReady().then(async () => {
   buildTray()
   createWindow()
   startReconcileLoop()
+  void autopilot.apply()
   log.info('ready')
 })
 
@@ -198,6 +205,7 @@ app.on('before-quit', (event) => {
   if (quitting) return
   quitting = true
   event.preventDefault()
+  autopilot.stop()
   issueAgent.flush()
   chatAgent.flush()
   issueAgent.killAll()

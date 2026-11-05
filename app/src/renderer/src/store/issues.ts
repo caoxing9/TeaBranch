@@ -146,7 +146,18 @@ export const useIssues = create<IssuesStore>((set, get) => ({
     listening = true
     on('issueRunsChanged', async () => {
       const [runs, queue] = await Promise.all([api.issueRuns(), api.queueState()])
-      set({ runs, queue })
+      set({ runs, queue, issues: withProbes(get().issues, runs) })
+    })
+    // A probe was filed: follow it to its record, selection and conversation alike.
+    on('issueRekeyed', ({ from, to }) => {
+      const { selection, transcripts } = get()
+      const { [from]: moved, ...rest } = transcripts
+      set({
+        selection: selection.has(from) ? new Set([...selection].map((id) => (id === from ? to : id))) : selection,
+        transcripts: moved ? { ...rest, [to]: moved } : rest,
+      })
+      // The probe left the list; its record is in the table now — read it in.
+      void get().reload()
     })
     on('transcript', ({ recordId, entries }) => {
       const current = get().transcripts[recordId]
@@ -215,7 +226,10 @@ export const useIssues = create<IssuesStore>((set, get) => ({
       const { fields, records } = await api.teableLoad()
       const config = get().config ?? (await api.teableConfig())
       const map = mapping(config, fields)
-      const issues = records.map((record) => toIssue(record, map))
+      const issues = withProbes(
+        records.map((record) => toIssue(record, map)),
+        get().runs,
+      )
       set({ fields, records, issues, error: null })
       // A token that can't read its own profile still says who it is: with "only mine" on, Teable
       // returned only records assigned to `Me`, so the one person on every assignee cell is you.
@@ -243,7 +257,13 @@ export const useIssues = create<IssuesStore>((set, get) => ({
     const config = await api.updateTeableConfig(patch)
     if (patch.baseURL !== undefined || patch.oauthClientId !== undefined) set({ oauthReady: await api.teableOAuthReady() })
     const map = mapping(config, get().fields)
-    set({ config, issues: get().records.map((record) => toIssue(record, map)) })
+    set({
+      config,
+      issues: withProbes(
+        get().records.map((record) => toIssue(record, map)),
+        get().runs,
+      ),
+    })
     const reloadKeys: (keyof TeableConfig)[] = ['baseURL', 'baseId', 'tableId', 'viewId', 'onlyMine', 'assigneeField']
     if (before && reloadKeys.some((key) => before[key] !== config[key]) && get().user) await get().reload()
   },
@@ -258,6 +278,8 @@ export const useIssues = create<IssuesStore>((set, get) => ({
   },
 
   async loadComments(recordId) {
+    // A probe has no record in Teable yet, so no comments either.
+    if (isProbe(recordId)) return
     try {
       const comments = await api.issueComments(recordId)
       set({ comments: { ...get().comments, [recordId]: comments } })
@@ -365,4 +387,21 @@ function inferMe(issues: Issue[], assigneeField: string | undefined): Person | u
     if (common.size === 0) return undefined
   }
   return common?.size === 1 ? [...common.values()][0] : undefined
+}
+
+const isProbe = (id: string): boolean => id.startsWith('probe_')
+
+/**
+ * The table's issues, plus the probes — work started before anyone filed it, which the table doesn't
+ * have yet. A probe that has been filed is in the table under its record, and drops out here.
+ */
+function withProbes(issues: Issue[], runs: Record<string, IssueRun>): Issue[] {
+  const probes = Object.values(runs)
+    .filter((run) => run.probe)
+    .map((run): Issue => {
+      const title = run.probe?.title ?? run.title
+      const body = run.probe?.body ?? ''
+      return { id: run.recordId, key: run.issueKey, title, body, record: { id: run.recordId, fields: {} } }
+    })
+  return [...issues.filter((issue) => !isProbe(issue.id)), ...probes]
 }

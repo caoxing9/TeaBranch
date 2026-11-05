@@ -254,11 +254,14 @@ export function Dialog({
   onClose,
   children,
   width = 520,
+  toolbar,
 }: {
   title: ReactNode
   onClose: () => void
   children: ReactNode
   width?: number
+  /** A strip under the title that stays while the body scrolls: tabs. */
+  toolbar?: ReactNode
 }) {
   return (
     <UIDialog open onOpenChange={(open) => !open && onClose()}>
@@ -266,6 +269,7 @@ export function Dialog({
         <DialogHeader className="border-b px-5 py-3.5">
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
+        {toolbar && <div className="border-b px-5 py-2.5">{toolbar}</div>}
         <div className="overflow-y-auto px-5 py-4">{children}</div>
       </DialogContent>
     </UIDialog>
@@ -278,6 +282,27 @@ export function Field({ label, hint, children }: { label: ReactNode; hint?: Reac
       <div className="mb-1.5 text-[12.5px] font-medium">{label}</div>
       {children}
       {hint && <div className="mt-1.5 text-[11.5px] text-muted-foreground">{hint}</div>}
+    </div>
+  )
+}
+
+/** A titled group of settings: a section of a settings dialog. */
+export function Group({ title, footer, children }: { title: ReactNode; footer?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="mb-5">
+      <h3 className="mb-2 text-[11px] font-semibold tracking-wide text-fg-3 uppercase">{title}</h3>
+      <div className="space-y-2.5 rounded-lg bg-fill p-3">{children}</div>
+      {footer && <p className="mt-1.5 px-1 text-[11px] text-fg-3">{footer}</p>}
+    </section>
+  )
+}
+
+/** One setting in a group: its name on the left, the control on the right. */
+export function Line({ label, children }: { label: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-36 shrink-0 text-[12px] text-fg-2">{label}</span>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   )
 }
@@ -296,19 +321,22 @@ export function EmptyState({ icon, title, detail }: { icon: ReactNode; title: Re
   )
 }
 
-/** Full-width tabs under the title bar — the section switcher. */
+/** Full-width tabs under the title bar — the section switcher — with room for a control after them. */
 export function TabBar<T extends string>({
   value,
   options,
   onChange,
+  trailing,
 }: {
   value: T
   options: { value: T; label: ReactNode }[]
   onChange: (value: T) => void
+  trailing?: ReactNode
 }) {
   return (
-    <div className="px-2">
-      <Segmented value={value} options={options} onChange={onChange} />
+    <div className="flex items-center gap-1 px-2">
+      <Segmented value={value} options={options} onChange={onChange} className="min-w-0 flex-1" />
+      {trailing}
     </div>
   )
 }

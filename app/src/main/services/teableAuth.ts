@@ -37,7 +37,7 @@ const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code'
  * still has to be approved in the browser by the person signing in. Never put a client secret here.
  */
 const builtinClientIds: Record<string, string> = {
-  'https://app.teable.ai': '',
+  'https://app.teable.ai': 'cltv293w7solxt9sxxd',
 }
 
 /** The configured client id, else the built-in one for this host. */

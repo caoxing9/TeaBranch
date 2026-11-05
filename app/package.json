@@ -30,6 +30,7 @@
   },
   "devDependencies": {
     "@base-ui/react": "1.9.0",
+    "@larksuiteoapi/node-sdk": "1.76.0",
     "@tailwindcss/vite": "4.3.3",
     "@tanstack/react-virtual": "3.14.21",
     "@types/node": "26.6.5",

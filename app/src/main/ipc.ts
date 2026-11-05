@@ -1,8 +1,9 @@
 import { clipboard, dialog, ipcMain, shell } from 'electron'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { DRAFT_UPLOADS } from '@shared/attachments'
 import type { Api, Branch, DevCategory, TeableConfig, TeableUser } from '@shared/types'
-import { IPC_INVOKE, isLive } from '@shared/types'
+import { APP_THREAD, IPC_INVOKE, isLive } from '@shared/types'
 import { getLocale, t } from '@shared/i18n'
 import { state } from './core/appState'
 import { applyLocale } from './core/locale'
@@ -11,14 +12,26 @@ import { emit, emitSoon } from './core/events'
 import { TeaBranchError } from './core/log'
 import { git as gitCommand, run } from './core/shell'
 import { logs } from './core/logStore'
-import { writeSecret } from './core/secrets'
-import { loadCategories, loadTeableConfig, saveCategories, saveTeableConfig } from './core/settingsStore'
+import { readSecret, writeSecret } from './core/secrets'
+import {
+  loadAutopilotConfig,
+  loadCategories,
+  loadTeableConfig,
+  saveAutopilotConfig,
+  saveCategories,
+  saveTeableConfig,
+} from './core/settingsStore'
 import { magpieModels } from './services/agentRunner'
 import { chatAgent } from './services/chatAgent'
 import { claudeCatalog } from './services/claudeCatalog'
 import * as git from './services/git'
+import * as autopilot from './services/autopilot'
+import * as autopilotHub from './services/autopilotHub'
+import * as feishu from './services/feishu'
 import { issueAgent } from './services/issueAgent'
-import { readUpload, saveUpload } from './services/issueContext'
+import { resetRouter } from './services/router'
+import * as issueSource from './services/issueSource'
+import { readUpload, saveUpload, uploadsDir } from './services/issueContext'
 import { defaultPrompts } from './services/prompts'
 import * as ngrok from './services/ngrok'
 import * as processManager from './services/processManager'
@@ -29,6 +42,7 @@ import * as teable from './services/teable'
 import * as teableAuth from './services/teableAuth'
 import * as terminal from './services/terminal'
 import * as worktrees from './services/worktree'
+import { removeWorktree } from './services/worktreeCleanup'
 import * as browser from './services/browser'
 
 let categories = loadCategories()
@@ -111,19 +125,7 @@ const handlers: Api = {
       await processManager.stop(branch)
       await processManager.start(branch)
     }),
-  deleteBranch: async (branch) => {
-    const repo = requireRepo()
-    // Held across the whole delete, so `git worktree remove --force` never races a Start that is
-    // still writing into the directory.
-    await processManager.withBranchLock(branch, async () => {
-      await processManager.stop(branch)
-      await worktrees.remove(branch, repo)
-      state.removeEnvironment(branch)
-      logs.remove(branch)
-    })
-    browser.close(branch)
-    emitSoon('branchesChanged')
-  },
+  deleteBranch: async (branch) => removeWorktree(branch, requireRepo()),
   createWorktree: async (branch, dbMode) => {
     const repo = requireRepo()
     await processManager.withBranchLock(branch, () =>
@@ -254,24 +256,7 @@ const handlers: Api = {
     return teableUser
   },
   teableBrowse: async (level, parentId) => teable.browse(loadTeableConfig(), await teableToken(), level, parentId),
-  teableLoad: async () => {
-    const config = loadTeableConfig()
-    if (!config.tableId) return { fields: [], records: [] }
-    const token = await teableToken()
-    const fields = await teable.fields(config, token)
-    // Filtered server-side: someone else's issues never reach this machine, so auto mode can't
-    // pick one up either.
-    let filter: unknown
-    if (config.onlyMine) {
-      const people = fields.filter(teable.isUserField)
-      const assignee = config.assigneeField ? people.find((field) => field.name === config.assigneeField) : guessAssignee(people)
-      if (!assignee) throw new TeaBranchError(t('“只看我的”需要一个人员字段 — 在 Issue 设置里选“负责人”字段'))
-      filter = teable.mineFilter(assignee)
-    }
-    const peopleFields = fields.filter(teable.isUserField).map((field) => field.name)
-    const attachmentFields = fields.filter(teable.isAttachmentField).map((field) => field.name)
-    return { fields, records: await teable.records(config, token, filter, peopleFields, attachmentFields) }
-  },
+  teableLoad: async () => issueSource.loadTable(),
   openTokenPage: async () => shell.openExternal(teable.tokenPageURL(loadTeableConfig().baseURL)),
   openOAuthAppPage: async () => shell.openExternal(`${teable.apiBase(loadTeableConfig())}/setting/oauth-app`),
   teableDeviceStart: async () => {
@@ -365,21 +350,77 @@ const handlers: Api = {
   openExternal: async (url) => {
     if (/^https?:\/\//.test(url)) await shell.openExternal(url)
   },
-}
-
-/** The person field that most sounds like an assignee. */
-function guessAssignee<T extends { name: string; type: string }>(people: T[]): T | undefined {
-  // Field names as people write them, matched against the table — not UI text.
-  const names = ['负责人', '处理人', '指派', '经办人', '开发', 'assignee', 'owner', 'developer', 'dev'] // i18n-ignore
-  for (const name of names) {
-    const hit = people.find((field) => field.name.toLowerCase() === name)
-    if (hit) return hit
-  }
-  for (const name of names) {
-    const hit = people.find((field) => field.name.toLowerCase().includes(name))
-    if (hit) return hit
-  }
-  return people.find((field) => field.type === 'user')
+  autopilotConfig: async () => loadAutopilotConfig(),
+  updateAutopilotConfig: async (patch) => {
+    const before = loadAutopilotConfig()
+    const next = { ...before, ...patch }
+    saveAutopilotConfig(next)
+    const keys = ['feishuAppId', 'feishuDomain', 'feishuIdentity', 'pollSeconds'] as const
+    const reconnect = keys.some((key) => before[key] !== next[key])
+    await autopilot.apply()
+    if (reconnect && before.enabled && next.enabled) await autopilot.reconnectFeishu()
+    return next
+  },
+  autopilotStatus: async () => autopilot.status(),
+  hasFeishuSecret: async () => !!readSecret('feishu.secret'),
+  setFeishuSecret: async (secret) => {
+    writeSecret('feishu.secret', secret.trim() || undefined)
+    await autopilot.reconnectFeishu()
+  },
+  authorizeFeishuUser: async () => {
+    const { name } = await feishu.authorizeUser(loadAutopilotConfig(), (url) => void shell.openExternal(url))
+    await autopilot.reconnectFeishu()
+    return name
+  },
+  signOutFeishuUser: async () => {
+    feishu.signOutUser()
+    await autopilot.reconnectFeishu()
+  },
+  feishuUserInfo: async () => ({ name: feishu.authorizedUser()?.name, redirectURL: feishu.REDIRECT_URL, scopes: feishu.USER_SCOPES }),
+  autopilotActivity: async () => autopilotHub.activityList().slice(-300),
+  resetRouter: async () => {
+    // Started here, so its status — the handover, then the fresh session — reaches the window.
+    await autopilot.ensureRouter()
+    await resetRouter()
+  },
+  routerMemory: async () => autopilotHub.routerMemory(),
+  setRouterMemory: async (text) => autopilotHub.setRouterMemory(text),
+  probe: async (text, attachments = []) => {
+    requireRepo()
+    // It reports back into the app's chat, like anything else started there.
+    const issue = issueAgent.probe(text, { images: attachments, threads: [APP_THREAD] })
+    autopilotHub.link(APP_THREAD, issue.id)
+    // The probe copied them into its own folder; the drafts are done with.
+    const drafts = uploadsDir(DRAFT_UPLOADS)
+    for (const path of attachments) if (path.startsWith(drafts)) rmSync(path, { force: true })
+    autopilotHub.record({
+      source: 'me',
+      thread: APP_THREAD,
+      text,
+      outcome: 'action',
+      detail: t('开始探查 {key}', { key: issue.key }),
+      recordId: issue.id,
+    })
+    return { id: issue.id, key: issue.key }
+  },
+  askRouter: async (text, attachments = []) => {
+    requireRepo()
+    // Drafts move under the app's own folder and stay: the chat shows them, a task copies them.
+    const drafts = uploadsDir(DRAFT_UPLOADS)
+    const dir = uploadsDir('app')
+    mkdirSync(dir, { recursive: true })
+    const files = attachments.map((path) => {
+      if (!path.startsWith(drafts) || !existsSync(path)) return path
+      const target = join(dir, basename(path))
+      renameSync(path, target)
+      return target
+    })
+    await autopilot.ask(text, files)
+  },
+  routerChat: async () => autopilotHub.appThreadActivity(),
+  cleanupIssue: async (recordId) => {
+    await issueAgent.cleanup(recordId, true)
+  },
 }
 
 export function registerIpc(): void {
