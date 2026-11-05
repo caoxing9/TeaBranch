@@ -39,13 +39,14 @@ jobs:
         run: nsh check
 
       # The tests open the whole app, which starts at the onboarding screen until a repository is
-      # set; this checkout stands in for one. The e2e tests under e2e/ expect a developer's machine
-      # (its branches, WebKit) and are run there by hand.
+      # set; this checkout stands in for one. The language is pinned: the tests read the Chinese
+      # strings, and the runner's macOS is in English. The e2e tests under e2e/ expect a
+      # developer's machine (its branches, WebKit) and are run there by hand.
       - name: Seed settings
         run: |
           dir="$HOME/Library/Application Support/com.teabranch.dev"
           mkdir -p "$dir"
-          printf '{"projectPath":"%s","basePort":3001,"defaultStartCommand":"npm run dev","agentCommand":"claude"}\n' "$GITHUB_WORKSPACE" > "$dir/settings.json"
+          printf '{"projectPath":"%s","basePort":3001,"defaultStartCommand":"npm run dev","agentCommand":"claude","language":"zh"}\n' "$GITHUB_WORKSPACE" > "$dir/settings.json"
 
       # `nsh test <dir>` wants the app's directory, which would take the e2e tests along: the unit
       # tests are named one by one.
