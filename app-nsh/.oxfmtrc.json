@@ -1,0 +1,7 @@
+{
+  "$schema": "../app/node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 160,
+  "singleQuote": true,
+  "semi": false,
+  "ignorePatterns": [".nsh", "native/target", "assets"]
+}

@@ -1,0 +1,152 @@
+{
+  "name": "TeaBranch",
+  "id": "com.teabranch.dev",
+  "version": "0.16.0",
+  "build": 1,
+  "icon": "assets/icon.png",
+  "rust": "native",
+  "appearance": "system",
+  "capabilities": {
+    "network": {
+      "hosts": [
+        "*"
+      ]
+    },
+    "webview": {
+      "hosts": [
+        "*"
+      ],
+      "input": true
+    },
+    "clipboard": true,
+    "openUrl": true,
+    "fs": {
+      "read": [
+        "${homeDir}"
+      ],
+      "write": [
+        "${homeDir}"
+      ]
+    }
+  },
+  "theme": {
+    "cssVars": {
+      "theme": {
+        "font-sans": "system-ui, PingFang SC, Helvetica Neue, sans-serif",
+        "font-mono": "Menlo, monospace",
+        "radius": "0.75rem"
+      },
+      "light": {
+        "background": "#faf9f5",
+        "foreground": "#141413",
+        "card": "#ffffff",
+        "card-foreground": "#141413",
+        "popover": "#ffffff",
+        "popover-foreground": "#141413",
+        "primary": "#c96442",
+        "primary-foreground": "#ffffff",
+        "secondary": "#f0eee6",
+        "secondary-foreground": "#141413",
+        "muted": "#f0eee6",
+        "muted-foreground": "#6f6e68",
+        "accent": "#efede4",
+        "accent-foreground": "#141413",
+        "destructive": "#c23b2b",
+        "border": "#e6e3d9",
+        "input": "#e0ddd2",
+        "ring": "#b9b5a7",
+        "sidebar": "#f4f3ee",
+        "sidebar-foreground": "#141413",
+        "sidebar-primary": "#c96442",
+        "sidebar-primary-foreground": "#ffffff",
+        "sidebar-accent": "#e9e7dd",
+        "sidebar-accent-foreground": "#141413",
+        "sidebar-border": "#e6e3d9",
+        "sidebar-ring": "#b9b5a7",
+        "bg": "#faf9f5",
+        "panel": "#ffffff",
+        "content": "#141413",
+        "fg": "#141413",
+        "fg-2": "#6f6e68",
+        "fg-3": "rgba(111, 110, 104, 0.7)",
+        "fill": "rgba(20, 20, 19, 0.04)",
+        "fill-hover": "rgba(20, 20, 19, 0.07)",
+        "fill-active": "rgba(20, 20, 19, 0.11)",
+        "selection": "#efede4",
+        "border-strong": "rgba(20, 20, 19, 0.18)",
+        "brand": "#d97757",
+        "brand-soft": "rgba(217, 119, 87, 0.14)",
+        "ok": "#2fb380",
+        "warn": "#e0a83a",
+        "err": "#c23b2b",
+        "err-soft": "rgba(194, 59, 43, 0.12)",
+        "agent": "#9b6ee8",
+        "agent-soft": "rgba(155, 110, 232, 0.08)",
+        "log": "#f5f4ee",
+        "log-fg": "rgba(20, 20, 19, 0.88)",
+        "log-dim": "#6f6e68",
+        "log-backend": "#e0954b",
+        "log-frontend": "#5b8fdc",
+        "link": "#3b6fcf"
+      },
+      "dark": {
+        "background": "#262624",
+        "foreground": "#edebe3",
+        "card": "#30302e",
+        "card-foreground": "#edebe3",
+        "popover": "#30302e",
+        "popover-foreground": "#edebe3",
+        "primary": "#d97757",
+        "primary-foreground": "#ffffff",
+        "secondary": "#393937",
+        "secondary-foreground": "#edebe3",
+        "muted": "#393937",
+        "muted-foreground": "#a3a29b",
+        "accent": "#3b3b38",
+        "accent-foreground": "#edebe3",
+        "destructive": "#e5604c",
+        "border": "rgba(255, 255, 255, 0.10)",
+        "input": "rgba(255, 255, 255, 0.14)",
+        "ring": "#6e6d66",
+        "sidebar": "#1f1e1d",
+        "sidebar-foreground": "#edebe3",
+        "sidebar-primary": "#d97757",
+        "sidebar-primary-foreground": "#ffffff",
+        "sidebar-accent": "#34332f",
+        "sidebar-accent-foreground": "#edebe3",
+        "sidebar-border": "rgba(255, 255, 255, 0.08)",
+        "sidebar-ring": "#6e6d66",
+        "bg": "#262624",
+        "panel": "#30302e",
+        "content": "#edebe3",
+        "fg": "#edebe3",
+        "fg-2": "#a3a29b",
+        "fg-3": "rgba(163, 162, 155, 0.7)",
+        "fill": "rgba(237, 235, 227, 0.04)",
+        "fill-hover": "rgba(237, 235, 227, 0.07)",
+        "fill-active": "rgba(237, 235, 227, 0.11)",
+        "selection": "#3b3b38",
+        "border-strong": "rgba(237, 235, 227, 0.18)",
+        "brand": "#d97757",
+        "brand-soft": "rgba(217, 119, 87, 0.14)",
+        "ok": "#2fb380",
+        "warn": "#e0a83a",
+        "err": "#e5604c",
+        "err-soft": "rgba(229, 96, 76, 0.12)",
+        "agent": "#9b6ee8",
+        "agent-soft": "rgba(155, 110, 232, 0.08)",
+        "log": "#1f1e1d",
+        "log-fg": "rgba(237, 235, 227, 0.88)",
+        "log-dim": "#a3a29b",
+        "log-backend": "#e0954b",
+        "log-frontend": "#5b8fdc",
+        "link": "#8fb3f0"
+      }
+    }
+  },
+  "tailwind": {
+    "fontFamily": {
+      "display": "Tiempos Text, Charter, Georgia, Songti SC, STSong, serif"
+    }
+  }
+}

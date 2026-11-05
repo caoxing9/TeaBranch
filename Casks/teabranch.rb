@@ -37,9 +37,9 @@ cask "teabranch" do
     strategy :github_latest
   end
 
-  # Electron's own floor; there is no Intel slice. A bare symbol already means ">=" here — `macos=`
-  # parses with that comparator — and the string spelling is deprecated.
-  depends_on macos: :ventura
+  # nsh's floor (AppKit host, macOS 14); there is no Intel slice. A bare symbol already means ">="
+  # here — `macos=` parses with that comparator — and the string spelling is deprecated.
+  depends_on macos: :sonoma
   depends_on arch: :arm64
 
   app "TeaBranch.app"

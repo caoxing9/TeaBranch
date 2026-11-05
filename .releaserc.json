@@ -17,6 +17,7 @@
         "assets": [
           "package.json",
           "app/package.json",
+          "app-nsh/nsh.json",
           "swift/Resources/Info.plist",
           "CHANGELOG.md"
         ],

@@ -8,55 +8,54 @@ permissions:
   contents: read
 
 jobs:
-  # The Electron app: lint, format, types, tests and a production build. macOS, because node-pty
-  # only ships prebuilt binaries for macOS and Windows and the app is macOS-only anyway.
+  # The nsh app: its Rust crate and TSX types, the headless tests, and a packaged .app the way the
+  # release builds it. macOS, because the app is macOS-only and its host is AppKit.
   app:
     runs-on: macos-latest
     defaults:
       run:
-        working-directory: app
+        working-directory: app-nsh
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      # nsh 0.4 needs Rust 1.93 or later for the app's own crate and the runner it builds around it.
+      - name: Rust toolchain
+        run: rustup update stable && rustup default stable
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
         with:
-          version: 10.32.0
+          workspaces: app-nsh/native
+          cache-directories: app-nsh/target
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-
-      - name: Install
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Format
-        run: pnpm format:check
+      # Pinned to the version the crate depends on (native/Cargo.toml): the two move together.
+      - name: Install nsh
+        run: |
+          curl -fsSL https://nsh.dev/install.sh | NSH_VERSION=v0.4.0 sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Typecheck
-        run: pnpm typecheck
+        run: nsh check
 
-      - name: Test
-        run: pnpm test
+      # The tests open the whole app, which starts at the onboarding screen until a repository is
+      # set; this checkout stands in for one. The e2e tests under e2e/ expect a developer's machine
+      # (its branches, WebKit) and are run there by hand.
+      - name: Seed settings
+        run: |
+          dir="$HOME/Library/Application Support/com.teabranch.dev"
+          mkdir -p "$dir"
+          printf '{"projectPath":"%s","basePort":3001,"defaultStartCommand":"npm run dev","agentCommand":"claude"}\n' "$GITHUB_WORKSPACE" > "$dir/settings.json"
 
-      - name: Build
-        run: pnpm build
+      # `nsh test <dir>` wants the app's directory, which would take the e2e tests along: the unit
+      # tests are named one by one.
+      - name: Unit tests
+        run: |
+          set -euo pipefail
+          find src -name '*.test.ts' -o -name '*.test.tsx' | sort | while read -r file; do nsh test "$file"; done
 
-  build-check:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Smoke test
+        run: nsh test App.test.tsx
 
-      # Apple Silicon only: the app targets macOS 26 and Liquid Glass, so there is no second
-      # slice to guard against. Needs a runner image carrying the macOS 26 SDK and Swift 6.2.
-      - name: Build native app
-        working-directory: swift
-        run: ./scripts/build_app.sh
+      - name: Package
+        run: nsh package --target macos -o dist
