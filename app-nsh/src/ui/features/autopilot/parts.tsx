@@ -3,7 +3,7 @@ import { Select, Switch } from 'nsh/base'
 import { t } from '../../../shared/i18n'
 import type { ChatMode, SourceStatus } from '../../../shared/types'
 import { Icon } from '../../components/Icon'
-import { inputClass, StatusDot, TextInput } from '../../components/kit'
+import { Button, inputClass, StatusDot, TextInput } from '../../components/kit'
 import { cn } from '../../lib/utils'
 
 /** The pieces autopilot's pages are built from: a header, cards of settings, rows inside them. */
@@ -14,7 +14,9 @@ export function PageHeader(props: { title: JSX.Element; subtitle?: JSX.Element; 
     <View class="shrink-0 flex-row items-end gap-4 px-8 pt-[46px] pb-3" desktop={{ windowDrag: true }}>
       <View class="min-w-0 flex-1">
         {typeof props.title === 'string' ? <Text class="font-display text-[24px] font-medium tracking-tight text-fg">{props.title}</Text> : props.title}
-        <If when={props.subtitle}>{(subtitle) => (typeof subtitle() === 'string' ? <Text class="mt-1 max-w-2xl text-[12.5px] text-fg-2">{subtitle() as string}</Text> : subtitle())}</If>
+        <If when={props.subtitle}>
+          {(subtitle) => (typeof subtitle() === 'string' ? <Text class="mt-1 max-w-2xl text-[12.5px] text-fg-2">{subtitle() as string}</Text> : subtitle())}
+        </If>
       </View>
       <If when={props.actions}>
         <View class="shrink-0 flex-row items-center gap-2">{props.actions}</View>
@@ -38,8 +40,12 @@ export function Card(props: { title?: JSX.Element; hint?: JSX.Element; right?: J
       <If when={props.title || props.right}>
         <View class="flex-row items-start gap-3 border-b border-border/70 px-5 py-3.5">
           <View class="min-w-0 flex-1">
-            <If when={props.title}>{(title) => (typeof title() === 'string' ? <Text class="text-[13.5px] font-semibold text-fg">{title() as string}</Text> : title())}</If>
-            <If when={props.hint}>{(hint) => (typeof hint() === 'string' ? <Text class="mt-0.5 text-[11.5px] text-fg-2">{hint() as string}</Text> : hint())}</If>
+            <If when={props.title}>
+              {(title) => (typeof title() === 'string' ? <Text class="text-[13.5px] font-semibold text-fg">{title() as string}</Text> : title())}
+            </If>
+            <If when={props.hint}>
+              {(hint) => (typeof hint() === 'string' ? <Text class="mt-0.5 text-[11.5px] text-fg-2">{hint() as string}</Text> : hint())}
+            </If>
           </View>
           {props.right}
         </View>
@@ -62,17 +68,57 @@ export function Row(props: { label: JSX.Element; hint?: JSX.Element; children: J
   )
 }
 
+/** A switch in the app's look. The track and the thumb follow `checked` by their own classes: nsh's switch moves nothing by itself. */
 export function AppSwitch(props: { checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
   return (
     <Switch
       checked={props.checked}
       disabled={props.disabled}
       onChange={(e) => props.onChange(e.checked)}
-      class="h-5 w-9 rounded-full bg-input p-0.5"
-      checkedStyle={{}}
+      class={cn('h-5 w-9 rounded-full p-0.5', props.checked ? 'bg-primary' : 'bg-input', props.disabled && 'opacity-50')}
       trackClass="flex-1"
-      thumbClass="size-4 rounded-full bg-white shadow-xs"
+      thumbClass={cn('size-4 rounded-full bg-white shadow-xs', props.checked && 'translate-x-4')}
     />
+  )
+}
+
+/** A set of a status field's choices as toggles, with all and none a press away. */
+export function StatusChips(props: { choices: string[]; selected: string[]; onChange: (next: string[]) => void; empty?: string }) {
+  const allOn = () => props.choices.every((choice) => props.selected.includes(choice))
+  const noneOn = () => !props.choices.some((choice) => props.selected.includes(choice))
+  return (
+    <If when={props.choices.length > 0} else={<Text class="text-[12px] text-fg-3">{props.empty ?? t('没找到状态字段，在 Issue 设置里指定')}</Text>}>
+      <View class="gap-2">
+        <View class="flex-row flex-wrap gap-1.5">
+          <Each of={props.choices} key={(choice) => choice}>
+            {(choice) => (
+              <View
+                class={cn(
+                  'rounded-full border px-2.5 py-0.5',
+                  props.selected.includes(choice()) ? 'border-brand bg-brand-soft' : 'border-border hover:bg-fill',
+                )}
+                role="button"
+                onPress={() =>
+                  props.onChange(props.selected.includes(choice()) ? props.selected.filter((status) => status !== choice()) : [...props.selected, choice()])
+                }
+              >
+                <Text class={cn('text-[12px]', props.selected.includes(choice()) ? 'text-brand' : 'text-fg-2')}>{choice()}</Text>
+              </View>
+            )}
+          </Each>
+        </View>
+        <If when={props.choices.length > 1}>
+          <View class="flex-row gap-1">
+            <Button tone="ghost" class="h-6 px-1.5" disabled={allOn()} onPress={() => props.onChange([...props.choices])}>
+              {t('全选')}
+            </Button>
+            <Button tone="ghost" class="h-6 px-1.5" disabled={noneOn()} onPress={() => props.onChange([])}>
+              {t('全不选')}
+            </Button>
+          </View>
+        </If>
+      </View>
+    </If>
   )
 }
 
@@ -96,7 +142,14 @@ export function NumberInput(props: { value: number; onSave: (value: number) => v
   }
   return (
     <View class="flex-row items-center gap-1.5">
-      <TextInput value={text()} onChange={(e) => text.set(e.value)} onBlur={commit} onSubmit={commit} keyboardType="numeric" class="w-20 text-right tabular-nums" />
+      <TextInput
+        value={text()}
+        onChange={(e) => text.set(e.value)}
+        onBlur={commit}
+        onSubmit={commit}
+        keyboardType="numeric"
+        class="w-20 text-right tabular-nums"
+      />
       <If when={props.suffix}>
         <Text class="text-[12px] text-fg-2">{props.suffix}</Text>
       </If>
@@ -135,7 +188,13 @@ export const chatModeLabels = (): Record<ChatMode, string> => ({
 
 /** A dropdown in the app's own look — never the system's, which sits oddly in a card. */
 /** A drop-down of named options. `Select` looks like nothing on its own: the trigger here is the box, naming the chosen option. */
-export function Choice<T extends string>(props: { value: T; options: { value: T; label: string }[]; onChange: (value: T) => void; small?: boolean; class?: string }) {
+export function Choice<T extends string>(props: {
+  value: T
+  options: { value: T; label: string }[]
+  onChange: (value: T) => void
+  small?: boolean
+  class?: string
+}) {
   const title = () => props.options.find((option) => option.value === props.value)?.label ?? ''
   return (
     <Select

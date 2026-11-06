@@ -7,6 +7,7 @@ import { t } from '../shared/i18n'
 import { log } from '../core/log'
 import { configDirectory, loadAutopilotConfig } from '../core/settingsStore'
 import { state } from '../core/appState'
+import { modelFor } from '../core/models'
 import { type Handle, runClaude, truncate, withoutSkipPermissions } from './agentRunner'
 import * as hub from './autopilotHub'
 import { issueAgent } from './issueAgent'
@@ -89,10 +90,8 @@ End every turn with one line per event you were given, \`<event id>: <what you d
       `Your notes from your previous session, written by you before it ended. What happened since is not in them; recall ids for details.\n<memory>\n${memory}\n</memory>`,
     )
   // The team's own words: they shape tone and judgement, never the safety rules above.
-  if (config.replyRules.trim())
-    sections.push(`How the team wants you to reply (their rules; the rules above still win):\n${config.replyRules.trim()}`)
-  if (config.candidatePolicy.trim())
-    sections.push(`For addressed="no" events, what the team considers worth handling:\n${config.candidatePolicy.trim()}`)
+  if (config.replyRules.trim()) sections.push(`How the team wants you to reply (their rules; the rules above still win):\n${config.replyRules.trim()}`)
+  if (config.candidatePolicy.trim()) sections.push(`For addressed="no" events, what the team considers worth handling:\n${config.candidatePolicy.trim()}`)
   return sections.join('\n\n')
 }
 
@@ -199,7 +198,7 @@ async function handover(): Promise<void> {
       prompt: HANDOVER_PROMPT,
       cwd,
       session: { kind: 'resume', id: session.id as string },
-      model: loadAutopilotConfig().routerModel,
+      model: modelFor('router'),
       baseCommand: withoutSkipPermissions(state.settings.agentCommand),
       appendSystemPrompt: systemPrompt(),
       extraArgs: ['--tools', '', '--strict-mcp-config'],
@@ -274,7 +273,7 @@ function flush(): void {
     prompt: render(batch, seen),
     cwd,
     session: { kind: session.started ? 'resume' : 'new', id },
-    model: loadAutopilotConfig().routerModel,
+    model: modelFor('router'),
     // No permission flags of its own: the tools below are all it may use, allowed by name.
     baseCommand: withoutSkipPermissions(state.settings.agentCommand),
     appendSystemPrompt: systemPrompt(),
@@ -308,8 +307,7 @@ function flush(): void {
         log.warn(`router turn failed (${failures}): ${reason}`)
         if (failures <= 3) pending = [...batch, ...pending]
         else {
-          for (const trigger of batch)
-            hub.record({ source: 'router', thread: trigger.thread, text: trigger.text, outcome: 'error', detail: reason })
+          for (const trigger of batch) hub.record({ source: 'router', thread: trigger.thread, text: trigger.text, outcome: 'error', detail: reason })
           failures = 0
         }
         setStatus('error', reason)
@@ -356,8 +354,7 @@ function render(batch: Trigger[], seen: Trigger[]): string {
       .filter(([, value]) => value)
       .map(([key, value]) => `${key}="${String(value).replace(/"/g, "'")}"`)
       .join(' ')
-    const body =
-      trigger.text.length > 2000 ? `${trigger.text.slice(0, 2000)}… (truncated — recall ${trigger.id} for the rest)` : trigger.text
+    const body = trigger.text.length > 2000 ? `${trigger.text.slice(0, 2000)}… (truncated — recall ${trigger.id} for the rest)` : trigger.text
     parts.push(`<event ${attrs}>\n${body}\n</event>`)
   }
   return parts.join('\n\n')
@@ -456,10 +453,7 @@ const tools: McpTool[] = [
         const tasks = hub.holders(id).map((recordId) => issueAgent.allRuns()[recordId]?.issueKey ?? recordId)
         const recent = hub
           .threadActivity(id)
-          .map(
-            (entry) =>
-              `- ${entry.id} ${entry.author ?? entry.source} (${entry.outcome}): ${truncate(entry.text.replace(/\s+/g, ' '), 200)}`,
-          )
+          .map((entry) => `- ${entry.id} ${entry.author ?? entry.source} (${entry.outcome}): ${truncate(entry.text.replace(/\s+/g, ' '), 200)}`)
         return [`thread ${id} · ${threadEntry.title}`, `tasks: ${tasks.join(', ') || 'none'}`, 'recent:', ...recent].join('\n')
       }
       const run = findRun(id)
@@ -526,8 +520,7 @@ const tools: McpTool[] = [
       if (images.length) {
         // The table holds the report; the chat's screenshots go to the agent with it, as local files.
         const field = bodyField ?? 'Screenshots'
-        issue.record.fields[field] =
-          `${issue.record.fields[field] ?? ''}\n\nScreenshots from the chat (open with Read):\n${images.join('\n')}`.trim()
+        issue.record.fields[field] = `${issue.record.fields[field] ?? ''}\n\nScreenshots from the chat (open with Read):\n${images.join('\n')}`.trim()
       }
       issueAgent.remember([issue])
       issueAgent.enqueueFix(issue, { threads: thread ? [thread] : [], silent: args.silent === true })
@@ -598,8 +591,7 @@ const tools: McpTool[] = [
   },
   {
     name: 'reply',
-    description:
-      "Say something in a thread: a Feishu topic (short), a PR (gh:…), an issue's Teable comments (teable:…), or the owner in the app (app:home).",
+    description: "Say something in a thread: a Feishu topic (short), a PR (gh:…), an issue's Teable comments (teable:…), or the owner in the app (app:home).",
     inputSchema: { type: 'object', properties: { thread: { type: 'string' }, text: { type: 'string' } }, required: ['thread', 'text'] },
     run: async (args) => {
       const thread = str(args.thread)

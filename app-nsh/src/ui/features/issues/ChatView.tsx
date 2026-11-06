@@ -79,7 +79,9 @@ function ChatBody(props: { chat: Chat }) {
         <Each of={turns()} key={(turn) => turn.id}>
           {(turn) => <TurnView turn={turn()} layout={transcriptLayout.layout()} renderItem={(item) => <ChatItem item={item} />} />}
         </Each>
-        <If when={props.chat.background}>{(background) => <BackgroundActivity tasks={background()} onStop={(taskId) => perform(() => api.stopChatBackground(props.chat.id, taskId))} />}</If>
+        <If when={props.chat.background}>
+          {(background) => <BackgroundActivity tasks={background()} onStop={(taskId) => perform(() => api.stopChatBackground(props.chat.id, taskId))} />}
+        </If>
       </TranscriptScroll>
       <Composer
         uploadKey={`chat-${props.chat.id}`}
@@ -98,7 +100,7 @@ function ChatBody(props: { chat: Chat }) {
         }
         pickers={
           <>
-            <ModelPicker model={props.chat.model} onChange={(model) => perform(() => api.updateChat(props.chat.id, { model }))} />
+            <ModelPicker scene="chat" model={props.chat.model} onChange={(model) => perform(() => api.updateChat(props.chat.id, { model }))} />
             <AccessPicker access={props.chat.access} onChange={(access) => perform(() => api.updateChat(props.chat.id, { access }))} />
           </>
         }

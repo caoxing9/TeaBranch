@@ -5,6 +5,7 @@ import type { ConversationEntry, IssueRun } from '../shared/types'
 import { log } from '../core/log'
 import { configDirectory, loadAutopilotConfig } from '../core/settingsStore'
 import { state } from '../core/appState'
+import { modelFor } from '../core/models'
 import { runClaude, truncate, withoutSkipPermissions } from './agentRunner'
 
 /**
@@ -47,7 +48,7 @@ Answer with exactly one line of JSON and nothing else:
       prompt,
       cwd,
       session: { kind: 'new', id: randomUUID() },
-      model: loadAutopilotConfig().routerModel,
+      model: modelFor('router'),
       baseCommand: withoutSkipPermissions(state.settings.agentCommand),
       extraArgs: ['--tools', '', '--strict-mcp-config'],
       channel: 'agent',

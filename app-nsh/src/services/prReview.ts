@@ -15,6 +15,7 @@ import {
 } from '../shared/prReview'
 import { agentModelLabel, type PRReviewJob } from '../shared/types'
 import { state } from '../core/appState'
+import { modelFor } from '../core/models'
 import { errorMessage, log } from '../core/log'
 import { loadAutopilotConfig, loadTeableConfig } from '../core/settingsStore'
 import { type CommandResult, git, run } from '../core/shell'
@@ -63,7 +64,7 @@ export function start(request: ReviewRequest): PRReviewJob {
   const running = jobs.get(ref.url)
   if (active(running)) return running
   const config = loadTeableConfig()
-  const model = config.reviewEngine === 'codex' ? config.codexModel || 'codex default' : agentModelLabel(config.reviewModel)
+  const model = config.reviewEngine === 'codex' ? config.codexModel || 'codex default' : agentModelLabel(modelFor('review'))
   const job: PRReviewJob = {
     id: `pr_${randomUUID().slice(0, 8)}`,
     url: ref.url,
@@ -241,7 +242,7 @@ function review(job: PRReviewJob, ref: PRRef, info: PRInfo, cwd: string, request
             prompt,
             cwd,
             session: { kind: 'new', id: randomUUID() },
-            model: config.reviewModel,
+            model: modelFor('review'),
             baseCommand: state.settings.agentCommand,
             extraArgs: ['--disallowedTools', 'Edit,Write,NotebookEdit,MultiEdit'],
             channel: 'review',

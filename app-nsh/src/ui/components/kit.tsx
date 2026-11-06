@@ -1,4 +1,4 @@
-import { type JSX, type PressEvent, Scroll, Text, View, windowSize } from 'nsh'
+import { type JSX, type PressEvent, Scroll, Text, View, signal, windowSize } from 'nsh'
 import { Button as BaseButton, Checkbox, Dialog as BaseDialog, Input, type InputProps, Tab, Tabs } from 'nsh/base'
 import { Menu, type MenuItem as NativeMenuItem } from 'nsh/desktop'
 import { t } from '../../shared/i18n'
@@ -106,10 +106,20 @@ export function StatusDot(props: { color: string; pulse?: boolean }) {
   )
 }
 
+/** A checkbox with its label. The box draws its own mark: nsh's checkbox shows only what the app gives it. */
 export function Toggle(props: { checked: boolean; onChange: (v: boolean) => void; label: JSX.Element }) {
   return (
     <View class="flex-row items-center gap-2" onPress={() => props.onChange(!props.checked)}>
-      <Checkbox checked={props.checked} onChange={(e) => props.onChange(e.checked)} class="size-4 rounded border border-input" checkedStyle={{}} />
+      <Checkbox
+        checked={props.checked}
+        onChange={(e) => props.onChange(e.checked)}
+        class={cn('size-4 items-center justify-center rounded border', props.checked ? 'border-primary bg-primary' : 'border-input bg-card')}
+        indicator={
+          <If when={props.checked}>
+            <Icon name="check" size={11} tint="#ffffff" />
+          </If>
+        }
+      />
       {typeof props.label === 'string' ? <Text class="text-[13px] text-fg">{props.label}</Text> : props.label}
     </View>
   )
@@ -171,8 +181,14 @@ export function ContextMenuArea(props: { entries: () => MenuEntry[]; children: J
 
 // MARK: - Dialog
 
-/** A modal box: a title, an optional strip under it that stays put (tabs), and a body that scrolls once the box reaches 84% of the window. */
+/**
+ * A modal box: a title, an optional strip under it that stays put (tabs), and a body that scrolls
+ * once the box reaches 84% of the window. The host centres the box across the window but hangs it
+ * from the top, so the box measures itself and takes the top margin that centres it.
+ */
 export function Dialog(props: { title: JSX.Element; onClose: () => void; children: JSX.Element; width?: number; toolbar?: JSX.Element }) {
+  const height = signal(0)
+  const top = () => Math.max(0, Math.round((windowSize().height - height()) / 2))
   return (
     <BaseDialog
       open
@@ -181,12 +197,14 @@ export function Dialog(props: { title: JSX.Element; onClose: () => void; childre
       closeOnBackdropPress
       onClose={props.onClose}
       backdropClass="bg-black/40"
-      class="items-center justify-center"
+      backdropTestID="dialog-backdrop"
+      class="items-center"
     >
       {/* The limit is in points: a percentage max-height has nothing definite to be a percentage of here, and the box ran off the window. */}
       <View
         class="overflow-hidden rounded-xl border border-border bg-popover shadow-2xl"
-        style={{ width: props.width ?? 520, maxHeight: Math.round(windowSize().height * 0.84) }}
+        style={{ width: props.width ?? 520, maxHeight: Math.round(windowSize().height * 0.84), marginTop: top() }}
+        onLayout={(e) => height.set(e.bounds.size.height)}
       >
         <View class="flex-row items-center gap-3 border-b border-border px-5 py-3.5">
           {typeof props.title === 'string' ? (

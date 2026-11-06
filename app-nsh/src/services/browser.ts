@@ -20,6 +20,8 @@ export interface Page {
   loading(): boolean
   canGoBack(): boolean
   canGoForward(): boolean
+  /** The last load failed: why. */
+  error(): string | undefined
   load(url: string): void
   back(): void
   forward(): void
@@ -102,6 +104,7 @@ export function browserState(branch: string): BrowserState {
     canGoBack: page.canGoBack(),
     canGoForward: page.canGoForward(),
     agentAt: tab.agentAt,
+    error: page.error(),
   }
 }
 

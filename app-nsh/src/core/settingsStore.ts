@@ -3,14 +3,17 @@ import { homedir } from '../node/os'
 import { dirname, join } from 'path'
 import type {
   ActivityItem,
+  AgentModel,
   AppSettings,
   AutopilotConfig,
   Chat,
   ConversationEntry,
   DevCategory,
   IssueRun,
+  ModelRules,
   TeableConfig,
 } from '../shared/types'
+import { defaultModelRules } from '../shared/types'
 import { log } from './log'
 
 /**
@@ -42,8 +45,7 @@ function save(path: string, value: unknown): void {
 }
 
 /** The Swift build wrote ISO-8601 dates; this one writes epoch milliseconds. Read either. */
-const toEpoch = (value: unknown): number =>
-  typeof value === 'number' ? value : typeof value === 'string' ? Date.parse(value) || Date.now() : Date.now()
+const toEpoch = (value: unknown): number => (typeof value === 'number' ? value : typeof value === 'string' ? Date.parse(value) || Date.now() : Date.now())
 
 export const defaultSettings: AppSettings = {
   basePort: 3001,
@@ -51,7 +53,27 @@ export const defaultSettings: AppSettings = {
   agentCommand: 'claude --dangerously-skip-permissions',
 }
 
-export const loadSettings = (): AppSettings => ({ ...defaultSettings, ...load<Partial<AppSettings>>(file('settings.json')) })
+export function loadSettings(): AppSettings {
+  const saved = load<Partial<AppSettings>>(file('settings.json')) ?? {}
+  const models: ModelRules = saved.models ? { ...defaultModelRules, ...saved.models, rules: { ...saved.models.rules } } : migratedModelRules()
+  return { ...defaultSettings, ...saved, models }
+}
+
+/**
+ * Before the rules, each config named its own model: the fix model in teable.json (also what
+ * chats ran on), the review model beside it, the router's in autopilot.json. Read once into the
+ * rules of a settings.json that has none yet, so an upgrade changes nothing.
+ */
+function migratedModelRules(): ModelRules {
+  const teable = load<{ fixModel?: AgentModel; reviewModel?: AgentModel }>(file('teable.json'))
+  const autopilot = load<{ routerModel?: AgentModel }>(file('autopilot.json'))
+  const key = (model: AgentModel) => `${model.provider}:${model.model ?? ''}:${model.effort ?? ''}`
+  const fallback = teable?.fixModel ?? defaultModelRules.fallback
+  const rules: ModelRules['rules'] = { ...defaultModelRules.rules }
+  if (autopilot?.routerModel) rules.router = autopilot.routerModel
+  if (teable?.reviewModel && key(teable.reviewModel) !== key(fallback)) rules.review = teable.reviewModel
+  return { fallback, rules }
+}
 export const saveSettings = (settings: AppSettings): void => save(file('settings.json'), settings)
 
 export const loadCategories = (): Record<string, DevCategory> => load(file('categories.json')) ?? {}
@@ -68,10 +90,8 @@ export const defaultTeableConfig: TeableConfig = {
   autoFix: false,
   batchSize: 3,
   branchPrefix: '',
-  fixModel: { provider: 'claude' },
   access: 'fullAccess',
   reviewEngine: 'codex',
-  reviewModel: { provider: 'claude' },
   codexModel: '',
   autoReview: true,
   triage: true,
@@ -105,8 +125,7 @@ export function loadTranscript(recordId: string): ConversationEntry[] {
   const raw = load<ConversationEntry[]>(join(configDirectory, 'transcripts', `${recordId}.json`)) ?? []
   return raw.map((entry) => ({ ...entry, channel: entry.channel ?? 'agent', at: toEpoch(entry.at) }))
 }
-export const saveTranscript = (recordId: string, entries: ConversationEntry[]): void =>
-  save(join(configDirectory, 'transcripts', `${recordId}.json`), entries)
+export const saveTranscript = (recordId: string, entries: ConversationEntry[]): void => save(join(configDirectory, 'transcripts', `${recordId}.json`), entries)
 
 // MARK: - Chats
 
@@ -120,8 +139,7 @@ export function loadChatTranscript(chatId: string): ConversationEntry[] {
 }
 export const saveChatTranscript = (chatId: string, entries: ConversationEntry[]): void =>
   save(join(configDirectory, 'chat-transcripts', `${chatId}.json`), entries)
-export const deleteChatTranscript = (chatId: string): void =>
-  rmSync(join(configDirectory, 'chat-transcripts', `${chatId}.json`), { force: true })
+export const deleteChatTranscript = (chatId: string): void => rmSync(join(configDirectory, 'chat-transcripts', `${chatId}.json`), { force: true })
 
 // MARK: - Autopilot
 
@@ -148,7 +166,6 @@ export const defaultAutopilotConfig: AutopilotConfig = {
   unknownChatMode: 'ignore',
   directMessages: true,
   allowedUsers: [],
-  routerModel: { provider: 'claude', model: 'sonnet' },
   sources: { teable: true, feishu: true, github: true },
   stallMinutes: 20,
   maxRetries: 1,
@@ -163,7 +180,13 @@ export function loadAutopilotConfig(): AutopilotConfig {
   // Nested: a switch added later still gets its default in a file saved before it. GitHub's own
   // switch was `watchGitHub` before every source had one.
   const sources = { ...defaultAutopilotConfig.sources, github: saved?.watchGitHub ?? true, ...saved?.sources }
-  return { ...defaultAutopilotConfig, ...saved, notify: { ...defaultAutopilotConfig.notify, ...saved?.notify }, prReview: { ...defaultAutopilotConfig.prReview, ...saved?.prReview }, sources }
+  return {
+    ...defaultAutopilotConfig,
+    ...saved,
+    notify: { ...defaultAutopilotConfig.notify, ...saved?.notify },
+    prReview: { ...defaultAutopilotConfig.prReview, ...saved?.prReview },
+    sources,
+  }
 }
 export const saveAutopilotConfig = (config: AutopilotConfig): void => save(file('autopilot.json'), config)
 

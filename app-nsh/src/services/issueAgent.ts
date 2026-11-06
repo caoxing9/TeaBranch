@@ -6,6 +6,7 @@ import { Notify } from 'teabranch/native'
 import type {
   AgentAccess,
   AgentModel,
+  ModelScene,
   ConversationEntry,
   DbMode,
   Issue,
@@ -25,6 +26,7 @@ import { ciFailures, ciPending, parseChecks } from '../shared/ci'
 import { cleanupBlockers } from '../shared/cleanup'
 import { t } from '../shared/i18n'
 import { state } from '../core/appState'
+import { modelFor } from '../core/models'
 import { emit, emitSoon } from '../core/events'
 import { errorMessage, TeaBranchError } from '../core/log'
 import { loadAutopilotConfig, loadIssueRuns, loadTeableConfig, loadTranscript, saveIssueRuns, saveTranscript } from '../core/settingsStore'
@@ -281,8 +283,7 @@ class IssueAgent {
     }
     const handle = this.handles.get(issue.id)
     // Only the fixing agent takes messages: not a reviewer, not a worktree still being built.
-    if (!handle || (run.phase !== 'triaging' && run.phase !== 'fixing'))
-      throw new TeaBranchError(t('现在没有 agent 在对话，这条会在它结束后发出'))
+    if (!handle || (run.phase !== 'triaging' && run.phase !== 'fixing')) throw new TeaBranchError(t('现在没有 agent 在对话，这条会在它结束后发出'))
     // Too late for this turn: it stays queued and goes out once the issue settles.
     if (!handle.steer?.(agentMessage(queued.text, queued.attachments))) return
     this.unqueue(issue.id, queuedId)
@@ -295,8 +296,8 @@ class IssueAgent {
     })
   }
 
-  /** `display` replaces the message in the transcript when the prompt itself is boilerplate. */
-  async send(issue: Issue, message: string, attachments: string[] = [], display?: string): Promise<void> {
+  /** `display` replaces the message in the transcript when the prompt itself is boilerplate; `scene` picks the model by the rules. */
+  async send(issue: Issue, message: string, attachments: string[] = [], display?: string, scene: ModelScene = 'fix'): Promise<void> {
     const run = this.runs[issue.id]
     if (!run) throw new TeaBranchError(t('这个 issue 还没有 agent 会话，先点“自动修复”。'))
     if (this.isRunning(issue.id)) throw new TeaBranchError(t('Agent 正在运行，等它结束或先停止。'))
@@ -309,7 +310,7 @@ class IssueAgent {
       r.phase = 'fixing'
       r.lastError = undefined
     })
-    this.startAgent(issue, message, cwd, config, (outcome) => this.agentFinished(issue, outcome, config))
+    this.startAgent(issue, message, cwd, config, (outcome) => this.agentFinished(issue, outcome, config), scene)
   }
 
   async review(issue: Issue): Promise<void> {
@@ -325,7 +326,13 @@ class IssueAgent {
   async sendLatestReview(issue: Issue): Promise<void> {
     const review = this.runs[issue.id]?.reviews.at(-1)
     if (!review) throw new TeaBranchError(t('还没有 review 结果。'))
-    await this.send(issue, reviewFeedbackPrompt(promptTarget(issue, this.runs[issue.id].branch), review, engineLabel(review.engine)))
+    await this.send(
+      issue,
+      reviewFeedbackPrompt(promptTarget(issue, this.runs[issue.id].branch), review, engineLabel(review.engine)),
+      [],
+      undefined,
+      'reviewFeedback',
+    )
   }
 
   setShelf(recordId: string, shelf: IssueShelf | null): void {
@@ -491,7 +498,7 @@ class IssueAgent {
     const run = this.runs[recordId]
     const cwd = run && this.worktreePath(run)
     if (!run || !cwd) return undefined
-    const env = Object.entries(modelEnvironment(loadTeableConfig().fixModel))
+    const env = Object.entries(modelEnvironment(run.model ?? modelFor('fix')))
       .map(([key, value]) => `${key}=${shellQuote(value)}`)
       .sort()
       .join(' ')
@@ -503,18 +510,13 @@ class IssueAgent {
    * The issue's worktree for a chat about it, built first when there is none yet — same branch and
    * shared database a fix would use, so a later fix picks it up as is.
    */
-  async issueWorktree(
-    issue: Issue,
-    onProgress: (branch: string, progress: WorktreeProgress) => void,
-  ): Promise<{ cwd: string; branch: string }> {
+  async issueWorktree(issue: Issue, onProgress: (branch: string, progress: WorktreeProgress) => void): Promise<{ cwd: string; branch: string }> {
     const repo = state.projectPath
     if (!repo) throw new TeaBranchError(t('没有设置仓库路径'))
     const branch = this.runs[issue.id]?.branch ?? branchName(issue, loadTeableConfig().branchPrefix)
     const existed = existsSync(worktrees.worktreeDirectory(branch, repo))
     // Under the branch lock even when it exists: a fix may be building it right now.
-    const cwd = await withBranchLock(branch, async () =>
-      worktrees.create(branch, repo, await defaultDbMode(repo), (progress) => onProgress(branch, progress)),
-    )
+    const cwd = await withBranchLock(branch, async () => worktrees.create(branch, repo, await defaultDbMode(repo), (progress) => onProgress(branch, progress)))
     if (!existed) onBranchCreated(branch)
     return { cwd, branch }
   }
@@ -854,11 +856,7 @@ class IssueAgent {
       if (auto) r.ciRounds = (r.ciRounds ?? 0) + 1
     })
     const names = failures.map((check) => check.name).join(', ')
-    if (auto)
-      this.append(
-        issue.id,
-        entry('system', 'agent', t('CI 失败，自动发给 agent（第 {round} 轮）', { round: this.runs[issue.id].ciRounds ?? 1 })),
-      )
+    if (auto) this.append(issue.id, entry('system', 'agent', t('CI 失败，自动发给 agent（第 {round} 轮）', { round: this.runs[issue.id].ciRounds ?? 1 })))
     await this.send(issue, ciFixPrompt(promptTarget(issue, current.branch), prURL, ci.sha, failures), [], t('CI 失败：{names}', { names }))
   }
 
@@ -921,8 +919,7 @@ class IssueAgent {
     const run = this.runs[issue.id]
     if (!run || run.phase !== 'queued') return this.settle()
     const pauses = this.pauses.get(issue.id) ?? 0
-    const stopped = (phase: IssueRun['phase']): boolean =>
-      this.runs[issue.id]?.phase !== phase || (this.pauses.get(issue.id) ?? 0) !== pauses
+    const stopped = (phase: IssueRun['phase']): boolean => this.runs[issue.id]?.phase !== phase || (this.pauses.get(issue.id) ?? 0) !== pauses
     const repo = state.projectPath
     if (!repo) {
       this.fail(issue.id, t('没有设置仓库路径'))
@@ -941,9 +938,7 @@ class IssueAgent {
     let cwd: string
     try {
       cwd = await withBranchLock(run.branch, async () =>
-        worktrees.create(run.branch, repo, await defaultDbMode(repo), (progress) =>
-          this.append(issue.id, entry('system', 'agent', progress.message)),
-        ),
+        worktrees.create(run.branch, repo, await defaultDbMode(repo), (progress) => this.append(issue.id, entry('system', 'agent', progress.message))),
       )
     } catch (error) {
       this.fail(issue.id, t('创建 worktree 失败：{error}', { error: errorMessage(error) }))
@@ -989,8 +984,13 @@ class IssueAgent {
           r.phase = 'triaging'
         })
         this.append(issue.id, entry('user', 'agent', t('【修复前验证】{key} {title}', { key: issue.key, title: issue.title })))
-        this.startAgent(issue, triagePrompt(promptTarget(issue, run.branch), contextPrompt(context)), cwd, config, (outcome) =>
-          this.triageFinished(issue, outcome, config),
+        this.startAgent(
+          issue,
+          triagePrompt(promptTarget(issue, run.branch), contextPrompt(context)),
+          cwd,
+          config,
+          (outcome) => this.triageFinished(issue, outcome, config),
+          'triage',
         )
       } else {
         this.append(issue.id, entry('user', 'agent', t('【自动修复任务】{key} {title}', { key: issue.key, title: issue.title })))
@@ -1011,7 +1011,7 @@ class IssueAgent {
     return { env, appendSystemPrompt: prompt ? `${prompt}\n\n${BROWSER_PROMPT}` : BROWSER_PROMPT }
   }
 
-  private startAgent(issue: Issue, prompt: string, cwd: string, config: TeableConfig, onExit: (outcome: Outcome) => void): void {
+  private startAgent(issue: Issue, prompt: string, cwd: string, config: TeableConfig, onExit: (outcome: Outcome) => void, scene: ModelScene = 'fix'): void {
     const run = this.runs[issue.id]
     // New work: where it lands is up to how this run ends, not where you filed the last one.
     run.shelf = undefined
@@ -1032,7 +1032,7 @@ class IssueAgent {
       prompt,
       cwd,
       session: { kind: sessionExists(run.sessionId, cwd) ? 'resume' : 'new', id: run.sessionId },
-      model: run.model ?? config.fixModel,
+      model: run.model ?? modelFor(scene),
       access: run.access ?? config.access,
       baseCommand: state.settings.agentCommand,
       appendSystemPrompt,
@@ -1145,9 +1145,7 @@ class IssueAgent {
     })
     this.append(issue.id, entry('system', 'agent', t('验证结论：确认是 bug，开始修复')))
     this.append(issue.id, entry('user', 'agent', t('【自动修复任务】{key} {title}', { key: issue.key, title: issue.title })))
-    this.startAgent(issue, fixAfterTriagePrompt(promptTarget(issue, run.branch)), cwd, config, (next) =>
-      this.agentFinished(issue, next, config),
-    )
+    this.startAgent(issue, fixAfterTriagePrompt(promptTarget(issue, run.branch)), cwd, config, (next) => this.agentFinished(issue, next, config))
   }
 
   /**
@@ -1307,15 +1305,12 @@ class IssueAgent {
   private startReview(issue: Issue, run: IssueRun, cwd: string, config: TeableConfig): void {
     const round = run.reviews.length + 1
     const prompt = reviewPrompt(promptTarget(issue, run.branch), round)
-    const model = config.reviewEngine === 'codex' ? config.codexModel || 'codex default' : agentModelLabel(config.reviewModel)
+    const model = config.reviewEngine === 'codex' ? config.codexModel || 'codex default' : agentModelLabel(modelFor('review'))
     this.update(issue.id, (r) => {
       r.phase = 'reviewing'
       r.pausedFrom = undefined
     })
-    this.append(
-      issue.id,
-      entry('system', 'review', t('第 {round} 轮 review · {engine}', { round, engine: engineLabel(config.reviewEngine) })),
-    )
+    this.append(issue.id, entry('system', 'review', t('第 {round} 轮 review · {engine}', { round, engine: engineLabel(config.reviewEngine) })))
 
     const onEntry = (line: ConversationEntry): void => this.append(issue.id, { ...line, channel: 'review' })
     const onExit = (outcome: Outcome): void => {
@@ -1331,7 +1326,7 @@ class IssueAgent {
             prompt,
             cwd,
             session: { kind: 'new', id: randomUUID() },
-            model: config.reviewModel,
+            model: modelFor('review'),
             baseCommand: state.settings.agentCommand,
             ...this.browser(issue, run.branch),
             extraArgs: ['--disallowedTools', 'Edit,Write,NotebookEdit,MultiEdit'],
@@ -1381,7 +1376,13 @@ class IssueAgent {
       }
       this.append(issue.id, entry('system', 'agent', t('把第 {round} 轮 review 发给 agent', { round })))
       try {
-        await this.send(issue, reviewFeedbackPrompt(promptTarget(issue, this.runs[issue.id].branch), review, engineLabel(review.engine)))
+        await this.send(
+          issue,
+          reviewFeedbackPrompt(promptTarget(issue, this.runs[issue.id].branch), review, engineLabel(review.engine)),
+          [],
+          undefined,
+          'reviewFeedback',
+        )
       } catch (error) {
         this.append(issue.id, entry('error', 'agent', errorMessage(error), true))
       }

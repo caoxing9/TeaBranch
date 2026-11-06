@@ -76,6 +76,9 @@ function BrowserPage(props: { branch: string }) {
   const nav = signal<WebViewNavigation>({ url: 'about:blank', title: '', loading: false, canGoBack: false, canGoForward: false })
   const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
   let seq = 0
+  /** Why the last load failed. A failed load leaves no page behind, so `reload` must load the URL again. */
+  const error = signal<string | undefined>(undefined)
+  let wanted: string | undefined
 
   const update = (e: WebViewNavigation) => {
     // WebKit reports the title a beat after the load: an empty one on the same page says nothing new.
@@ -125,14 +128,18 @@ function BrowserPage(props: { branch: string }) {
     loading: () => nav().loading,
     canGoBack: () => nav().canGoBack,
     canGoForward: () => nav().canGoForward,
+    error: () => error(),
     load: (url) => {
+      wanted = url
+      error.set(undefined)
       // The first page goes in as `src`; after that the page itself navigates, so the same URL loads again too.
       if (src() === undefined || !view) src.set(url)
       else view.injectJavaScript(`location.assign(${JSON.stringify(url)})`)
     },
     back: () => view?.goBack(),
     forward: () => view?.goForward(),
-    reload: () => view?.reload(),
+    // WebKit reloads the page it has; after a failed load there is none, so the URL goes in again.
+    reload: () => (error() && wanted ? page.load(wanted) : view?.reload()),
     evaluate,
     click: async (x, y) => view?.sendInput({ type: 'click', x, y }),
     text: async (text) => view?.sendInput({ type: 'text', text }),
@@ -151,7 +158,9 @@ function BrowserPage(props: { branch: string }) {
   const hidden = () => browser.sizeOf(props.branch)
   const frame = () => {
     const current = slot()
-    return current ? { left: current.x, top: current.y, width: current.width, height: current.height } : { left: -10_000, top: 0, width: hidden().width, height: hidden().height }
+    return current
+      ? { left: current.x, top: current.y, width: current.width, height: current.height }
+      : { left: -10_000, top: 0, width: hidden().width, height: hidden().height }
   }
   return (
     <View class="absolute overflow-hidden bg-white" style={frame()}>
@@ -160,11 +169,18 @@ function BrowserPage(props: { branch: string }) {
         src={src()}
         class="flex-1"
         injectedJavaScriptBeforeContentLoaded={CONSOLE_HOOK}
-        onLoadStart={update}
+        onLoadStart={(e) => {
+          error.set(undefined)
+          update(e)
+        }}
         onLoad={update}
         onNavigationStateChange={update}
         onMessage={(e) => onMessage(e.data)}
-        onError={(e) => browser.recordConsole(props.branch, `[error] ${e.message}`)}
+        onError={(e) => {
+          error.set(e.message || t('页面没有加载出来'))
+          browser.recordConsole(props.branch, `[error] ${e.message}`)
+          browser.publish(props.branch)
+        }}
       />
     </View>
   )

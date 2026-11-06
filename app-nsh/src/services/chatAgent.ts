@@ -6,6 +6,7 @@ import { agentMessage } from '../shared/attachments'
 import { t } from '../shared/i18n'
 import type { AgentAccess, AgentModel, Chat, ConversationEntry, QueuedMessage } from '../shared/types'
 import { state } from '../core/appState'
+import { modelFor } from '../core/models'
 import { emit } from '../core/events'
 import { TeaBranchError } from '../core/log'
 import { deleteChatTranscript, loadChats, loadChatTranscript, loadTeableConfig, saveChats, saveChatTranscript } from '../core/settingsStore'
@@ -131,7 +132,7 @@ class ChatAgent {
       prompt: agentMessage(message, attachments),
       cwd: chat.cwd,
       session: { kind: sessionExists(chat.sessionId, chat.cwd) ? 'resume' : 'new', id: chat.sessionId },
-      model: chat.model ?? config.fixModel,
+      model: chat.model ?? modelFor('chat'),
       access: chat.access ?? config.access,
       baseCommand: state.settings.agentCommand,
       extraArgs: existsSync(uploads) ? ['--add-dir', uploads] : [],
@@ -183,8 +184,7 @@ class ChatAgent {
         if (outcome.contextWindow) current.context = { used: current.context?.used ?? 0, window: outcome.contextWindow }
         current.updatedAt = Date.now()
         if (outcome.cancelled) this.append(id, entry('system', 'agent', t('已停止')))
-        else if (outcome.isError && !outcome.finalText && !outcome.reported)
-          this.append(id, entry('error', 'agent', outcome.diagnosis ?? t('agent 异常退出')))
+        else if (outcome.isError && !outcome.finalText && !outcome.reported) this.append(id, entry('error', 'agent', outcome.diagnosis ?? t('agent 异常退出')))
         this.changed()
         // What was typed during the turn goes next. After a stop it waits for you instead.
         const next = current.queued?.[0]

@@ -10,11 +10,11 @@ import { BranchDetail } from './features/branches/BranchDetail'
 import { BranchSidebar } from './features/branches/BranchSidebar'
 import { CreateWorktreeDialog } from './features/branches/CreateWorktreeDialog'
 import { DeleteDialog } from './features/branches/DeleteDialog'
-import { SettingsDialog } from './features/settings/SettingsDialog'
 import { BrowserHost } from './features/issues/browserHost'
-import { IssueSettingsDialog } from './features/issues/IssueSettingsDialog'
 import { IssueSidebar } from './features/issues/IssueSidebar'
 import { IssuesMain } from './features/issues/IssuesMain'
+import { SettingsMain } from './features/settings/SettingsMain'
+import { SettingsSidebar } from './features/settings/SettingsSidebar'
 import { pref, setPref } from './prefs'
 import { app } from './store/app'
 import { autopilot } from './store/autopilot'
@@ -55,13 +55,41 @@ function Shell() {
           }}
         >
           <ResizablePanel size={sidebarWidth()} minSize={SIDEBAR_MIN} maxSize={SIDEBAR_MAX} fixed class="border-r border-sidebar-border bg-sidebar">
-            <If when={section() === 'autopilot'} else={<If when={section() === 'branches'} else={<IssueSidebar />}>{() => <BranchSidebar />}</If>}>
-              <AutopilotSidebar />
+            <If
+              when={section() === 'settings'}
+              else={
+                <If
+                  when={section() === 'autopilot'}
+                  else={
+                    <If when={section() === 'branches'} else={<IssueSidebar />}>
+                      {() => <BranchSidebar />}
+                    </If>
+                  }
+                >
+                  {() => <AutopilotSidebar />}
+                </If>
+              }
+            >
+              <SettingsSidebar />
             </If>
           </ResizablePanel>
           <ResizablePanel class="relative min-w-0 flex-1 bg-bg">
-            <If when={section() === 'autopilot'} else={<If when={section() === 'branches'} else={<IssuesMain />}>{() => <BranchDetail />}</If>}>
-              <AutopilotMain />
+            <If
+              when={section() === 'settings'}
+              else={
+                <If
+                  when={section() === 'autopilot'}
+                  else={
+                    <If when={section() === 'branches'} else={<IssuesMain />}>
+                      {() => <BranchDetail />}
+                    </If>
+                  }
+                >
+                  {() => <AutopilotMain />}
+                </If>
+              }
+            >
+              <SettingsMain />
             </If>
             <ErrorToast />
           </ResizablePanel>
@@ -80,12 +108,6 @@ function Dialogs() {
     <>
       <If when={app.showCreate()}>
         <CreateWorktreeDialog />
-      </If>
-      <If when={app.showSettings()}>
-        <SettingsDialog />
-      </If>
-      <If when={issues.showSettings()}>
-        <IssueSettingsDialog />
       </If>
       <If when={app.pendingDelete()}>{(branch) => <DeleteDialog branch={branch()} />}</If>
     </>

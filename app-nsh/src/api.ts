@@ -14,14 +14,7 @@ import { TeaBranchError } from './core/log'
 import { git as gitCommand, run } from './core/shell'
 import { logs } from './core/logStore'
 import { readSecret, writeSecret } from './core/secrets'
-import {
-  loadAutopilotConfig,
-  loadCategories,
-  loadTeableConfig,
-  saveAutopilotConfig,
-  saveCategories,
-  saveTeableConfig,
-} from './core/settingsStore'
+import { loadAutopilotConfig, loadCategories, loadTeableConfig, saveAutopilotConfig, saveCategories, saveTeableConfig } from './core/settingsStore'
 import { magpieModels } from './services/agentRunner'
 import { chatAgent } from './services/chatAgent'
 import { claudeCatalog } from './services/claudeCatalog'
@@ -124,9 +117,7 @@ const handlers: Api = {
   deleteBranch: async (branch) => removeWorktree(branch, requireRepo()),
   createWorktree: async (branch, dbMode) => {
     const repo = requireRepo()
-    await processManager.withBranchLock(branch, () =>
-      worktrees.create(branch, repo, dbMode, (progress) => emit('worktreeProgress', { branch, progress })),
-    )
+    await processManager.withBranchLock(branch, () => worktrees.create(branch, repo, dbMode, (progress) => emit('worktreeProgress', { branch, progress })))
     emitSoon('branchesChanged')
   },
   worktreeDbInfo: async () => git.worktreeDbInfo(requireRepo()),
@@ -271,7 +262,8 @@ const handlers: Api = {
   teableOAuthReady: async () => !!teableAuth.clientIdFor(loadTeableConfig()),
   issueRuns: async () => issueAgent.allRuns(),
   queueState: async () => issueAgent.queueState(),
-  transcript: async (recordId) => issueAgent.transcript(recordId),
+  // Copies: the UI appends what `transcript` events bring, so it must not hold the service's own list.
+  transcript: async (recordId) => [...issueAgent.transcript(recordId)],
   issueComments: async (recordId) => teable.comments(loadTeableConfig(), await teableToken(), recordId),
   enqueueFix: async (issues) => {
     requireRepo()
@@ -301,7 +293,7 @@ const handlers: Api = {
     emitSoon('branchesChanged')
     return chatAgent.create({ ...workspace, issueId: issue.id })
   },
-  chatTranscript: async (chatId) => chatAgent.transcript(chatId),
+  chatTranscript: async (chatId) => [...chatAgent.transcript(chatId)],
   sendChat: async (chatId, message, attachments, steer) => chatAgent.say(chatId, message, attachments, steer),
   steerChatMessage: async (chatId, queuedId) => chatAgent.steer(chatId, queuedId),
   unqueueChatMessage: async (chatId, queuedId) => chatAgent.unqueue(chatId, queuedId),

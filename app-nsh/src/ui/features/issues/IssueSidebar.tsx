@@ -11,6 +11,7 @@ import { SectionSwitcher } from '../../components/SectionSwitcher'
 import { api } from '../../lib/api'
 import { cn } from '../../lib/utils'
 import { pref, setPref } from '../../prefs'
+import { app } from '../../store/app'
 import { autopilot } from '../../store/autopilot'
 import { fixable, issues, visibleIssues } from '../../store/issues'
 import { selectedRow } from '../branches/BranchSidebar'
@@ -66,10 +67,19 @@ export function IssueSidebar() {
         <View class="flex-row items-center gap-1">
           <View class="h-[26px] flex-1 flex-row items-center gap-1.5 rounded-md bg-fill px-2">
             <Icon name="search" size={14} tint="fg-3" />
-            <TextInput value={issues.search()} onChange={(e) => issues.set({ search: e.value })} placeholder={t('搜索 issue')} class="h-6 flex-1 border-0 bg-transparent px-0 text-[12.5px] shadow-none" />
+            <TextInput
+              value={issues.search()}
+              onChange={(e) => issues.set({ search: e.value })}
+              placeholder={t('搜索 issue')}
+              class="h-6 flex-1 border-0 bg-transparent px-0 text-[12.5px] shadow-none"
+            />
             <Text
               class={cn('shrink-0 text-[11px] tabular-nums', visible().length < issues.issues().length ? 'text-brand' : 'text-fg-3')}
-              tooltip={visible().length < issues.issues().length ? t('筛选后 {n} 个，共 {total} 个', { n: visible().length, total: issues.issues().length }) : t('当前列表里的 issue 数')}
+              tooltip={
+                visible().length < issues.issues().length
+                  ? t('筛选后 {n} 个，共 {total} 个', { n: visible().length, total: issues.issues().length })
+                  : t('当前列表里的 issue 数')
+              }
             >
               {counter()}
             </Text>
@@ -119,7 +129,11 @@ export function IssueSidebar() {
             >
               <Text class="text-[11.5px] text-fg-2">{t('反选')}</Text>
             </View>
-            <View class={cn('rounded px-1 hover:bg-fill-hover', !issues.checked().size && 'opacity-40')} role="button" onPress={() => issues.setChecked(new Set())}>
+            <View
+              class={cn('rounded px-1 hover:bg-fill-hover', !issues.checked().size && 'opacity-40')}
+              role="button"
+              onPress={() => issues.setChecked(new Set())}
+            >
               <Text class="text-[11.5px] text-fg-2">{t('清空')}</Text>
             </View>
           </View>
@@ -127,7 +141,10 @@ export function IssueSidebar() {
       </View>
       <Scroll class="min-h-0 flex-1" contentClass="px-2 pb-2">
         <If when={issues.user()} else={<Text class="px-3 py-10 text-center text-[13px] text-fg-2">{t('未登录 Teable')}</Text>}>
-          <If when={visible().length > 0} else={<Text class="px-3 py-10 text-center text-[13px] text-fg-2">{issues.loading() ? t('加载中…') : t('没有 issue')}</Text>}>
+          <If
+            when={visible().length > 0}
+            else={<Text class="px-3 py-10 text-center text-[13px] text-fg-2">{issues.loading() ? t('加载中…') : t('没有 issue')}</Text>}
+          >
             <IssueGroups visible={visible()} click={click} toggleChecked={toggleChecked} selectMode={showBatchBar()} />
           </If>
         </If>
@@ -164,9 +181,13 @@ export function IssueSidebar() {
           entries={() => {
             const queueable = fixable(visible(), issues.runs()).filter((issue) => !issues.runs()[issue.id])
             return [
-              { label: t('把列表里 {n} 个未处理的加入队列', { n: queueable.length }), disabled: !queueable.length, onSelect: () => void issues.perform(() => api.enqueueFix(queueable)) },
+              {
+                label: t('把列表里 {n} 个未处理的加入队列', { n: queueable.length }),
+                disabled: !queueable.length,
+                onSelect: () => void issues.perform(() => api.enqueueFix(queueable)),
+              },
               'separator',
-              { label: t('Issue 设置…'), onSelect: () => issues.set({ showSettings: true }) },
+              { label: t('Issue 设置…'), onSelect: () => app.openSettings('issueTeable') },
               { label: t('托管…'), onSelect: () => void autopilot.show() },
               ...(issues.user() ? [{ label: t('退出 Teable'), onSelect: () => void issues.signOut() }] : []),
             ]
@@ -206,7 +227,11 @@ export function shelfMenu(run: IssueRun | undefined, queued: boolean): MenuEntry
     {
       label: t('移到'),
       items: [
-        ...shelves.map((shelf) => ({ label: groupLabel(shelf), checked: current === shelf, onSelect: () => void issues.perform(() => api.setIssueShelf(run.recordId, shelf)) })),
+        ...shelves.map((shelf) => ({
+          label: groupLabel(shelf),
+          checked: current === shelf,
+          onSelect: () => void issues.perform(() => api.setIssueShelf(run.recordId, shelf)),
+        })),
         ...(run.shelf ? [{ label: t('按状态自动分组'), onSelect: () => void issues.perform(() => api.setIssueShelf(run.recordId, null)) }] : []),
       ],
     },
@@ -288,7 +313,10 @@ function IssueRow(props: {
   return (
     <ContextMenuArea entries={props.menu}>
       <View
-        class={cn('mb-0.5 flex-row gap-2 rounded-lg py-2 pr-2.5 pl-1.5', props.selected ? selectedRow : props.checked ? 'bg-brand-soft' : 'hover:bg-fill-hover')}
+        class={cn(
+          'mb-0.5 flex-row gap-2 rounded-lg py-2 pr-2.5 pl-1.5',
+          props.selected ? selectedRow : props.checked ? 'bg-brand-soft' : 'hover:bg-fill-hover',
+        )}
         role="button"
         onPress={props.onPress}
       >
@@ -361,7 +389,10 @@ function ScopeSwitch() {
     { value: false, label: t('全部') },
   ]
   return (
-    <View class="h-[22px] shrink-0 flex-row items-center rounded-md bg-fill p-0.5" tooltip={t('只拉分配给我的 issue，还是视图里的全部（在 Teable 服务端筛选）')}>
+    <View
+      class="h-[22px] shrink-0 flex-row items-center rounded-md bg-fill p-0.5"
+      tooltip={t('只拉分配给我的 issue，还是视图里的全部（在 Teable 服务端筛选）')}
+    >
       <Each of={options} key={(option) => String(option.value)}>
         {(option) => (
           <View

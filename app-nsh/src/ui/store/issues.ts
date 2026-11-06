@@ -81,7 +81,6 @@ interface IssuesState {
   magpieModels: string[]
   magpieError: string | null
   error: string | null
-  showSettings: boolean
   /** A device-flow sign-in waiting for approval in the browser. */
   deviceLogin: { userCode: string; verificationUri: string } | null
   /** One-click OAuth is available for the configured host. */
@@ -111,7 +110,6 @@ const fields = createStore<IssuesState>({
   magpieModels: [],
   magpieError: null,
   error: null,
-  showSettings: false,
   deviceLogin: null,
   oauthReady: false,
 })
@@ -120,12 +118,7 @@ export const issues = {
   ...fields,
 
   async init(): Promise<void> {
-    const [config, runs, queue, oauthReady] = await Promise.all([
-      api.teableConfig(),
-      api.issueRuns(),
-      api.queueState(),
-      api.teableOAuthReady(),
-    ])
+    const [config, runs, queue, oauthReady] = await Promise.all([api.teableConfig(), api.issueRuns(), api.queueState(), api.teableOAuthReady()])
     fields.set({ config, runs, queue, oauthReady })
     if (listening) return
     listening = true

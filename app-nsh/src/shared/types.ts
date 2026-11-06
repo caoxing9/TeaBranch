@@ -52,6 +52,8 @@ export interface AppSettings {
   agentCommand: string
   /** Interface (and agent report) language; follows macOS when unset. */
   language?: LanguagePref
+  /** Which model each kind of work runs on: rules per scene, and the fallback for the rest. */
+  models?: ModelRules
 }
 
 export interface NgrokTunnel {
@@ -147,6 +149,26 @@ export interface AgentModel {
  */
 export type AgentEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultracode' | 'ultrathink'
 
+/**
+ * The kinds of work a model is picked for. Like a proxy's rules: a scene with a rule of its own runs
+ * on that model, every other scene on the fallback. An issue or a chat given a model by hand keeps it.
+ */
+export type ModelScene = 'fix' | 'triage' | 'review' | 'reviewFeedback' | 'chat' | 'router'
+export const modelScenes: ModelScene[] = ['fix', 'triage', 'review', 'reviewFeedback', 'chat', 'router']
+
+export interface ModelRules {
+  /** What any scene without a rule of its own runs on. */
+  fallback: AgentModel
+  rules: Partial<Record<ModelScene, AgentModel>>
+}
+
+/** The router reads and routes; it writes no code, so a quick model is the right default for it. */
+export const defaultModelRules: ModelRules = { fallback: { provider: 'claude' }, rules: { router: { provider: 'claude', model: 'sonnet' } } }
+
+/** The model `scene` runs on under `rules`: its own rule, else the fallback. */
+export const resolveModel = (rules: ModelRules | undefined, scene: ModelScene): AgentModel =>
+  rules?.rules?.[scene] ?? rules?.fallback ?? defaultModelRules.fallback
+
 export const agentEfforts: { value: AgentEffort; label: string }[] = [
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
@@ -220,11 +242,9 @@ export interface TeableConfig {
   /** How many queued issues run at once. */
   batchSize: number
   branchPrefix: string
-  fixModel: AgentModel
   /** Permission mode fix agents run with. */
   access: AgentAccess
   reviewEngine: ReviewEngine
-  reviewModel: AgentModel
   codexModel: string
   autoReview: boolean
   /** Before fixing, check the bug is real and still there (reproduce, look for a fix already in). */
@@ -354,8 +374,7 @@ export const phaseLabel = translatedLabels<IssuePhase>({
   paused: () => t('已暂停'),
 })
 
-export const isActivePhase = (p: IssuePhase): boolean =>
-  p === 'queued' || p === 'preparing' || p === 'triaging' || p === 'fixing' || p === 'reviewing'
+export const isActivePhase = (p: IssuePhase): boolean => p === 'queued' || p === 'preparing' || p === 'triaging' || p === 'fixing' || p === 'reviewing'
 
 /** What the pre-fix check concluded: only a confirmed bug goes on to a fix by itself. */
 export type TriageVerdict = 'bug' | 'feature' | 'fixed' | 'notBug' | 'needsInfo'
@@ -620,8 +639,6 @@ export interface AutopilotConfig {
   directMessages: boolean
   /** Feishu open ids allowed to drive it; empty lets anyone in a listened chat. */
   allowedUsers: string[]
-  /** The model the router — the one that reads every event and replies — runs on. */
-  routerModel: AgentModel
   /** Each source on or off on its own, under the master switch. */
   sources: Record<SourceId, boolean>
   /** Minutes without a word from an agent before the watchdog checks on it. */
@@ -843,12 +860,7 @@ export interface Api {
 
   // Built-in terminals
   /** Start the shell for this tab, or reattach to it; returns the output so far to replay. */
-  terminalOpen(
-    id: string,
-    cwd: string,
-    cols: number,
-    rows: number,
-  ): Promise<{ replay: string; seq: number; title: string; exited: boolean }>
+  terminalOpen(id: string, cwd: string, cols: number, rows: number): Promise<{ replay: string; seq: number; title: string; exited: boolean }>
   terminalWrite(id: string, data: string): Promise<void>
   terminalResize(id: string, cols: number, rows: number): Promise<void>
   terminalKill(id: string): Promise<void>
@@ -970,6 +982,8 @@ export interface BrowserState {
   canGoForward: boolean
   /** Last time the agent drove it. */
   agentAt?: number
+  /** The last load failed: why. Cleared by the next load that starts. */
+  error?: string
 }
 
 export interface Events {

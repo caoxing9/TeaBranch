@@ -139,7 +139,11 @@ function Header(props: { issue: Issue; run?: IssueRun; busy: boolean; panel: boo
             {(run) => (
               <>
                 <PhaseBadge phase={run().phase} recordId={run().recordId} />
-                <Chip icon="git-branch" title={t('在分支页打开：dev server、预览')} onPress={() => app.go({ section: 'branches', selectedBranch: run().branch })}>
+                <Chip
+                  icon="git-branch"
+                  title={t('在分支页打开：dev server、预览')}
+                  onPress={() => app.go({ section: 'branches', selectedBranch: run().branch })}
+                >
                   {run().branch}
                 </Chip>
                 <If when={run().prURL}>
@@ -166,7 +170,11 @@ function Header(props: { issue: Issue; run?: IssueRun; busy: boolean; panel: boo
                 </If>
                 <If when={run().triage}>
                   {(triage) => (
-                    <Text class={cn('min-w-0 shrink text-[11px]', triage().verdict === 'bug' ? 'text-fg-3' : 'text-warn')} style={{ numberOfLines: 1 }} tooltip={t('修复前验证的结论；理由在对话里')}>
+                    <Text
+                      class={cn('min-w-0 shrink text-[11px]', triage().verdict === 'bug' ? 'text-fg-3' : 'text-warn')}
+                      style={{ numberOfLines: 1 }}
+                      tooltip={t('修复前验证的结论；理由在对话里')}
+                    >
                       {t('验证：{verdict}', { verdict: triageLabel[triage().verdict] })}
                     </Text>
                   )}
@@ -204,13 +212,22 @@ function Header(props: { issue: Issue; run?: IssueRun; busy: boolean; panel: boo
             when={phase() === 'paused'}
             else={
               <If when={phase() !== 'queued'}>
-                <Button icon={<Icon name="pause" size={12} tint="fg" />} title={t('停下这一步，保留会话和位置，之后可以继续')} onPress={() => perform(() => api.pauseIssue(props.issue.id))}>
+                <Button
+                  icon={<Icon name="pause" size={12} tint="fg" />}
+                  title={t('停下这一步，保留会话和位置，之后可以继续')}
+                  onPress={() => perform(() => api.pauseIssue(props.issue.id))}
+                >
                   {t('暂停')}
                 </Button>
               </If>
             }
           >
-            <Button tone="accent" icon={<Icon name="play" size={12} tint="#ffffff" />} title={t('从暂停的那一步接着跑，沿用同一个会话')} onPress={() => perform(() => api.resumeIssue(props.issue.id))}>
+            <Button
+              tone="accent"
+              icon={<Icon name="play" size={12} tint="#ffffff" />}
+              title={t('从暂停的那一步接着跑，沿用同一个会话')}
+              onPress={() => perform(() => api.resumeIssue(props.issue.id))}
+            >
               {t('继续')}
             </Button>
           </If>
@@ -233,7 +250,11 @@ function Header(props: { issue: Issue; run?: IssueRun; busy: boolean; panel: boo
               <IconButton label={t('Review 当前分支')} disabled={props.busy} onPress={() => perform(() => api.review(props.issue))}>
                 <Icon name="badge-check" size={16} tint="fg-2" />
               </IconButton>
-              <IconButton label={t('在终端里继续这个会话（claude --resume）')} disabled={props.busy} onPress={() => perform(() => api.resumeInTerminal(props.issue.id))}>
+              <IconButton
+                label={t('在终端里继续这个会话（claude --resume）')}
+                disabled={props.busy}
+                onPress={() => perform(() => api.resumeInTerminal(props.issue.id))}
+              >
                 <Icon name="terminal" size={16} tint="fg-2" />
               </IconButton>
             </>
@@ -259,7 +280,7 @@ function Header(props: { issue: Issue; run?: IssueRun; busy: boolean; panel: boo
         <MenuButton
           label={t('更多')}
           entries={() => [
-            { label: t('Issue 设置…'), onSelect: () => issues.set({ showSettings: true }) },
+            { label: t('Issue 设置…'), onSelect: () => app.openSettings('issueTeable') },
             {
               label: t('对话布局'),
               items: (['document', 'chat'] as const).map((value) => ({
@@ -322,7 +343,9 @@ function Conversation(props: { issue: Issue; run?: IssueRun; live: boolean; sent
       <Each of={turns()} key={(turn) => turn.id}>
         {(turn) => <TurnView turn={turn()} layout={transcriptLayout.layout()} renderItem={render} />}
       </Each>
-      <If when={props.run?.background}>{(tasks) => <BackgroundActivity tasks={tasks()} onStop={(taskId) => perform(() => api.stopIssueBackground(props.issue.id, taskId))} />}</If>
+      <If when={props.run?.background}>
+        {(tasks) => <BackgroundActivity tasks={tasks()} onStop={(taskId) => perform(() => api.stopIssueBackground(props.issue.id, taskId))} />}
+      </If>
     </TranscriptScroll>
   )
 }
@@ -380,7 +403,12 @@ function StartPrompt(props: { issue: Issue }) {
         </Each>
       </View>
       <View class="flex-row items-center gap-4">
-        <Button tone="accent" class="h-8 px-4" icon={<Icon name="wand-2" size={16} tint="#ffffff" />} onPress={() => void issues.perform(() => api.fixNow(props.issue))}>
+        <Button
+          tone="accent"
+          class="h-8 px-4"
+          icon={<Icon name="wand-2" size={16} tint="#ffffff" />}
+          onPress={() => void issues.perform(() => api.fixNow(props.issue))}
+        >
           {t('自动修复')}
         </Button>
         <View tooltip={t('查是否已被修复、本地复现、判断是不是 bug；不是 bug 就停下等你决定')}>
@@ -429,7 +457,9 @@ function ItemView(props: { item: Item; hasPR: boolean; issue: Issue; busy: boole
     case 'task':
       return <Text class="text-[12px] text-fg-2">{entryText(props)}</Text>
     case 'work':
-      return <ActivityGroup steps={workOf(props).steps} subagents={workOf(props).subagents} live={workOf(props).live} review={workOf(props).channel === 'review'} />
+      return (
+        <ActivityGroup steps={workOf(props).steps} subagents={workOf(props).subagents} live={workOf(props).live} review={workOf(props).channel === 'review'} />
+      )
   }
 }
 
