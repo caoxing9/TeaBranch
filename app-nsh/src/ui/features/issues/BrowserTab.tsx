@@ -62,8 +62,9 @@ export function BrowserTab(props: { branch: string }) {
     cleanup(() => clearTimeout(timer))
   })
 
-  // The page goes where the slot is, and follows it.
-  const visible = () => !blank()
+  // The page goes where the slot is, and follows it. A failed load shows its reason here instead.
+  const failed = () => !!view()?.error
+  const visible = () => !blank() && !failed()
   let placed: string | null = null
   const place = async () => {
     if (!slot || !visible()) return
@@ -133,6 +134,29 @@ export function BrowserTab(props: { branch: string }) {
         </IconButton>
       </View>
       <View ref={(node) => (slot = node)} class="relative min-h-0 flex-1 bg-white" onLayout={() => void place()}>
+        <If when={failed()}>
+          <View class="flex-1 items-center justify-center gap-3 bg-bg p-6">
+            <Icon name="alert-triangle" size={20} tint="warn" />
+            <Text class="text-center text-[13px] text-fg" style={{ userSelect: 'text' }}>
+              {t('打不开 {url}', { url: view()?.url ?? '' })}
+            </Text>
+            <Text class="max-w-md text-center text-[12px] text-fg-2" style={{ userSelect: 'text' }}>
+              {view()?.error ?? ''}
+            </Text>
+            <View class="flex-row items-center gap-2">
+              <Button tone="accent" icon={<Icon name="rotate-cw" size={13} tint="#ffffff" />} onPress={() => act(() => api.browserReload(props.branch))}>
+                {t('重试')}
+              </Button>
+              <If when={status() !== 'running' ? branch() : undefined}>
+                {(current) => (
+                  <Button disabled={app.busy().has(props.branch) || isLive(status())} onPress={() => void app.toggle(current())}>
+                    {isLive(status()) ? t('启动中') : t('启动 dev server')}
+                  </Button>
+                )}
+              </If>
+            </View>
+          </View>
+        </If>
         <If when={blank()}>
           <View class="flex-1 items-center justify-center gap-3 bg-bg p-6">
             <If

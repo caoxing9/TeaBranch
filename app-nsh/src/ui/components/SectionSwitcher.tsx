@@ -5,6 +5,7 @@ import { type Section, app } from '../store/app'
 import { autopilot } from '../store/autopilot'
 import { issues } from '../store/issues'
 import { Icon } from './Icon'
+import { cn } from '../lib/utils'
 import { IconButton, StatusDot, TabBar } from './kit'
 
 /** Issues ⇄ Branches ⇄ Autopilot, under the title bar of every sidebar so it never moves — and the settings gear beside it. */
@@ -16,6 +17,7 @@ export function SectionSwitcher() {
   const enabled = () => !!autopilot.status()?.enabled
   const thinking = () => autopilot.status()?.router === 'thinking'
   const selected = () => app.section() === 'autopilot'
+  const inSettings = () => app.section() === 'settings'
   return (
     <TabBar<Section>
       value={app.section() === 'queue' ? 'autopilot' : app.section()}
@@ -39,8 +41,8 @@ export function SectionSwitcher() {
         },
       ]}
       trailing={
-        <IconButton label={t('设置')} class="shrink-0" onPress={() => app.set({ showSettings: true })}>
-          <Icon name="settings" size={15} tint="fg-2" />
+        <IconButton label={t('设置')} class={cn('shrink-0', inSettings() && 'bg-card shadow-xs')} onPress={() => app.toggleSettings()}>
+          <Icon name="settings" size={15} tint={inSettings() ? 'fg' : 'fg-2'} />
         </IconButton>
       }
     />

@@ -87,7 +87,43 @@ export const ui: Record<string, string> = {
   '每个分支的 dev server 从端口起点往上找空闲端口。': 'Each branch’s dev server takes the first free port from the base port up.',
   终端应用: 'Terminal app',
   命令: 'Command',
-  'Issue 自动修复和托管各有自己的设置页。': 'Issue auto-fix and autopilot have settings pages of their own.',
+  通用: 'General',
+  '读 issue 表，修完把 PR 链接写回去。': 'Reads the issue table and writes the PR link back after a fix.',
+  表或视图: 'Table or view',
+  '只看分配给我的 issue': 'Only issues assigned to me',
+  '在 Teable 服务端筛选，别人的 issue 不会下载到本机': 'Filtered on the Teable server: other people’s issues never reach this Mac',
+  先验证再修: 'Check before fixing',
+  '查是否已被修复、本地复现、判断是不是 bug；只有确认是 bug 才自动修':
+    'Looks for a fix already in, reproduces it locally and judges whether it is a bug; only a confirmed bug is fixed automatically',
+  自动模式: 'Auto mode',
+  '每 3 分钟读表，自动修复下面这些状态的 issue': 'Reads the table every 3 minutes and fixes issues in the statuses below',
+  'CI 失败自动发给 agent 修': 'Send failing CI to the agent',
+  // Models
+  '像代理规则：有规则的场景用自己的模型，其余都走兜底。单个 issue 或对话里选的模型优先。':
+    'Like proxy rules: a scene with a rule runs on its own model, every other one on the fallback. A model picked in an issue or a chat wins.',
+  兜底: 'Fallback',
+  默认模型: 'Default model',
+  没有单独规则的场景都用它: 'Every scene without a rule of its own runs on it',
+  按场景: 'By scene',
+  跟随兜底: 'Follows the fallback',
+  '修复 issue': 'Fix issues',
+  '自动修复，和你在 issue 里发给 agent 的消息': 'Auto-fix, and what you send an issue’s agent',
+  '修之前先判断是不是 bug、能不能复现': 'Before a fix: is it a bug, does it reproduce',
+  'PR review：issue 自己的，和群里发来的': 'PR review: an issue’s own, and PRs sent in chats',
+  '把 review 结果交回 agent 修改': 'Handing the review back to the agent',
+  对话: 'Chats',
+  '分支页和 Issues 页里新开的对话': 'Chats opened on the Branches and Issues pages',
+  '飞书和 issue 评论里的回复、调度，还有进展检查': 'Replies in Feishu and issue comments, routing, and progress checks',
+  'Agent 权限': 'Agent access',
+  '修复 issue 和对话里 agent 的默认权限；每个 issue、每个对话可以单独改': 'The default for fix agents and chats; each issue and chat can change its own',
+  地址: 'Address',
+  '本机的模型网关；它路由的模型都能在上面选': 'The model gateway on this Mac; every model it routes can be picked above',
+  'Key（可选）': 'Key (optional)',
+  全不选: 'None',
+  // Branch browser
+  '打不开 {url}': 'Couldn’t open {url}',
+  页面没有加载出来: 'The page didn’t load',
+  '启动 dev server': 'Start the dev server',
 
   // Create / delete worktree
   '新建 Worktree': 'New Worktree',
@@ -187,8 +223,7 @@ export const ui: Record<string, string> = {
   更多: 'More',
   复制会话恢复命令: 'Copy Resume Command',
   删除对话: 'Delete Chat',
-  'Claude Code 会在 {place} 里工作。问问题、改代码、查日志都行。':
-    'Claude Code works in {place}. Ask questions, change code, dig through logs.',
+  'Claude Code 会在 {place} 里工作。问问题、改代码、查日志都行。': 'Claude Code works in {place}. Ask questions, change code, dig through logs.',
   '问点什么，或让它改代码；可粘贴或拖入截图': 'Ask anything, or have it change code; paste or drop screenshots',
 
   // Transcript

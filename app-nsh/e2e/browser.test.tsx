@@ -22,5 +22,7 @@ test('loads, evaluates, clicks and types in a branch browser', async () => {
     expect(line).toContain('[log] pressed')
     expect(line).toContain('text typed')
   }
+  expect(line).toContain('fail reported')
+  expect(line).toContain('recovered Harness')
   expect(line).toContain('done')
 })

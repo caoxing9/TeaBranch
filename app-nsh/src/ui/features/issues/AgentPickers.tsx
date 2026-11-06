@@ -2,13 +2,14 @@ import { Image, type JSX, Scroll, Text, View, signal } from 'nsh'
 import { Popover } from 'nsh/base'
 import claudeIcon from '../../../../assets/claude.svg'
 import { t } from '../../../shared/i18n'
-import type { AgentAccess, AgentEffort, AgentModel, ClaudeCatalog } from '../../../shared/types'
-import { agentAccessModes, agentEffortLabel, agentEfforts } from '../../../shared/types'
+import type { AgentAccess, AgentEffort, AgentModel, ClaudeCatalog, ModelScene } from '../../../shared/types'
+import { agentAccessModes, agentEffortLabel, agentEfforts, resolveModel } from '../../../shared/types'
 import { Icon, type IconName } from '../../components/Icon'
 import { TextInput } from '../../components/kit'
 import { api } from '../../lib/api'
 import { cn } from '../../lib/utils'
 import { pref, setPref } from '../../prefs'
+import { app } from '../../store/app'
 import { createStore } from '../../store/base'
 import { issues } from '../../store/issues'
 
@@ -76,13 +77,21 @@ const popupClass = 'rounded-xl border border-border bg-popover p-1 shadow-lg'
 
 /**
  * `down` for a picker at the top right of a page: the menu drops below it. By default it rises
- * from a composer.
+ * from a composer. Without a `model` of its own it shows what `scene`'s rule gives (the fix model
+ * by default); `inherit` names that state ("follows the fallback") and is the item that returns to it.
  */
-export function ModelPicker(props: { model?: AgentModel; onChange: (next: AgentModel | null) => void; placement?: 'up' | 'down' }) {
+export function ModelPicker(props: {
+  model?: AgentModel
+  onChange: (next: AgentModel | null) => void
+  placement?: 'up' | 'down'
+  scene?: ModelScene
+  inherit?: string
+}) {
   const open = signal(false)
   const fly = signal<'effort' | 'model'>('effort')
   const catalog = () => catalogStore.catalog()
-  const current = (): AgentModel => props.model ?? issues.config()?.fixModel ?? { provider: 'claude' as const }
+  const inherited = () => !props.model && !!props.inherit
+  const current = (): AgentModel => props.model ?? resolveModel(app.settings()?.models, props.scene ?? 'fix')
   const shownEffort = () => current().effort ?? (current().provider === 'claude' ? catalog()?.defaultEffort : undefined)
   const choose = (next: AgentModel | null) => {
     props.onChange(next)
@@ -104,7 +113,10 @@ export function ModelPicker(props: { model?: AgentModel; onChange: (next: AgentM
       trigger={
         <View class={pillClass} tooltip={t('模型与思考等级')} role="button" onPress={() => open.set(!open())}>
           <ProviderIcon provider={current().provider} />
-          <Text class="text-[12px] text-fg">{nameOf(current(), catalog())}</Text>
+          <If when={inherited()}>
+            <Text class="text-[12px] text-fg-2">{props.inherit} ·</Text>
+          </If>
+          <Text class={cn('text-[12px]', inherited() ? 'text-fg-2' : 'text-fg')}>{nameOf(current(), catalog())}</Text>
           <If when={shownEffort()}>
             <Text class="text-[12px] text-fg-2">{agentEffortLabel(shownEffort())}</Text>
           </If>
@@ -114,7 +126,12 @@ export function ModelPicker(props: { model?: AgentModel; onChange: (next: AgentM
     >
       <View class="flex-row items-start gap-1.5">
         <View class="w-[230px]">
-          <MenuRow active={fly() === 'effort'} onEnter={() => fly.set('effort')} label={t('思考等级')} value={<Text class="text-[12.5px] text-fg-2">{agentEffortLabel(shownEffort()) ?? t('默认')}</Text>} />
+          <MenuRow
+            active={fly() === 'effort'}
+            onEnter={() => fly.set('effort')}
+            label={t('思考等级')}
+            value={<Text class="text-[12.5px] text-fg-2">{agentEffortLabel(shownEffort()) ?? t('默认')}</Text>}
+          />
           <MenuRow
             active={fly() === 'model'}
             onEnter={() => fly.set('model')}
@@ -131,7 +148,7 @@ export function ModelPicker(props: { model?: AgentModel; onChange: (next: AgentM
           <If when={props.model}>
             <View class="mx-2 my-1 h-px bg-border" />
             <View class="h-8 flex-row items-center rounded-lg px-2 hover:bg-accent" role="button" onPress={() => choose(null)}>
-              <Text class="text-[12.5px] text-fg-2">{t('恢复默认')}</Text>
+              <Text class="text-[12.5px] text-fg-2">{props.inherit ?? t('恢复默认')}</Text>
             </View>
           </If>
         </View>
@@ -151,7 +168,11 @@ export function ModelPicker(props: { model?: AgentModel; onChange: (next: AgentM
           >
             <Each of={effortsOf(current(), catalog())} key={(effort) => effort}>
               {(effort) => (
-                <View class="h-8 flex-row items-center gap-2 rounded-lg px-2 hover:bg-accent" role="button" onPress={() => choose({ ...current(), effort: effort() })}>
+                <View
+                  class="h-8 flex-row items-center gap-2 rounded-lg px-2 hover:bg-accent"
+                  role="button"
+                  onPress={() => choose({ ...current(), effort: effort() })}
+                >
                   <Text class="flex-1 text-[13px] text-fg">{agentEffortLabel(effort())}</Text>
                   <If when={shownEffort() === effort()}>
                     <Icon name="check" size={14} tint="fg-2" />
@@ -189,7 +210,11 @@ function ModelList(props: { current: AgentModel; catalog: ClaudeCatalog | null; 
   const query = signal('')
   if (!issues.magpieModels().length) void issues.loadMagpieModels()
   const all = () => {
-    const claude = (props.catalog?.models ?? []).map((option) => ({ model: { provider: 'claude' as const, model: option.value }, name: option.name, source: 'Claude' }))
+    const claude = (props.catalog?.models ?? []).map((option) => ({
+      model: { provider: 'claude' as const, model: option.value },
+      name: option.name,
+      source: 'Claude',
+    }))
     const routed = issues.magpieModels().map((name) => ({ model: { provider: 'magpie' as const, model: name }, name, source: 'Magpie' }))
     return [...claude, ...routed]
   }

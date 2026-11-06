@@ -7,11 +7,27 @@ import { Icon } from '../../components/Icon'
 import { Button, Segmented, StatusDot, TextInput } from '../../components/kit'
 import { api, messageOf } from '../../lib/api'
 import { cn } from '../../lib/utils'
+import { app } from '../../store/app'
 import { type AutopilotPage, autopilot } from '../../store/autopilot'
 import { issues } from '../../store/issues'
 import { ModelPicker } from '../issues/AgentPickers'
 import { WorkerQueue } from '../issues/QueuePanel'
-import { AppSwitch, Card, ModeSelect, NumberInput, PageBody, PageHeader, Row, SourceDot, sourceName, sourceStateLabel, Spark, SwitchRow, TextArea } from './parts'
+import {
+  AppSwitch,
+  Card,
+  ModeSelect,
+  NumberInput,
+  PageBody,
+  PageHeader,
+  Row,
+  SourceDot,
+  sourceName,
+  sourceStateLabel,
+  Spark,
+  StatusChips,
+  SwitchRow,
+  TextArea,
+} from './parts'
 import { HomeComposer } from './HomeComposer'
 import { Pipeline } from './Pipeline'
 import { RouterChat } from './RouterChat'
@@ -189,7 +205,11 @@ function Overview(props: { config: AutopilotConfig }) {
 /** A small round chip of state that opens its page. */
 function Pill(props: { label: string; hot?: boolean; onPress: () => void; children: JSX.Element }) {
   return (
-    <View class="h-7 flex-row items-center gap-1.5 rounded-full border border-border bg-card px-3 hover:border-border-strong" role="button" onPress={props.onPress}>
+    <View
+      class="h-7 flex-row items-center gap-1.5 rounded-full border border-border bg-card px-3 hover:border-border-strong"
+      role="button"
+      onPress={props.onPress}
+    >
       <If when={props.hot}>
         <StatusDot color="bg-brand" pulse />
       </If>
@@ -237,15 +257,24 @@ function TeablePage(props: { config: AutopilotConfig }) {
         actions={
           <>
             <SourceBadge id="teable" />
-            <Button onPress={() => issues.set({ showSettings: true })}>{t('Issue 设置…')}</Button>
+            <Button onPress={() => app.openSettings('issueTeable')}>{t('Issue 设置…')}</Button>
           </>
         }
       />
       <PageBody>
         <Card title={t('规则')}>
-          <SwitchRow label={t('状态符合时自动修复')} hint={t('代码直接处理，不经过 Router')} checked={!!issueConfig()?.autoFix} onChange={(autoFix) => void issues.updateConfig({ autoFix })} />
+          <SwitchRow
+            label={t('状态符合时自动修复')}
+            hint={t('代码直接处理，不经过 Router')}
+            checked={!!issueConfig()?.autoFix}
+            onChange={(autoFix) => void issues.updateConfig({ autoFix })}
+          />
           <Row label={t('修复这些状态')} stacked>
-            <StatusChips choices={choices()} selected={issueConfig()?.fixStatuses ?? []} onChange={(fixStatuses) => void issues.updateConfig({ fixStatuses })} />
+            <StatusChips
+              choices={choices()}
+              selected={issueConfig()?.fixStatuses ?? []}
+              onChange={(fixStatuses) => void issues.updateConfig({ fixStatuses })}
+            />
           </Row>
         </Card>
         <Card title={t('完成后清理')}>
@@ -256,7 +285,11 @@ function TeablePage(props: { config: AutopilotConfig }) {
             onChange={(teableCleanup) => void autopilot.update({ teableCleanup })}
           />
           <Row label={t('算作完成的状态')} hint={doneWarning() ? <Text class="mt-0.5 text-[11.5px] text-warn">{doneWarning()}</Text> : undefined} stacked>
-            <StatusChips choices={choices()} selected={props.config.teableDoneStatuses} onChange={(teableDoneStatuses) => void autopilot.update({ teableDoneStatuses })} />
+            <StatusChips
+              choices={choices()}
+              selected={props.config.teableDoneStatuses}
+              onChange={(teableDoneStatuses) => void autopilot.update({ teableDoneStatuses })}
+            />
           </Row>
         </Card>
         <Card title="Router">
@@ -271,34 +304,17 @@ function TeablePage(props: { config: AutopilotConfig }) {
               ]}
             />
           </Row>
-          <SwitchRow label={t('在 issue 评论里回复')} checked={props.config.teableReplies} onChange={(teableReplies) => void autopilot.update({ teableReplies })} />
+          <SwitchRow
+            label={t('在 issue 评论里回复')}
+            checked={props.config.teableReplies}
+            onChange={(teableReplies) => void autopilot.update({ teableReplies })}
+          />
           <Row label={t('读表间隔')}>
             <NumberInput value={props.config.pollMinutes} min={1} suffix={t('分钟')} onSave={(pollMinutes) => void autopilot.update({ pollMinutes })} />
           </Row>
         </Card>
       </PageBody>
     </>
-  )
-}
-
-/** The status field's choices as toggles. */
-function StatusChips(props: { choices: string[]; selected: string[]; onChange: (next: string[]) => void }) {
-  return (
-    <If when={props.choices.length > 0} else={<Text class="text-[12px] text-fg-3">{t('没找到状态字段，在 Issue 设置里指定')}</Text>}>
-      <View class="flex-row flex-wrap gap-1.5">
-        <Each of={props.choices} key={(choice) => choice}>
-          {(choice) => (
-            <View
-              class={cn('rounded-full border px-2.5 py-0.5', props.selected.includes(choice()) ? 'border-brand bg-brand-soft' : 'border-border hover:bg-fill')}
-              role="button"
-              onPress={() => props.onChange(props.selected.includes(choice()) ? props.selected.filter((status) => status !== choice()) : [...props.selected, choice()])}
-            >
-              <Text class={cn('text-[12px]', props.selected.includes(choice()) ? 'text-brand' : 'text-fg-2')}>{choice()}</Text>
-            </View>
-          )}
-        </Each>
-      </View>
-    </If>
   )
 }
 
@@ -333,7 +349,9 @@ function FeishuPage(props: { config: AutopilotConfig }) {
           </If>
           <If
             when={asUser()}
-            else={<SwitchRow label={t('私聊')} checked={props.config.directMessages} onChange={(directMessages) => void autopilot.update({ directMessages })} />}
+            else={
+              <SwitchRow label={t('私聊')} checked={props.config.directMessages} onChange={(directMessages) => void autopilot.update({ directMessages })} />
+            }
           >
             <Row label={t('私聊')}>
               <ModeSelect
@@ -404,7 +422,13 @@ function Credentials(props: { config: AutopilotConfig }) {
         </Row>
         <Row label="App ID">
           <View class="flex-row gap-2">
-            <TextInput value={appId()} onChange={(e) => appId.set(e.value)} onSubmit={() => appIdDirty() && saveAppId()} placeholder="cli_..." class="w-56 font-mono" />
+            <TextInput
+              value={appId()}
+              onChange={(e) => appId.set(e.value)}
+              onSubmit={() => appIdDirty() && saveAppId()}
+              placeholder="cli_..."
+              class="w-56 font-mono"
+            />
             <Button tone={appIdDirty() ? 'accent' : 'plain'} disabled={!appIdDirty()} onPress={saveAppId}>
               {t('保存')}
             </Button>
@@ -412,7 +436,14 @@ function Credentials(props: { config: AutopilotConfig }) {
         </Row>
         <Row label="App Secret" hint={autopilot.hasSecret() ? t('已保存在钥匙串里。填新的会替换它。') : undefined}>
           <View class="flex-row gap-2">
-            <TextInput masked value={secret()} onChange={(e) => secret.set(e.value)} onSubmit={() => secret().trim() && saveSecret()} placeholder={autopilot.hasSecret() ? '••••••••' : 'App Secret'} class="w-56 font-mono" />
+            <TextInput
+              masked
+              value={secret()}
+              onChange={(e) => secret.set(e.value)}
+              onSubmit={() => secret().trim() && saveSecret()}
+              placeholder={autopilot.hasSecret() ? '••••••••' : 'App Secret'}
+              class="w-56 font-mono"
+            />
             <Button tone={secret().trim() ? 'accent' : 'plain'} disabled={!secret().trim()} onPress={saveSecret}>
               {t('保存')}
             </Button>
@@ -514,10 +545,18 @@ function ChatList(props: { config: AutopilotConfig }) {
           {(chat) => (
             <View class="flex-row items-center gap-3 border-t border-border/60 px-4 py-1.5">
               <StatusDot color={chat().mode === 'ignore' ? 'bg-fg-3' : chat().mode === 'candidate' ? 'bg-agent' : 'bg-ok'} />
-              <Text class={cn('min-w-0 flex-1 text-[13px]', chat().mode === 'ignore' ? 'text-fg-2' : 'text-fg')} style={{ numberOfLines: 1 }} tooltip={chat().id}>
+              <Text
+                class={cn('min-w-0 flex-1 text-[13px]', chat().mode === 'ignore' ? 'text-fg-2' : 'text-fg')}
+                style={{ numberOfLines: 1 }}
+                tooltip={chat().id}
+              >
                 {chat().name}
               </Text>
-              <ModeSelect small value={chat().mode} onChange={(mode) => void autopilot.update({ chats: { ...props.config.chats, [chat().id]: { ...chat(), mode } } })} />
+              <ModeSelect
+                small
+                value={chat().mode}
+                onChange={(mode) => void autopilot.update({ chats: { ...props.config.chats, [chat().id]: { ...chat(), mode } } })}
+              />
             </View>
           )}
         </Each>
@@ -554,9 +593,6 @@ function GitHubPage(props: { config: AutopilotConfig }) {
 
 // MARK: - Router
 
-/** What the router runs on when you pick "default": quick enough to read and route, no code to write. */
-const ROUTER_DEFAULT = { provider: 'claude' as const, model: 'sonnet' }
-
 function RouterPage(props: { config: AutopilotConfig }) {
   const status = () => autopilot.status()
   const prefix = signal(props.config.replyPrefix)
@@ -571,14 +607,23 @@ function RouterPage(props: { config: AutopilotConfig }) {
         actions={
           <>
             <View class="flex-row items-center gap-1.5" tooltip={status()?.routerError}>
-              <StatusDot color={state() === 'error' ? 'bg-err' : state() === 'thinking' ? 'bg-brand' : state() === 'idle' ? 'bg-ok' : 'bg-fg-3'} pulse={state() === 'thinking'} />
+              <StatusDot
+                color={state() === 'error' ? 'bg-err' : state() === 'thinking' ? 'bg-brand' : state() === 'idle' ? 'bg-ok' : 'bg-fg-3'}
+                pulse={state() === 'thinking'}
+              />
               <Text class={cn('text-[12px]', state() === 'error' ? 'text-err' : 'text-fg-2')}>
                 {stateLabel()}
                 {status()?.pending ? ` · ${status()?.pending}` : ''}
               </Text>
             </View>
             <ContextShare usage={status()?.routerContext} />
-            <ModelPicker placement="down" model={props.config.routerModel} onChange={(model) => void autopilot.update({ routerModel: model ?? ROUTER_DEFAULT })} />
+            <ModelPicker
+              placement="down"
+              scene="router"
+              inherit={t('跟随兜底')}
+              model={app.settings()?.models?.rules.router}
+              onChange={(model) => void app.setModelRule('router', model)}
+            />
             <Button tone="ghost" title={t('整理记忆并重开会话')} onPress={() => void api.resetRouter()}>
               <Icon name="rotate-ccw" size={14} tint="fg-2" />
             </Button>
@@ -599,10 +644,20 @@ function RouterPage(props: { config: AutopilotConfig }) {
             <NumberInput value={props.config.chatReplyLimit} min={20} onSave={(chatReplyLimit) => void autopilot.update({ chatReplyLimit })} />
           </Row>
           <Row label={t('前缀')}>
-            <TextInput value={prefix()} onChange={(e) => prefix.set(e.value)} onBlur={() => prefix() !== props.config.replyPrefix && void autopilot.update({ replyPrefix: prefix() })} class="w-20" />
+            <TextInput
+              value={prefix()}
+              onChange={(e) => prefix.set(e.value)}
+              onBlur={() => prefix() !== props.config.replyPrefix && void autopilot.update({ replyPrefix: prefix() })}
+              class="w-20"
+            />
           </Row>
           <Row label={t('回复规则')} stacked>
-            <TextArea value={props.config.replyRules} rows={3} placeholder={t('称呼对方名字；结论放第一句；不承诺上线时间。')} onSave={(replyRules) => void autopilot.update({ replyRules })} />
+            <TextArea
+              value={props.config.replyRules}
+              rows={3}
+              placeholder={t('称呼对方名字；结论放第一句；不承诺上线时间。')}
+              onSave={(replyRules) => void autopilot.update({ replyRules })}
+            />
           </Row>
           <Row label={t('主动发现策略')} stacked>
             <TextArea
@@ -661,7 +716,7 @@ function MemoryCard() {
 function WorkerPage(props: { config: AutopilotConfig }) {
   return (
     <>
-      <PageHeader title="Worker" actions={<Button onPress={() => issues.set({ showSettings: true })}>{t('Issue 设置…')}</Button>} />
+      <PageHeader title="Worker" actions={<Button onPress={() => app.openSettings('issueFix')}>{t('Issue 设置…')}</Button>} />
       <PageBody>
         <Card>
           <WorkerQueue />
@@ -674,7 +729,11 @@ function WorkerPage(props: { config: AutopilotConfig }) {
             <NumberInput value={props.config.maxRetries} onSave={(maxRetries) => void autopilot.update({ maxRetries })} />
           </Row>
           <Row label={t('进展检查')} hint={t('每隔这么久让模型看一眼它是不是在原地打转；0 关掉')}>
-            <NumberInput value={props.config.progressCheckMinutes} suffix={t('分钟')} onSave={(progressCheckMinutes) => void autopilot.update({ progressCheckMinutes })} />
+            <NumberInput
+              value={props.config.progressCheckMinutes}
+              suffix={t('分钟')}
+              onSave={(progressCheckMinutes) => void autopilot.update({ progressCheckMinutes })}
+            />
           </Row>
           <SwitchRow label={t('阻止 Mac 休眠')} checked={props.config.keepAwake} onChange={(keepAwake) => void autopilot.update({ keepAwake })} />
           <SwitchRow label={t('登录时启动')} checked={props.config.openAtLogin} onChange={(openAtLogin) => void autopilot.update({ openAtLogin })} />

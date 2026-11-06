@@ -30,7 +30,13 @@ export const statusColor = {
  */
 export function BranchSidebar() {
   const visible = () =>
-    visibleBranches({ branches: app.branches(), search: app.search(), sortKey: app.sortKey(), sortAscending: app.sortAscending(), categories: app.categories() })
+    visibleBranches({
+      branches: app.branches(),
+      search: app.search(),
+      sortKey: app.sortKey(),
+      sortAscending: app.sortAscending(),
+      categories: app.categories(),
+    })
   const live = () => app.branches().filter((branch) => isLive(statusOf(branch))).length
   const pending = () => Object.entries(app.creating()).filter(([name]) => !app.branches().some((branch) => branch.name === name))
   return (
@@ -58,7 +64,10 @@ export function BranchSidebar() {
         <Each of={pending()} key={([name]) => name}>
           {(entry) => (
             <View
-              class={cn('mt-1 mb-0.5 flex-row items-center gap-2.5 rounded-lg px-2.5 py-[7px]', app.selectedBranch() === entry()[0] ? selectedRow : 'hover:bg-fill-hover')}
+              class={cn(
+                'mt-1 mb-0.5 flex-row items-center gap-2.5 rounded-lg px-2.5 py-[7px]',
+                app.selectedBranch() === entry()[0] ? selectedRow : 'hover:bg-fill-hover',
+              )}
               role="button"
               onPress={() => app.set({ selectedBranch: entry()[0] })}
             >
@@ -139,7 +148,7 @@ function appMenu(): MenuEntry[] {
     },
     'separator',
     { label: t('打开仓库…'), onSelect: () => void app.chooseProject() },
-    { label: t('设置…'), onSelect: () => app.set({ showSettings: true }) },
+    { label: t('设置…'), onSelect: () => app.openSettings() },
   ]
 }
 

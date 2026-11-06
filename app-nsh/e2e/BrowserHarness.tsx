@@ -52,6 +52,13 @@ function Root() {
       await page.text('typed')
       await settle(() => true, 300)
       note(`text ${String(await page.evaluate("document.getElementById('i').value"))}`)
+      // A load that fails leaves no page to reload; the next address must still get through.
+      await browser.navigate(BRANCH, 'http://127.0.0.1:1/')
+      await settle(() => !!page.error(), 10_000)
+      note(`fail ${page.error() ? 'reported' : 'silent'}`)
+      await browser.navigate(BRANCH, `http://127.0.0.1:${port}/?again`)
+      await settle(() => page.title() === 'Harness' && page.url().includes('again'), 10_000)
+      note(`recovered ${page.title()} ${page.error() ?? ''}`.trim())
       note('done')
     } catch (error) {
       note(`error ${error instanceof Error ? error.message : String(error)}`)

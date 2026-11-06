@@ -1,12 +1,14 @@
 import { setColorScheme } from 'nsh'
 import { t } from '../../shared/i18n'
-import type { AppSettings, Branch, BranchUsage, DbMode, DevCategory, NgrokTunnel } from '../../shared/types'
-import { isLive } from '../../shared/types'
+import type { AgentModel, AppSettings, Branch, BranchUsage, DbMode, DevCategory, ModelRules, ModelScene, NgrokTunnel } from '../../shared/types'
+import { defaultModelRules, isLive } from '../../shared/types'
 import { api, messageOf, on } from '../lib/api'
 import { pref, setPref } from '../prefs'
 import { createStore } from './base'
 
-export type Section = 'branches' | 'issues' | 'queue' | 'autopilot'
+export type Section = 'branches' | 'issues' | 'queue' | 'autopilot' | 'settings'
+/** The settings' pages, as the settings sidebar lists them. */
+export type SettingsPage = 'appearance' | 'repo' | 'terminal' | 'models' | 'issueTeable' | 'issueFix' | 'issueReview' | 'issuePrompt'
 export type Theme = 'system' | 'light' | 'dark'
 export type SortKey = 'name' | 'status' | 'category'
 
@@ -31,8 +33,11 @@ interface AppState {
   error: string | null
   theme: Theme
   showCreate: boolean
-  showSettings: boolean
   pendingDelete: string | null
+  /** The settings page open, or to open next. */
+  settingsPage: SettingsPage
+  /** Where you were before the settings: the gear takes you back there. */
+  lastSection: Section
   /** Most recently started first — what the "running" ordering leans on. */
   recency: string[]
   /** Worktrees being created, by branch → the step it is on. Creation takes minutes; it runs in
@@ -45,8 +50,9 @@ interface AppState {
 const fields = createStore<AppState>({
   ready: false,
   settings: null,
-  // The queue was a section of its own before it became autopilot's workers.
-  section: ((section) => (section === 'queue' ? 'autopilot' : section))(pref<Section>('teabranch.section', 'issues')),
+  // The queue was a section of its own before it became autopilot's workers. The settings never
+  // open at launch.
+  section: ((section) => (section === 'queue' ? 'autopilot' : section === 'settings' ? 'issues' : section))(pref<Section>('teabranch.section', 'issues')),
   branches: [],
   categories: {},
   selectedBranch: null,
@@ -61,8 +67,9 @@ const fields = createStore<AppState>({
   error: null,
   theme: pref<Theme>('teabranch.theme', 'system'),
   showCreate: false,
-  showSettings: false,
   pendingDelete: null,
+  settingsPage: pref<SettingsPage>('teabranch.settingsPage', 'appearance'),
+  lastSection: 'issues',
   recency: [],
   creating: {},
   epoch: 0,
@@ -116,7 +123,7 @@ export const app = {
     })
     on('menu', (action) => {
       if (action === 'newBranch') fields.set({ section: 'branches', showCreate: true })
-      if (action === 'settings') fields.set({ showSettings: true })
+      if (action === 'settings') app.toggleSettings()
       if (action === 'showBranches') app.go({ section: 'branches' })
       if (action === 'showIssues') app.go({ section: 'issues' })
     })
@@ -139,8 +146,24 @@ export const app = {
 
   /** `set` that remembers the section. */
   go(patch: Partial<AppState>): void {
-    if (patch.section) setPref('teabranch.section', patch.section)
+    if (patch.section && patch.section !== 'settings') setPref('teabranch.section', patch.section)
     fields.set(patch)
+  },
+
+  /** The settings, at `page` when given, else where they were left. */
+  openSettings(page?: SettingsPage): void {
+    const section = fields.section()
+    if (page) {
+      setPref('teabranch.settingsPage', page)
+      fields.set({ settingsPage: page })
+    }
+    if (section !== 'settings') fields.set({ lastSection: section, section: 'settings' })
+  },
+
+  /** The gear and ⌘,: into the settings, or back out to where you were. */
+  toggleSettings(): void {
+    if (fields.section() === 'settings') app.go({ section: fields.lastSection() })
+    else app.openSettings()
   },
 
   async run(branch: string | null, work: () => Promise<unknown>): Promise<void> {
@@ -201,6 +224,21 @@ export const app = {
 
   async updateSettings(patch: Partial<AppSettings>): Promise<void> {
     fields.set({ settings: await api.updateSettings(patch) })
+  },
+
+  /** Which model each scene runs on: the rules in Settings. */
+  modelRules: (): ModelRules => fields.settings()?.models ?? defaultModelRules,
+
+  async setModelFallback(fallback: AgentModel): Promise<void> {
+    await app.updateSettings({ models: { ...app.modelRules(), fallback } })
+  },
+
+  /** One scene's rule; null drops it, so the scene follows the fallback again. */
+  async setModelRule(scene: ModelScene, model: AgentModel | null): Promise<void> {
+    const rules = { ...app.modelRules().rules }
+    if (model) rules[scene] = model
+    else delete rules[scene]
+    await app.updateSettings({ models: { ...app.modelRules(), rules } })
   },
 
   /** Builds every view again, in the language now set. */

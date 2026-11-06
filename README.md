@@ -16,7 +16,7 @@ A macOS app for working on [Teable](https://github.com/teableio/teable) in paral
 
 Teable is a large full-stack project, and switching branches means restarting everything. TeaBranch keeps each branch checked out in its own worktree, so switching is a click and nothing has to restart. With several branches running side by side, issue fixing parallelises as well: each issue gets a worktree named after its ID, with its own agent conversation and its own terminal.
 
-The window has three sections: **Issues** (⌘2), **Branches** (⌘1) and **Autopilot** (⌘3). The interface is in English or Chinese. It follows macOS by default, and you can switch it, along with the light or dark look, in Settings (the gear beside the section switcher, or ⌘,).
+The window has three sections: **Issues** (⌘2), **Branches** (⌘1) and **Autopilot** (⌘3). The interface is in English or Chinese. It follows macOS by default, and you can switch it, along with the light or dark look, in Settings: the gear beside the section switcher (or ⌘,) opens them as a section of the window with a sidebar of their own — appearance, repository, terminal, models, the Issue auto-fix pages, and the way on to the Autopilot pages.
 
 ## Issues: agent-driven fixing
 
@@ -134,7 +134,7 @@ Ports come from a "slot" that fixes the whole block (`3000 + slot*100`). Slot as
 
 ## Configuration
 
-Everything lives in `~/Library/Application Support/com.teabranch.dev/`. That's the same directory the earlier builds used, so an existing install keeps its state. Settings are edited in the app: the gear beside the section switcher (⌘,) for the app itself, **Issue 设置…** for issues, and the **Autopilot** pages for autopilot.
+Everything lives in `~/Library/Application Support/com.teabranch.dev/`. That's the same directory the earlier builds used, so an existing install keeps its state. Settings are edited in the app: the gear beside the section switcher (⌘,) opens them, with the app's own pages, **Models** (a model per scene — fixing, checking, review, chats, the router — and a fallback for the rest, like a proxy's rules) and the Issue auto-fix pages in one sidebar; autopilot's settings stay on its own pages, linked from there.
 
 | File | Holds |
 |------|-------|
