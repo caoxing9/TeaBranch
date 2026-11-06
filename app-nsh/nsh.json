@@ -1,8 +1,8 @@
 {
   "name": "TeaBranch",
   "id": "com.teabranch.dev",
-  "version": "0.16.0",
-  "build": 1,
+  "version": "0.17.0",
+  "build": 17000,
   "icon": "assets/icon.png",
   "rust": "native",
   "appearance": "system",

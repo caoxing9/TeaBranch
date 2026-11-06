@@ -1,3 +1,10 @@
+# [0.17.0](https://github.com/caoxing9/TeaBranch/compare/v0.16.0...v0.17.0) (2026-11-06)
+
+
+### Features
+
+* TeaBranch on nsh replaces the Electron app; autopilot, PR review from chat, global settings ([#15](https://github.com/caoxing9/TeaBranch/issues/15)) ([088daac](https://github.com/caoxing9/TeaBranch/commit/088daac0c19a0d46e4b8d980ec155a9ac34d15dd))
+
 # [0.16.0](https://github.com/caoxing9/TeaBranch/compare/v0.15.0...v0.16.0) (2026-10-30)
 
 
