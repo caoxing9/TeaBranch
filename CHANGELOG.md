@@ -1,3 +1,10 @@
+# [0.18.0](https://github.com/caoxing9/TeaBranch/compare/v0.17.0...v0.18.0) (2026-11-06)
+
+
+### Features
+
+* settings as a section of the window, with a model rule per scene and a fallback ([#16](https://github.com/caoxing9/TeaBranch/issues/16)) ([35959a4](https://github.com/caoxing9/TeaBranch/commit/35959a4295f05b1b02eb4efcf862fd485d3ccfa4))
+
 # [0.17.0](https://github.com/caoxing9/TeaBranch/compare/v0.16.0...v0.17.0) (2026-11-06)
 
 
