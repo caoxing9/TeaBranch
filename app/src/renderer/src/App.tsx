@@ -6,10 +6,12 @@ import { BranchDetail } from '@/features/branches/BranchDetail'
 import { BranchSidebar } from '@/features/branches/BranchSidebar'
 import { CreateWorktreeDialog } from '@/features/branches/CreateWorktreeDialog'
 import { DeleteDialog } from '@/features/branches/DeleteDialog'
-import { SettingsDialog } from '@/features/branches/SettingsDialog'
+import { SettingsDialog } from '@/features/settings/SettingsDialog'
 import { IssueSettingsDialog } from '@/features/issues/IssueSettingsDialog'
+import { AutopilotMain } from '@/features/autopilot/AutopilotPages'
+import { AutopilotSidebar } from '@/features/autopilot/AutopilotSidebar'
+import { useAutopilot } from '@/store/autopilot'
 import { IssueSidebar } from '@/features/issues/IssueSidebar'
-import { QueueSidebar } from '@/features/issues/QueuePanel'
 import { IssuesMain } from '@/features/issues/IssuesMain'
 import { Lightbox } from '@/components/Lightbox'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -22,11 +24,13 @@ export function App() {
   const section = useApp((s) => s.section)
   const init = useApp((s) => s.init)
   const initIssues = useIssues((s) => s.init)
+  const initAutopilot = useAutopilot((s) => s.init)
 
   useEffect(() => {
     void init()
     void initIssues()
-  }, [init, initIssues])
+    void initAutopilot()
+  }, [init, initIssues, initAutopilot])
 
   const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth)
 
@@ -40,11 +44,17 @@ export function App() {
           style={{ width: sidebarWidth }}
           className="relative flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar/80 text-sidebar-foreground"
         >
-          {section === 'branches' ? <BranchSidebar /> : section === 'queue' ? <QueueSidebar /> : <IssueSidebar />}
+          {section === 'branches' ? (
+            <BranchSidebar />
+          ) : section === 'autopilot' || section === 'queue' ? (
+            <AutopilotSidebar />
+          ) : (
+            <IssueSidebar />
+          )}
           <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} />
         </aside>
         <main className="selectable-area relative flex min-w-0 flex-1 flex-col bg-bg">
-          {section === 'branches' ? <BranchDetail /> : <IssuesMain />}
+          {section === 'branches' ? <BranchDetail /> : section === 'autopilot' || section === 'queue' ? <AutopilotMain /> : <IssuesMain />}
           <ErrorToast />
         </main>
         <Dialogs />

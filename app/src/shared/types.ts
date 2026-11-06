@@ -358,10 +358,11 @@ export const isActivePhase = (p: IssuePhase): boolean =>
   p === 'queued' || p === 'preparing' || p === 'triaging' || p === 'fixing' || p === 'reviewing'
 
 /** What the pre-fix check concluded: only a confirmed bug goes on to a fix by itself. */
-export type TriageVerdict = 'bug' | 'fixed' | 'notBug' | 'needsInfo'
+export type TriageVerdict = 'bug' | 'feature' | 'fixed' | 'notBug' | 'needsInfo'
 
 export const triageLabel = translatedLabels<TriageVerdict>({
   bug: () => t('确认是 bug'),
+  feature: () => t('是需求'),
   fixed: () => t('已经修复'),
   notBug: () => t('不是 bug'),
   needsInfo: () => t('信息不足'),
@@ -371,11 +372,12 @@ export const triageLabel = translatedLabels<TriageVerdict>({
 export function triageVerdict(text: string): TriageVerdict | undefined {
   const verdicts: Record<string, TriageVerdict> = {
     BUG: 'bug',
+    FEATURE: 'feature',
     ALREADY_FIXED: 'fixed',
     NOT_A_BUG: 'notBug',
     NEEDS_INFO: 'needsInfo',
   }
-  const lines = [...text.matchAll(/TRIAGE:\s*\**\s*(BUG|ALREADY_FIXED|NOT_A_BUG|NEEDS_INFO)\b/g)]
+  const lines = [...text.matchAll(/TRIAGE:\s*\**\s*(BUG|FEATURE|ALREADY_FIXED|NOT_A_BUG|NEEDS_INFO)\b/g)]
   const last = lines.at(-1)
   return last ? verdicts[last[1]] : undefined
 }
@@ -430,6 +432,33 @@ export interface IssueRun {
   pausedFrom?: IssuePhase
   /** Where you filed it in the sidebar, over where its phase puts it. Cleared when the agent runs again. */
   shelf?: IssueShelf
+  /** Conversations outside the app this issue answers in: a Feishu topic, its PR. Thread ids. */
+  threads?: string[]
+  /**
+   * Started by autopilot on a hunch, from a chat nobody asked it in: it reports back only once it has
+   * a PR to show, and otherwise stays quiet.
+   */
+  silent?: boolean
+  /**
+   * A probe: work that started before anyone filed an issue — something you or a colleague noticed.
+   * It has no Teable record yet; it gets one, and becomes an ordinary run, once the check finds a
+   * bug or a feature request. What it was asked, kept so it survives a relaunch.
+   */
+  probe?: { title: string; body: string }
+  /** The probe id this run was before it was filed as an issue. */
+  filedFrom?: string
+  /** Why its worktree was kept when the issue was done, last time that was tried. */
+  cleanupHeld?: string
+  /** Times the watchdog restarted it after it stalled or failed. */
+  retries?: number
+  /** When the watchdog last nudged it for being quiet too long. */
+  nudgedAt?: number
+  /** When it entered its current phase: how long the step has been going. */
+  phaseAt?: number
+  /** It was mid-step when TeaBranch quit; autopilot picks it up again on the next launch. */
+  interrupted?: boolean
+  /** The newest PR comment or review already handed to the agent, as GitHub timestamps it. */
+  seenCommentsAt?: string
   costUSD: number
   createdAt: number
   updatedAt: number
@@ -529,6 +558,190 @@ export interface QueueState {
   /** Paused as a whole: running steps stopped, nothing new taken from the queue. */
   paused: boolean
   concurrency: number
+}
+
+// MARK: - Autopilot
+
+/**
+ * How autopilot treats a Feishu chat: act only when @-mentioned, also weigh what is said without a
+ * mention (a bug report nobody addressed to it), or not listen at all.
+ */
+export type ChatMode = 'mention' | 'candidate' | 'ignore'
+
+export interface FeishuChat {
+  id: string
+  name: string
+  mode: ChatMode
+  /** Last message seen from it; chats show up here the first time the bot hears from them. */
+  seenAt: number
+}
+
+export interface AutopilotConfig {
+  /** Listen, route and keep runs going without anyone at the app. */
+  enabled: boolean
+  feishuAppId: string
+  /** Feishu (China) or Lark (international). */
+  feishuDomain: 'feishu' | 'lark'
+  /**
+   * Who it is in the chats: the app's bot, or you — reading the chats you switch on with your
+   * authorization, and replying under your name with a 🤖 mark.
+   */
+  feishuIdentity: 'bot' | 'user'
+  /** Speaking as you: seconds between reads of the listened chats. */
+  pollSeconds: number
+  /**
+   * Speaking as you, your direct messages: not read, read for bug reports only (it answers once it
+   * has a fix), or each one handed to the router like an @-mention.
+   */
+  userDirectMode: ChatMode
+  /** When it speaks up in a chat, each on its own. */
+  notify: ReplyNotify
+  /** Characters a chat reply aims to stay under. */
+  chatReplyLimit: number
+  /** Speaking as you: what starts every reply, so nobody takes it for you. */
+  replyPrefix: string
+  /** Your own rules for how it replies — tone, form of address, what to leave out. */
+  replyRules: string
+  /** What counts as worth handling when nobody asked: the semantic filter, in your words. */
+  candidatePolicy: string
+  /** A new issue in the table that no rule fixes: let the router judge it, or leave it to you. */
+  teableNewIssues: 'router' | 'ignore'
+  /** The router may answer in an issue's Teable comments. */
+  teableReplies: boolean
+  /** An issue moved to one of these statuses is finished: its worktree and branch are cleaned up. */
+  teableDoneStatuses: string[]
+  teableCleanup: boolean
+  /** PRs people send in chats, reviewed and answered on GitHub under your account. */
+  prReview: PRReviewConfig
+  chats: Record<string, FeishuChat>
+  /** What a chat not configured yet gets. */
+  unknownChatMode: ChatMode
+  /** Answer direct messages to the bot. */
+  directMessages: boolean
+  /** Feishu open ids allowed to drive it; empty lets anyone in a listened chat. */
+  allowedUsers: string[]
+  /** The model the router — the one that reads every event and replies — runs on. */
+  routerModel: AgentModel
+  /** Each source on or off on its own, under the master switch. */
+  sources: Record<SourceId, boolean>
+  /** Minutes without a word from an agent before the watchdog checks on it. */
+  stallMinutes: number
+  /** Restarts the watchdog tries on a stalled or failed run before leaving it to you. */
+  maxRetries: number
+  /**
+   * Minutes an agent may be mid-step before a model reads its last steps and says whether it is
+   * getting anywhere; checked again every so many minutes after. 0 never asks.
+   */
+  progressCheckMinutes: number
+  /** Minutes between reads of the issue table. */
+  pollMinutes: number
+  /** Keep the Mac from sleeping while autopilot is on. */
+  keepAwake: boolean
+  openAtLogin: boolean
+}
+
+export interface ReplyNotify {
+  /** A task was created from the message: a short acknowledgement with its key. */
+  accepted: boolean
+  /** The task opened a PR. */
+  pr: boolean
+  /** The agent stopped with a question, or the check found it isn't a bug. */
+  question: boolean
+  /** The reviewer approved the PR. */
+  approved: boolean
+  /** It failed, or the watchdog gave up on it. */
+  failed: boolean
+}
+
+/** Reviews of PRs people send in chats: whether it may, and what it may post on GitHub as you. */
+export interface PRReviewConfig {
+  /** A PR link with a request to look at it starts a review. */
+  enabled: boolean
+  /** It may approve, when nothing blocks. */
+  approve: boolean
+  /** It may request changes; otherwise its findings go in a plain comment. */
+  requestChanges: boolean
+}
+
+export type FeishuState = 'off' | 'noCredentials' | 'connecting' | 'connected' | 'reconnecting' | 'failed'
+
+/** Where events come from. Each is one of autopilot's inputs, filtered in code before the router. */
+export type SourceId = 'teable' | 'feishu' | 'github'
+
+export interface SourceStatus {
+  id: SourceId
+  /** `setup`: needs something from you before it can run. */
+  state: 'off' | 'setup' | 'connecting' | 'online' | 'error'
+  /** One line on what it's doing: who it is, how much it watches. */
+  detail?: string
+  error?: string
+  lastEventAt?: number
+}
+
+export interface AutopilotStatus {
+  enabled: boolean
+  feishu: FeishuState
+  feishuError?: string
+  bot?: { name: string; openId: string }
+  /** The router: waiting for events, working through some, or stopped by an error. */
+  router: 'off' | 'idle' | 'thinking' | 'error'
+  routerError?: string
+  /** Events waiting for the router's next turn. */
+  pending: number
+  /** How full the router's session is; it hands over to a fresh one before the window fills. */
+  routerContext?: ContextUsage
+  /** When the router last wrote its notes for the next session. */
+  routerMemoryAt?: number
+  threads: number
+  lastPollAt?: number
+  sources: SourceStatus[]
+}
+
+/** `me`: you, in the app — talking to the router, or starting a probe. */
+export type TriggerSource = SourceId | 'me' | 'worker' | 'watchdog'
+
+/** The one thread for your conversation with the router inside the app. */
+export const APP_THREAD = 'app:home'
+
+/** One line in autopilot's feed: an event and what became of it. */
+export interface ActivityItem {
+  id: string
+  at: number
+  source: TriggerSource | 'router'
+  thread?: string
+  author?: string
+  text: string
+  outcome: 'ignored' | 'routed' | 'delivered' | 'replied' | 'action' | 'error'
+  detail?: string
+  recordId?: string
+  /** Files that came with it and stay: what you attached in the app's chat. */
+  files?: string[]
+  /** The router's own one-line account of what it made of this event. */
+  decision?: string
+  /** For what the router did: the events it was answering. */
+  causes?: string[]
+}
+
+/** A PR someone sent, under review: where it stands and what was posted. */
+export interface PRReviewJob {
+  id: string
+  url: string
+  number: number
+  title: string
+  author: string
+  phase: 'preparing' | 'reviewing' | 'posting' | 'done' | 'failed'
+  /** The reviewer's own verdict. */
+  verdict?: 'APPROVE' | 'CHANGES_REQUESTED' | 'COMMENT'
+  /** What went on GitHub, after the settings had their say. */
+  posted?: 'APPROVE' | 'CHANGES_REQUESTED' | 'COMMENT'
+  summary?: string
+  error?: string
+  /** Where it was asked for; the verdict is reported there. */
+  thread?: string
+  model: string
+  costUSD: number
+  startedAt: number
+  finishedAt?: number
 }
 
 // MARK: - IPC
@@ -682,6 +895,37 @@ export interface Api {
   magpieModels(): Promise<string[]>
   setMagpieKey(key: string): Promise<void>
   openExternal(url: string): Promise<void>
+
+  // Autopilot
+  autopilotConfig(): Promise<AutopilotConfig>
+  updateAutopilotConfig(patch: Partial<AutopilotConfig>): Promise<AutopilotConfig>
+  autopilotStatus(): Promise<AutopilotStatus>
+  /** Whether the Feishu app secret is stored; the secret itself never comes back. */
+  hasFeishuSecret(): Promise<boolean>
+  /** Approve in the browser so it can read and reply as you; resolves with your name. */
+  authorizeFeishuUser(): Promise<string>
+  signOutFeishuUser(): Promise<void>
+  /** Who authorized, and the redirect URL and scopes the app needs for it. */
+  feishuUserInfo(): Promise<{ name?: string; redirectURL: string; scopes: string[] }>
+  setFeishuSecret(secret: string): Promise<void>
+  /** Newest last. */
+  autopilotActivity(): Promise<ActivityItem[]>
+  /**
+   * Look into something you noticed: a clean worktree on the latest base, its agent checking it.
+   * `attachments` are draft uploads (`saveUpload` under `DRAFT_UPLOADS`); the probe takes them over.
+   */
+  probe(text: string, attachments?: string[]): Promise<{ id: string; key: string }>
+  /** Say something to the router in the app's own chat; its answer arrives as activity on `APP_THREAD`. */
+  askRouter(text: string, attachments?: string[]): Promise<void>
+  /** The app chat so far: your messages, the router's replies and what it did because of them. */
+  routerChat(): Promise<ActivityItem[]>
+  /** Remove a finished issue's worktree and branch now, past the checks that held it. */
+  cleanupIssue(recordId: string): Promise<void>
+  /** Start the router over: it writes its notes first, and a fresh session picks them up. */
+  resetRouter(): Promise<void>
+  /** The router's notes to its next session — what it carries across a reset. */
+  routerMemory(): Promise<string>
+  setRouterMemory(text: string): Promise<void>
 }
 
 /** Pushes from the main process. */
@@ -743,7 +987,11 @@ export interface Events {
   /** A device-flow sign-in finished; `error` when it didn't succeed. */
   teableSignedIn: { error?: string }
   browser: BrowserState
-  menu: 'newBranch' | 'settings' | 'showBranches' | 'showIssues' | 'toggleTerminal' | 'newTerminal'
+  autopilotStatus: AutopilotStatus
+  autopilotActivity: ActivityItem
+  /** A probe was filed as an issue: everything under its old id now lives under the record's. */
+  issueRekeyed: { from: string; to: string }
+  menu: 'newBranch' | 'settings' | 'showBranches' | 'showIssues' | 'toggleTerminal' | 'newTerminal' | 'autopilot'
 }
 
 export type EventName = keyof Events

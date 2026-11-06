@@ -16,7 +16,7 @@ TeaBranch 是一个 macOS app，用来并行开发 [Teable](https://github.com/t
 
 Teable 是个很大的全栈项目，切一次分支就得把所有东西重启一遍。TeaBranch 让每个分支常驻在自己的 worktree 里，切换只要点一下，什么都不用重启。分支既然能同时跑好几个，修 issue 也就能并行：每个 issue 一个以 issue ID 命名的 worktree，有自己的 agent 对话和终端。
 
-窗口分两块：**分支**（⌘1）和 **Issues**（⌘2）。界面支持中文和英文，默认跟随系统语言，可以在设置（⌘,）里切换。
+窗口分三块：**Issues**（⌘2）、**分支**（⌘1）和**托管**（⌘3）。界面支持中文和英文，默认跟随系统语言；语言和浅色 / 深色外观都在设置里切换（分节切换器旁边的齿轮，或 ⌘,）。
 
 ## Issues：agent 自动修复
 
@@ -72,6 +72,10 @@ Teable 是个很大的全栈项目，切一次分支就得把所有东西重启�
 - 可以编辑 worktree 环境变量文件里的任意变量，保存后分支自动重启。每个分支都能单独开一个 ngrok 隧道。
 - 侧栏按泳道（开发中 / 待开发 / 已完成）整理分支。关掉窗口后 app 留在菜单栏里继续运行。
 
+## 托管
+
+托管让 issue 流水线在你不在键盘前时也能跑。它监听 issue 表、飞书（以机器人身份，或以你自己的身份）和你的 GitHub PR；一个 Router agent 读进来的消息，在原话题里回复，需要改代码的就开 issue agent 去做。在飞书里（群或私聊）发给它一个 PR 链接，它会 review 这个 PR，以你的 GitHub 账号把意见发上去（approve、request changes 或评论，按设置来），再回到话题里报告结论。每个数据源、Router 和 Worker 在**托管**里各有一页，还有一条动态记录发生过什么。
+
 ## 安装
 
 ### Homebrew
@@ -96,34 +100,33 @@ xattr -d com.apple.quarantine /Applications/TeaBranch.app
 
 ## 从源码构建
 
-app 用 Electron + React 写成，代码在 [`app/`](app) 目录：
+app 用 TSX 写在 [nsh](https://nsh.dev) 上，带一个自己的 Rust crate，代码在 [`app-nsh/`](app-nsh) 目录：
 
 ```bash
 git clone git@github.com:caoxing9/TeaBranch.git
-cd TeaBranch/app
-pnpm install
-pnpm dev            # 开发模式，带热更新
-pnpm dist           # → dist/TeaBranch-<version>-arm64.dmg
+cd TeaBranch/app-nsh
+nsh run --target macos          # 开发模式，带热更新
+nsh package --target macos      # → .nsh/out/TeaBranch.app
 ```
 
-需要 Node 22 和 pnpm 10。
+需要 Rust 1.93 以上和 nsh 0.4（`curl -fsSL https://nsh.dev/install.sh | NSH_VERSION=v0.4.0 sh`）。
 
 | 命令 | 作用 |
 |------|------|
-| `pnpm lint` | oxlint，有 warning 也算失败 |
-| `pnpm format` / `pnpm format:check` | oxfmt 格式化 / 检查 |
-| `pnpm typecheck` | TypeScript 类型检查，覆盖主进程和渲染进程 |
-| `pnpm test` | Vitest |
+| `nsh check` | 先 cargo check，再 TypeScript 类型检查 |
+| `nsh test` | 先 cargo test，再无头跑全部测试文件 |
+| `nsh test --target macos e2e` | 在真实窗口里跑端到端测试 |
+| `nsh package --target macos` | 打出带图标、ad hoc 签名的 `.app` |
 
-每个 PR 都会在 CI 上跑以上全部检查，再做一次生产构建。
+每个 PR 都会在 CI 上做类型检查、跑单元和冒烟测试、打一次包；发布流程用同样的方式打出 DMG。
 
-技术栈：Electron、electron-vite（Vite）、React 19、TypeScript、Tailwind 4、基于 Base UI 的 shadcn/ui、zustand、xterm.js + node-pty。
+技术栈：nsh（Rust 内核、AppKit 宿主、QuickJS 跑 TSX）、TypeScript、Tailwind 类名。
 
-- **主进程**（`src/main`）负责 git、进程、端口、agent 和 Teable。
-- **渲染进程**（`src/renderer`）通过一个有类型的 IPC 通道和主进程通信，接口定义在 `src/shared/types.ts`。
+- **服务层**（`src/core`、`src/services`）负责 git、进程、端口、agent、Teable、飞书和 GitHub。
+- **界面**（`src/ui`）通过一个有类型的对象（`src/api.ts`）调用服务层；TSX 够不到的东西由 Rust crate（`native/`）提供。
 - **文案**：中文是源语言，英文翻译在 `src/shared/i18n/en/`。测试会检查有没有漏翻。
 
-早期的原生版本在 [`swift/`](swift)。
+目录结构和怎样在已安装的 app 旁边跑开发版，见 [`app-nsh/README.md`](app-nsh/README.md)。之前的 Electron 版本在 [`app/`](app)，作为还没移植完的部分的参照留着；更早的原生版本在 [`swift/`](swift)。
 
 ## worktree 是怎么隔离的
 
@@ -140,15 +143,16 @@ pnpm dist           # → dist/TeaBranch-<version>-arm64.dmg
 
 ## 配置
 
-所有数据都放在 `~/Library/Application Support/com.teabranch.dev/`。这和早期版本用的是同一个目录，所以老用户升级后状态都还在。设置都在 app 里改：分支相关的按 ⌘,，issue 相关的在 **Issue 设置…** 里。
+所有数据都放在 `~/Library/Application Support/com.teabranch.dev/`。这和早期版本用的是同一个目录，所以老用户升级后状态都还在。设置都在 app 里改：app 本身的在分节切换器旁边的齿轮里（⌘,），issue 相关的在 **Issue 设置…** 里，托管相关的在**托管**各页里。
 
 | 文件 | 内容 |
 |------|------|
 | `settings.json` | 仓库路径、起始端口、默认启动命令、终端 app、agent 命令、界面语言 |
 | `categories.json` | 分支的泳道分组 |
 | `teable.json` | issue 表和字段映射、修复前验证、模型、review 引擎、批次大小、自定义 Prompt |
+| `autopilot.json` | 数据源（Teable、飞书、GitHub）、Router、Worker、PR review |
 
-Teable 的登录凭据用 macOS 钥匙串加密保存（Electron `safeStorage`），不写进上面这些文件。
+Teable 和飞书的登录凭据保存在 macOS 钥匙串里，不写进上面这些文件。Electron 版用的是另一把钥匙，所以换到这个版本后第一次启动要重新登录。
 
 ## 参与贡献
 

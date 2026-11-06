@@ -16,7 +16,7 @@ A macOS app for working on [Teable](https://github.com/teableio/teable) in paral
 
 Teable is a large full-stack project, and switching branches means restarting everything. TeaBranch keeps each branch checked out in its own worktree, so switching is a click and nothing has to restart. With several branches running side by side, issue fixing parallelises as well: each issue gets a worktree named after its ID, with its own agent conversation and its own terminal.
 
-The window has two sections: **Branches** (⌘1) and **Issues** (⌘2). The interface is in English or Chinese. It follows macOS by default, and you can switch it in Settings (⌘,).
+The window has three sections: **Issues** (⌘2), **Branches** (⌘1) and **Autopilot** (⌘3). The interface is in English or Chinese. It follows macOS by default, and you can switch it, along with the light or dark look, in Settings (the gear beside the section switcher, or ⌘,).
 
 ## Issues: agent-driven fixing
 
@@ -67,6 +67,10 @@ The window has two sections: **Branches** (⌘1) and **Issues** (⌘2). The inte
 - Edit any variable in the worktree's env file; saving restarts the branch. An ngrok tunnel can be opened per branch.
 - Lanes (developing / todo / done) keep the sidebar organised. Closing the window keeps the app running in the menu bar.
 
+## Autopilot
+
+Autopilot runs the issue pipeline without you at the keyboard. It listens to the issue table, to Feishu (as a bot, or as you) and to your GitHub pull requests; a router agent reads what comes in, answers in the thread, and opens issue agents for what needs code. Send it a pull request link in Feishu — in a group or a direct message — and it reviews the PR, posts the review on GitHub under your account (approve, request changes or comment, as the settings allow) and reports the verdict in the thread. Every source, the router and the workers have a page under **Autopilot**, with an activity feed of what happened.
+
 ## Install
 
 ### Homebrew
@@ -91,30 +95,29 @@ xattr -d com.apple.quarantine /Applications/TeaBranch.app
 
 ## Build from source
 
-The app is Electron + React, in [`app/`](app):
+The app is TSX on [nsh](https://nsh.dev) with a Rust crate of its own, in [`app-nsh/`](app-nsh):
 
 ```bash
 git clone git@github.com:caoxing9/TeaBranch.git
-cd TeaBranch/app
-pnpm install
-pnpm dev            # run with hot reload
-pnpm dist           # → dist/TeaBranch-<version>-arm64.dmg
+cd TeaBranch/app-nsh
+nsh run --target macos          # run with hot reload
+nsh package --target macos      # → .nsh/out/TeaBranch.app
 ```
 
-Requirements: Node 22 and pnpm 10.
+Requirements: Rust 1.93 or later and nsh 0.4 (`curl -fsSL https://nsh.dev/install.sh | NSH_VERSION=v0.4.0 sh`).
 
 | Command | What it does |
 |---------|--------------|
-| `pnpm lint` | oxlint; warnings fail too |
-| `pnpm format` / `pnpm format:check` | oxfmt |
-| `pnpm typecheck` | TypeScript, main + renderer |
-| `pnpm test` | Vitest |
+| `nsh check` | cargo check of the crate, then TypeScript |
+| `nsh test` | cargo test, then every test file, headless |
+| `nsh test --target macos e2e` | the end-to-end tests in a real window |
+| `nsh package --target macos` | the `.app`, ad hoc signed, with the icon |
 
-CI runs all of the above plus a production build on every pull request.
+CI typechecks, runs the unit and smoke tests and packages the app on every pull request; the release workflow packages it into the DMG.
 
-Stack: Electron, electron-vite (Vite), React 19, TypeScript, Tailwind 4, shadcn/ui on Base UI, zustand, xterm.js + node-pty. The main process (`src/main`) owns git, processes, ports, agents and Teable. The renderer (`src/renderer`) talks to it over a single typed IPC channel, whose contract is in `src/shared/types.ts`. Chinese is the source language for UI text, with English in `src/shared/i18n/en/`; a test catches missing translations.
+Stack: nsh (Rust core, AppKit host, QuickJS for TSX), TypeScript, Tailwind classes. The services (`src/core`, `src/services`) own git, processes, ports, agents, Teable, Feishu and GitHub; the screens (`src/ui`) call them through one typed object (`src/api.ts`); the Rust crate (`native/`) provides what TSX can't reach. Chinese is the source language for UI text, with English in `src/shared/i18n/en/`; a test catches missing translations. [`app-nsh/README.md`](app-nsh/README.md) has the layout and how to run a development build beside the installed app.
 
-The earlier native build is in [`swift/`](swift).
+The previous Electron build is in [`app/`](app), kept as the reference for what is still being ported; the earlier native build is in [`swift/`](swift).
 
 ## How worktree isolation works
 
@@ -131,15 +134,16 @@ Ports come from a "slot" that fixes the whole block (`3000 + slot*100`). Slot as
 
 ## Configuration
 
-Everything lives in `~/Library/Application Support/com.teabranch.dev/`. That's the same directory the earlier builds used, so an existing install keeps its state. Settings are edited in the app: ⌘, for branches, and **Issue 设置…** for issues.
+Everything lives in `~/Library/Application Support/com.teabranch.dev/`. That's the same directory the earlier builds used, so an existing install keeps its state. Settings are edited in the app: the gear beside the section switcher (⌘,) for the app itself, **Issue 设置…** for issues, and the **Autopilot** pages for autopilot.
 
 | File | Holds |
 |------|-------|
 | `settings.json` | Repository path, base port, default start command, terminal app, agent command, language |
 | `categories.json` | Lane assignments |
 | `teable.json` | Issue table and field mapping, triage, models, review engine, batch size, custom prompts |
+| `autopilot.json` | Sources (Teable, Feishu, GitHub), the router, workers, PR review |
 
-Teable credentials are kept encrypted with the macOS keychain (Electron `safeStorage`), not in these files.
+Teable and Feishu credentials are kept in the macOS keychain, not in these files. The Electron build kept them under its own key, so the first start of this build asks you to sign in again.
 
 ## Contributing
 

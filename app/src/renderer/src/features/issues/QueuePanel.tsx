@@ -3,21 +3,20 @@ import { useEffect, useState } from 'react'
 import type { IssueRun } from '@shared/types'
 import { isActivePhase } from '@shared/types'
 import { t } from '@shared/i18n'
-import { SectionSwitcher } from '@/components/SectionSwitcher'
 import { Button, StatusDot } from '@/components/kit'
 import { api } from '@/lib/api'
 import { cx } from '@/lib/format'
 import { useApp } from '@/store/app'
+import { useAutopilot } from '@/store/autopilot'
 import { useIssues } from '@/store/issues'
 import { PhaseBadge } from './IssueSidebar'
 
 const inFlight = (run: IssueRun): boolean => (isActivePhase(run.phase) && run.phase !== 'queued') || run.phase === 'paused'
 
-/** In the issue sidebar's foot: where the queue stands, and the way into its own tab. */
+/** In the issue sidebar's foot: where the queue stands, and the way to autopilot's workers. */
 export function QueueBar() {
   const queue = useIssues((s) => s.queue)
   const runs = useIssues((s) => s.runs)
-  const setApp = useApp((s) => s.set)
   if (!Object.values(runs).some(inFlight) && !queue.waiting.length) return null
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 border-t border-border bg-fill px-3 text-[11.5px] font-medium text-fg-2">
@@ -26,7 +25,7 @@ export function QueueBar() {
         type="button"
         title={t('打开任务队列')}
         aria-label={t('打开任务队列')}
-        onClick={() => setApp({ section: 'queue' })}
+        onClick={() => void useAutopilot.getState().show('worker')}
         className="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-2 hover:bg-foreground/[0.07] hover:text-fg"
       >
         <ChevronRight className="size-3.5" />
@@ -73,37 +72,36 @@ function QueueStatus() {
 }
 
 /**
- * The queue as a download manager, a sidebar tab of its own: every running, paused and waiting
- * issue — pause or stop each, or all, and drag the waiting ones into order. The issue opens beside it.
+ * The workers as a download manager: every running, paused and waiting issue — pause or stop each,
+ * or all, and drag the waiting ones into order. Opening one goes to its conversation in Issues.
  */
-export function QueueSidebar() {
+export function WorkerQueue() {
   const runs = useIssues((s) => s.runs)
   const queue = useIssues((s) => s.queue)
   const running = Object.values(runs)
     .filter(inFlight)
     .sort((a, b) => a.createdAt - b.createdAt)
   const empty = !running.length && !queue.waiting.length
-  return (
-    <>
-      <div className="drag h-[38px] shrink-0" />
-      <SectionSwitcher />
-      {empty ? (
-        <div className="flex-1 px-6 py-12 text-center text-[12.5px] text-fg-2">
-          <div className="font-medium text-fg">{t('队列是空的')}</div>
-          <div className="mt-1 text-fg-3">{t('在 Issues 里点“自动修复”，或勾选多个后“批量修复”')}</div>
-        </div>
-      ) : (
-        <QueueList running={running} />
-      )}
-    </>
-  )
+  if (empty)
+    return (
+      <div className="px-6 py-8 text-center text-[12.5px] text-fg-2">
+        <div className="font-medium text-fg">{t('队列是空的')}</div>
+        <div className="mt-1 text-fg-3">{t('在 Issues 里点“自动修复”，或勾选多个后“批量修复”')}</div>
+      </div>
+    )
+  return <QueueList running={running} />
 }
 
 function QueueList({ running }: { running: IssueRun[] }) {
   const queue = useIssues((s) => s.queue)
   const runs = useIssues((s) => s.runs)
   const perform = useIssues((s) => s.perform)
-  const select = useIssues((s) => s.select)
+  const pick = useIssues((s) => s.select)
+  const setApp = useApp((s) => s.set)
+  const select = (ids: Set<string>) => {
+    setApp({ section: 'issues' })
+    pick(ids)
+  }
   const issues = useIssues((s) => s.issues)
   const updateConfig = useIssues((s) => s.updateConfig)
   const [confirmCancel, setConfirmCancel] = useState(false)
@@ -125,8 +123,8 @@ function QueueList({ running }: { running: IssueRun[] }) {
   }
 
   return (
-    <div className="mt-2 min-h-0 flex-1 overflow-y-auto pb-2 text-[12px]">
-      <div className="sticky top-0 z-10 border-b border-border/70 bg-sidebar px-3 pb-1.5">
+    <div className="pb-2 text-[12px]">
+      <div className="border-b border-border/70 px-3 pt-1 pb-1.5">
         <div className="flex h-8 items-center gap-1">
           <span className="font-semibold text-fg">{t('任务队列')}</span>
           <div className="flex-1" />

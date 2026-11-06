@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><defs><filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="14" stdDeviation="18" flood-opacity=".28"/></filter><linearGradient id="hl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22302a"/><stop offset="1" stop-color="#0a110d"/></linearGradient>
+<linearGradient id="leaf" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#3f9d52"/><stop offset="1" stop-color="#b4e66e"/></linearGradient>
+<linearGradient id="star" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe9a3"/><stop offset="1" stop-color="#ffb347"/></linearGradient></defs>
+<rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)" filter="url(#sh)"/>
+<path d="M290 734 C290 450 450 290 734 290 C734 574 574 734 290 734Z" fill="url(#leaf)"/>
+<g stroke="#f3ffe6" stroke-width="22" stroke-linecap="round" fill="none">
+<path d="M326 698 L680 344"/>
+<path d="M430 594 C470 600 520 610 560 650"/>
+<path d="M530 494 C530 450 520 410 490 380"/>
+</g>
+<g fill="#f3ffe6"><circle cx="566" cy="656" r="26"/><circle cx="486" cy="374" r="26"/><circle cx="680" cy="344" r="30"/></g>
+<path d="M330 250 L348 314 L412 332 L348 350 L330 414 L312 350 L248 332 L312 314Z" fill="url(#star)"/>
+<rect x="100" y="100" width="824" height="824" rx="186" fill="url(#hl)"/></svg>

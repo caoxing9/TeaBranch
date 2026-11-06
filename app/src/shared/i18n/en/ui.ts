@@ -80,6 +80,14 @@ export const ui: Record<string, string> = {
     'The “Agent” button and issue auto-fix both start Claude Code with this. Write the full command, not a shell alias.',
   '语言 / Language': 'Language / 语言',
   仓库: 'Repository',
+  主题: 'Theme',
+  路径: 'Path',
+  '更换…': 'Change…',
+  端口起点: 'Base port',
+  '每个分支的 dev server 从端口起点往上找空闲端口。': 'Each branch’s dev server takes the first free port from the base port up.',
+  终端应用: 'Terminal app',
+  命令: 'Command',
+  'Issue 自动修复和托管各有自己的设置页。': 'Issue auto-fix and autopilot have settings pages of their own.',
 
   // Create / delete worktree
   '新建 Worktree': 'New Worktree',

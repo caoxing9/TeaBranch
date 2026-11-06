@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Stamp a release version into every file that carries one. Run by @semantic-release/exec.
 //
-// package.json is semantic-release's version anchor; app/package.json is what electron-builder puts
-// in the bundle and in the DMG filename; swift/Resources/Info.plist keeps the earlier native build
-// in step. None is generated, so each has to be written explicitly.
+// package.json is semantic-release's version anchor; app-nsh/nsh.json is what `nsh package` puts in
+// the bundle (the DMG is named after the tag); app/package.json and swift/Resources/Info.plist keep
+// the earlier Electron and native builds in step. None is generated, so each has to be written
+// explicitly.
 import { readFileSync, writeFileSync } from "node:fs";
 
 const version = process.argv[2];
@@ -37,7 +38,19 @@ function bumpInfoPlist(path) {
   writeFileSync(path, updated);
 }
 
+/** nsh.json carries a build number too, which must grow with every release: it follows the version. */
+function bumpNshJson(path) {
+  const original = readFileSync(path, "utf8");
+  const trailing = original.endsWith("\n") ? "\n" : "";
+  const data = JSON.parse(original);
+  const [major, minor, patch] = version.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  data.version = version;
+  data.build = major * 1_000_000 + minor * 1_000 + patch;
+  writeFileSync(path, JSON.stringify(data, null, 2) + trailing);
+}
+
 bumpJson("package.json");
+bumpNshJson("app-nsh/nsh.json");
 bumpJson("app/package.json");
 bumpInfoPlist("swift/Resources/Info.plist");
 

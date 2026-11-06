@@ -1,0 +1,22 @@
+[package]
+name = "teabranch-native"
+description = "TeaBranch's Rust base: child processes, local servers, synchronous files, the keychain, notifications and the menu bar, exported to the TSX app."
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+nsh-core = "0.4.0"
+nsh-base = "0.4.0"
+tokio = { version = "1", features = ["full"] }
+libc = "0.2"
+base64 = "0.22"
+bytes = "1"
+futures = "0.3"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+security-framework = "3"
+portable-pty = "0.9"

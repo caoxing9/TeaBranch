@@ -38,8 +38,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # The Electron app, Apple Silicon only. The tag already carries the version: semantic-release
-  # stamps it into app/package.json, which electron-builder puts in the bundle and the DMG name.
+  # The nsh app, Apple Silicon only. The tag already carries the version: semantic-release stamps
+  # it into app-nsh/nsh.json, which `nsh package` puts in the bundle; the DMG is named after it.
   build:
     needs: release
     if: needs.release.outputs.published == 'true'
@@ -53,33 +53,40 @@ jobs:
           # and enough history to fast-forward onto it.
           fetch-depth: 0
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.32.0
+      - name: Rust toolchain
+        run: rustup update stable && rustup default stable
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
         with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
+          workspaces: app-nsh/native
+          cache-directories: app-nsh/target
 
-      - name: Build .app and DMG
-        working-directory: app
+      - name: Install nsh
         run: |
-          pnpm install --frozen-lockfile
-          pnpm dist
-        env:
-          # Ad-hoc signed (electron-builder.yml); don't go looking for a Developer ID in the keychain.
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          curl -fsSL https://nsh.dev/install.sh | NSH_VERSION=v0.4.0 sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Ad hoc signed, as `nsh package` signs it; not notarized (see the cask).
+      - name: Build .app and DMG
+        working-directory: app-nsh
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.release.outputs.version }}"
+          nsh package --target macos -o dist
+          test -d dist/TeaBranch.app
+          # The DMG holds the app and an Applications link to drag it onto.
+          rm -rf dist/dmg && mkdir -p dist/dmg
+          cp -R dist/TeaBranch.app dist/dmg/
+          ln -s /Applications dist/dmg/Applications
+          hdiutil create -volname TeaBranch -srcfolder dist/dmg -ov -format UDZO "dist/TeaBranch-$VERSION-arm64.dmg"
 
       - name: Upload DMG to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.release.outputs.version }}
           files: |
-            app/dist/*.dmg
+            app-nsh/dist/*.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -89,12 +96,12 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ needs.release.outputs.version }}"
-          DMG="app/dist/TeaBranch-$VERSION-arm64.dmg"
+          DMG="app-nsh/dist/TeaBranch-$VERSION-arm64.dmg"
           test -f "$DMG"
           SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
 
-          # The build ran against the tag, in detached HEAD. `app/dist/` is gitignored, so the
-          # DMG survives the switch to main.
+          # The build ran against the tag, in detached HEAD. `dist/` is gitignored, so the DMG
+          # survives the switch to main.
           git fetch origin main
           git checkout main
 

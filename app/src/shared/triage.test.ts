@@ -7,6 +7,7 @@ describe('triageVerdict', () => {
     expect(triageVerdict('见 #4012\nTRIAGE: ALREADY_FIXED')).toBe('fixed')
     expect(triageVerdict('TRIAGE: NOT_A_BUG — 设计如此')).toBe('notBug')
     expect(triageVerdict('**TRIAGE: NEEDS_INFO**')).toBe('needsInfo')
+    expect(triageVerdict('现在没有这个能力\nTRIAGE: FEATURE')).toBe('feature')
   })
 
   it('takes the last line when the report quotes the options first', () => {

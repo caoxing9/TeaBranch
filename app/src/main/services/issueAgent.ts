@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { Notification } from 'electron'
 import type {
   AgentAccess,
@@ -22,11 +22,12 @@ import type {
 import { agentModelLabel, isActivePhase, triageLabel, triageVerdict } from '@shared/types'
 import { agentMessage } from '@shared/attachments'
 import { ciFailures, ciPending, parseChecks } from '@shared/ci'
+import { cleanupBlockers } from '@shared/cleanup'
 import { t } from '@shared/i18n'
 import { state } from '../core/appState'
 import { emit, emitSoon } from '../core/events'
 import { errorMessage, TeaBranchError } from '../core/log'
-import { loadIssueRuns, loadTeableConfig, loadTranscript, saveIssueRuns, saveTranscript } from '../core/settingsStore'
+import { loadAutopilotConfig, loadIssueRuns, loadTeableConfig, loadTranscript, saveIssueRuns, saveTranscript } from '../core/settingsStore'
 import { git, run, shellQuote } from '../core/shell'
 import {
   commandLine,
@@ -43,7 +44,9 @@ import {
 import { worktreeDbInfo } from './git'
 import { withBranchLock } from './processManager'
 import { browserEnvironment } from './browserBridge'
-import { contextDir, contextPrompt, prepareIssueContext, uploadsDir } from './issueContext'
+import { contextDir, contextPrompt, type IssueContext, prepareIssueContext, uploadsDir } from './issueContext'
+import { createIssue, setFixStatus } from './issueSource'
+import { inspect, removeWorktree } from './worktreeCleanup'
 import {
   fixAfterTriagePrompt,
   fixPrompt,
@@ -101,15 +104,31 @@ class IssueAgent {
   private dirty = new Set<string>()
   private flushTimer: NodeJS.Timeout | null = null
   private saveTimer: NodeJS.Timeout | null = null
+  /** When each issue's conversation last moved: what the watchdog measures a stall by. */
+  private activity = new Map<string, number>()
+  private phaseListeners: ((run: IssueRun, from: IssueRun['phase']) => void)[] = []
+  private rekeyListeners: ((from: string, to: string) => void)[] = []
+  /** Probes being filed right now: their records exist in the table a moment before their runs do. */
+  private filing = new Set<string>()
+  /** Issues whose worktree is being cleaned up right now. */
+  private cleaning = new Set<string>()
 
   constructor() {
     this.runs = loadIssueRuns()
     // Anything mid-flight when the app last quit died with it. Queued issues never started, so
-    // they stay queued and rejoin once the table loads (`restoreQueue`).
+    // they stay queued and rejoin once the table loads (`restoreQueue`). With autopilot on it was
+    // only interrupted: it waits, paused at its step, for autopilot to pick it up again.
+    const autopilot = loadAutopilotConfig().enabled
     for (const run of Object.values(this.runs)) {
       if (isActivePhase(run.phase) && run.phase !== 'queued') {
-        run.phase = 'failed'
-        run.lastError = t('TeaBranch 退出时它还在运行')
+        if (autopilot) {
+          run.pausedFrom = run.phase
+          run.phase = 'paused'
+          run.interrupted = true
+        } else {
+          run.phase = 'failed'
+          run.lastError = t('TeaBranch 退出时它还在运行')
+        }
       }
       run.background = undefined
       if (!run.context) {
@@ -117,6 +136,8 @@ class IssueAgent {
         if (used) run.context = { used }
       }
     }
+    // A probe has no record in the table to load it from: it is what it was asked.
+    for (const run of Object.values(this.runs)) if (run.probe) this.known.set(run.recordId, probeIssue(run))
     this.watchCI()
   }
 
@@ -152,8 +173,11 @@ class IssueAgent {
 
   // MARK: Entry points
 
-  /** Queue a fix. An issue that already has a live or finished run is left alone. */
-  enqueueFix(issue: Issue): void {
+  /**
+   * Queue a fix. An issue that already has a live or finished run is left alone. `origin` is where
+   * autopilot picked it up: the threads it answers in, and whether it reports back only with a PR.
+   */
+  enqueueFix(issue: Issue, origin?: { threads?: string[]; silent?: boolean; probe?: IssueRun['probe'] }): void {
     const config = loadTeableConfig()
     const previous = this.runs[issue.id]
     if (previous && previous.phase !== 'failed' && previous.phase !== 'cancelled') return
@@ -176,6 +200,12 @@ class IssueAgent {
       worktreeReady: previous?.worktreeReady ? true : undefined,
       prURL: previous?.prURL,
       reviews: previous?.reviews ?? [],
+      threads: [...new Set([...(previous?.threads ?? []), ...(origin?.threads ?? [])])],
+      silent: origin?.silent ?? previous?.silent,
+      probe: origin?.probe ?? previous?.probe,
+      filedFrom: previous?.filedFrom,
+      retries: previous?.retries,
+      seenCommentsAt: previous?.seenCommentsAt,
       costUSD: previous?.costUSD ?? 0,
       createdAt: previous?.createdAt ?? now,
       updatedAt: now,
@@ -196,8 +226,9 @@ class IssueAgent {
       .sort((a, b) => (this.runs[a.id]?.createdAt ?? 0) - (this.runs[b.id]?.createdAt ?? 0))
     if (!stale.length) return
     this.waiting.push(...stale)
-    // A relaunch is no go-ahead: what was left in the queue waits, paused, until you resume it.
-    if (!this.slots.length) this.paused = true
+    // A relaunch is no go-ahead: what was left in the queue waits, paused, until you resume it —
+    // unless autopilot is on, which is exactly that go-ahead.
+    if (!this.slots.length && !loadAutopilotConfig().enabled) this.paused = true
     this.changed()
     this.fill()
   }
@@ -445,7 +476,7 @@ class IssueAgent {
     const cwd = this.worktreePath(record)
     if (!cwd) throw new TeaBranchError(t('找不到 worktree'))
     const file = join(tmpdir(), `teabranch-review-${randomUUID()}.md`)
-    writeFileSync(file, `### 🤖 ${engineLabel(review.engine)} review (${review.model})\n\n${review.text}`)
+    writeFileSync(file, `### 🤖 ${engineLabel(review.engine)} review (${review.model})\n\n${review.text}\n\n${OWN_COMMENT}`)
     try {
       const result = await run('gh', ['pr', 'comment', record.prURL, '--body-file', file], { cwd })
       if (!result.ok) throw new TeaBranchError(t('gh pr comment 失败：{error}', { error: result.stderr }))
@@ -493,6 +524,226 @@ class IssueAgent {
     if (!repo) return undefined
     const path = worktrees.worktreeDirectory(run.branch, repo)
     return existsSync(path) ? path : undefined
+  }
+
+  // MARK: Autopilot
+
+  /** Each phase change, after it's saved — how autopilot hears an issue finished something worth telling. */
+  onPhaseChange(listener: (run: IssueRun, from: IssueRun['phase']) => void): void {
+    this.phaseListeners.push(listener)
+  }
+
+  issue = (recordId: string): Issue | undefined => this.known.get(recordId)
+
+  /** When a probe is filed: from its probe id to its record's. */
+  onRekey(listener: (from: string, to: string) => void): void {
+    this.rekeyListeners.push(listener)
+  }
+
+  /**
+   * Look into something nobody has filed yet: a fresh worktree on the latest base and an agent that
+   * checks it first. `images` are local files that came with it.
+   */
+  probe(text: string, origin: { threads?: string[]; silent?: boolean; images?: string[] } = {}): Issue {
+    const id = `probe_${randomUUID().replace(/-/g, '').slice(0, 12)}`
+    const report = text.trim()
+    const dir = uploadsDir(id)
+    const images = (origin.images ?? []).filter(existsSync).map((path) => {
+      mkdirSync(dir, { recursive: true })
+      const target = join(dir, basename(path))
+      copyFileSync(path, target)
+      return target
+    })
+    const probe = {
+      // Named by its first line; attachment markers are for the agent, not a title.
+      title: truncate(
+        report
+          .replace(/\[📎 \d+\]/g, '')
+          .split('\n')
+          .map((line) => line.trim())
+          .find(Boolean) || report,
+        80,
+      ),
+      body: agentMessage(report, images),
+    }
+    const issue = probeIssue({ recordId: id, issueKey: this.nextProbeKey(), probe })
+    this.known.set(id, issue)
+    this.enqueueFix(issue, { threads: origin.threads, silent: origin.silent, probe })
+    return issue
+  }
+
+  /** P1, P2…: past every probe key and branch already used, so a filed probe's branch is never reused. */
+  private nextProbeKey(): string {
+    const used = Object.values(this.runs).flatMap((run) => [run.issueKey, run.branch])
+    const numbers = used.map((name) => Number(/(?:^|[^A-Za-z])P(\d+)$/.exec(name)?.[1] ?? 0))
+    return `P${Math.max(0, ...numbers) + 1}`
+  }
+
+  /**
+   * The issue is done: take its worktree and branch down. Held back — and said why in its
+   * conversation — while anything exists only here: an open PR, unpushed commits, edited files, an
+   * agent still at work. `force` is you, having read why, removing it anyway.
+   */
+  async cleanup(recordId: string, force = false): Promise<string[]> {
+    // One at a time per issue: a second look while the first is deleting would see half a worktree.
+    if (this.cleaning.has(recordId)) return []
+    this.cleaning.add(recordId)
+    try {
+      return await this.performCleanup(recordId, force)
+    } finally {
+      this.cleaning.delete(recordId)
+    }
+  }
+
+  private async performCleanup(recordId: string, force: boolean): Promise<string[]> {
+    const run = this.runs[recordId]
+    const repo = state.projectPath
+    if (!run || !repo) return []
+    const cwd = this.worktreePath(run)
+    if (!cwd && !run.worktreeReady) return []
+    if (cwd && !force) {
+      const blockers = cleanupBlockers(await inspect(run.branch, cwd, run.prURL))
+      if (this.isBusy(recordId)) blockers.push(t('agent 还在运行'))
+      if (blockers.length) {
+        const why = blockers.join(t('，'))
+        // Retried on every read of the table: said once per reason, not every few minutes.
+        if (run.cleanupHeld !== why) this.append(recordId, entry('system', 'agent', t('issue 已完成，但先不清理 worktree：{why}', { why })))
+        this.update(recordId, (r) => {
+          r.cleanupHeld = why
+        })
+        return blockers
+      }
+    }
+    if (this.isBusy(recordId) || this.resting.has(recordId)) this.cancel(recordId)
+    if (cwd) await removeWorktree(run.branch, repo, { deleteBranch: true })
+    this.update(recordId, (r) => {
+      r.shelf = 'done'
+      r.worktreeReady = undefined
+      r.cleanupHeld = undefined
+    })
+    this.append(recordId, entry('system', 'agent', t('issue 已完成，已清理 worktree 和分支')))
+    return []
+  }
+
+  /** An issue in the table by its key (`T2312`) or record id. */
+  findIssue(keyOrId: string): Issue | undefined {
+    const wanted = keyOrId.trim().toLowerCase()
+    return this.known.get(keyOrId.trim()) ?? [...this.known.values()].find((issue) => issue.key.toLowerCase() === wanted)
+  }
+
+  /** Issues as the table has them now, so a run can carry on from just its id. */
+  remember(issues: Issue[]): void {
+    for (const issue of issues) this.known.set(issue.id, issue)
+  }
+
+  /**
+   * A message from outside the app — a chat, a PR comment — for the issue's agent: into its running
+   * turn when it's talking, queued while it's busy otherwise, and as a new turn when it's idle.
+   */
+  async deliver(recordId: string, message: string, attachments: string[] = [], display?: string): Promise<void> {
+    const issue = this.known.get(recordId)
+    if (!issue) throw new TeaBranchError(t('这个 issue 不在当前列表里，刷新后再继续'))
+    if (!this.runs[recordId]) {
+      this.enqueueFix(issue)
+      return
+    }
+    if (!this.isBusy(recordId)) return this.send(issue, message, attachments, display)
+    const queued: QueuedMessage = { id: randomUUID(), text: message, attachments }
+    this.update(recordId, (r) => {
+      r.queued = [...(r.queued ?? []), queued]
+    })
+    await this.steer(issue, queued.id).catch(() => undefined)
+  }
+
+  linkThread(recordId: string, thread: string): void {
+    this.update(recordId, (run) => {
+      if (!run.threads?.includes(thread)) run.threads = [...(run.threads ?? []), thread]
+    })
+  }
+
+  unlinkThread(recordId: string, thread: string): void {
+    this.update(recordId, (run) => {
+      run.threads = run.threads?.filter((candidate) => candidate !== thread)
+    })
+  }
+
+  setSilent(recordId: string, silent: boolean): void {
+    this.update(recordId, (run) => {
+      run.silent = silent || undefined
+    })
+  }
+
+  noteCommentsSeen(recordId: string, at: string): void {
+    this.update(recordId, (run) => {
+      run.seenCommentsAt = at
+    })
+  }
+
+  /** The agent is mid-turn — not resting on background tasks, not under review. */
+  isTalking = (recordId: string): boolean => {
+    const phase = this.runs[recordId]?.phase
+    return this.handles.has(recordId) && (phase === 'fixing' || phase === 'triaging')
+  }
+
+  lastActivity = (recordId: string): number => this.activity.get(recordId) ?? this.runs[recordId]?.updatedAt ?? 0
+
+  /** A word into a quiet agent's turn. False when it can't take one. */
+  nudge(recordId: string, message: string): boolean {
+    const handle = this.handles.get(recordId)
+    if (!handle?.steer?.(message)) return false
+    this.update(recordId, (run) => {
+      run.nudgedAt = Date.now()
+    })
+    this.append(recordId, entry('system', 'agent', t('Watchdog：agent 太久没有动静，提醒它汇报进展')))
+    return true
+  }
+
+  /** Stop the step and start it over in the same session: for an agent that stalled. */
+  restart(recordId: string, why: string): void {
+    const run = this.runs[recordId]
+    if (!run) return
+    this.append(recordId, entry('system', 'agent', t('Watchdog：{why}，重启这一步', { why })))
+    this.update(recordId, (r) => {
+      r.retries = (r.retries ?? 0) + 1
+      r.nudgedAt = undefined
+    })
+    this.pause(recordId)
+    // The old process gets a moment to die: a session resumed twice at once forks.
+    setTimeout(() => {
+      try {
+        this.resume(recordId)
+      } catch (error) {
+        this.append(recordId, entry('error', 'agent', errorMessage(error), true))
+      }
+    }, 3000)
+  }
+
+  /** A failed run, again from the top — same branch and session, so it knows what it tried. */
+  retry(recordId: string, why: string): void {
+    const issue = this.known.get(recordId)
+    const run = this.runs[recordId]
+    if (!issue || !run || run.phase !== 'failed') return
+    const retries = (run.retries ?? 0) + 1
+    this.append(recordId, entry('system', 'agent', t('Watchdog：{why}，自动重试（第 {n} 次）', { why, n: retries })))
+    this.enqueueFix(issue)
+    this.update(recordId, (r) => {
+      r.retries = retries
+    })
+  }
+
+  /** Runs autopilot found interrupted by a quit, once the table says what their issues are. */
+  resumeInterrupted(): void {
+    for (const run of Object.values(this.runs)) {
+      if (!run.interrupted || run.phase !== 'paused' || !this.known.has(run.recordId)) continue
+      this.update(run.recordId, (r) => {
+        r.interrupted = undefined
+      })
+      try {
+        this.resume(run.recordId)
+      } catch (error) {
+        this.append(run.recordId, entry('error', 'agent', errorMessage(error), true))
+      }
+    }
   }
 
   // MARK: CI
@@ -709,26 +960,30 @@ class IssueAgent {
     this.update(issue.id, (r) => {
       r.phase = 'fixing'
     })
-    // Attachments and the comment thread: what the text cells leave out.
-    this.append(issue.id, entry('system', 'agent', t('读取附件和评论…')))
-    const context = await prepareIssueContext(issue)
-    const downloaded = context.files.filter((file) => file.path).length
-    this.append(
-      issue.id,
-      entry(
-        'system',
-        'agent',
-        t('附件 {downloaded}/{total} 个已下载 · 评论 {comments} 条', {
-          downloaded,
-          total: context.files.length,
-          comments: context.comments.length,
-        }),
-      ),
-    )
+    // Attachments and the comment thread: what the text cells leave out. A probe has neither yet.
+    let context: IssueContext = { dir: contextDir(issue.id), files: [], comments: [] }
+    if (!run.probe) {
+      this.append(issue.id, entry('system', 'agent', t('读取附件和评论…')))
+      context = await prepareIssueContext(issue)
+      const downloaded = context.files.filter((file) => file.path).length
+      this.append(
+        issue.id,
+        entry(
+          'system',
+          'agent',
+          t('附件 {downloaded}/{total} 个已下载 · 评论 {comments} 条', {
+            downloaded,
+            total: context.files.length,
+            comments: context.comments.length,
+          }),
+        ),
+      )
+    }
     if (stopped('fixing')) return this.settle()
 
     try {
-      if (config.triage) {
+      // A probe is a question before it is a fix: it is always checked first.
+      if (config.triage || run.probe) {
         // Is it real, and still there? Same session as the fix, so the fix starts from what it found.
         this.update(issue.id, (r) => {
           r.phase = 'triaging'
@@ -782,7 +1037,10 @@ class IssueAgent {
       baseCommand: state.settings.agentCommand,
       appendSystemPrompt,
       // The issue's downloaded attachments live outside the worktree; let the agent read them.
-      extraArgs: [contextDir(issue.id), uploadsDir(issue.id)].filter(existsSync).flatMap((dir) => ['--add-dir', dir]),
+      // A filed probe keeps reading what came with it under its probe id.
+      extraArgs: [contextDir(issue.id), uploadsDir(issue.id), ...(run.filedFrom ? [uploadsDir(run.filedFrom)] : [])]
+        .filter(existsSync)
+        .flatMap((dir) => ['--add-dir', dir]),
       env,
       channel: 'agent',
       onEntry: (line) => this.append(issue.id, line),
@@ -853,6 +1111,11 @@ class IssueAgent {
       this.update(issue.id, (r) => {
         r.triage = { verdict, text: outcome.finalText as string, at: Date.now() }
       })
+      // A probe that found something real becomes an issue — the bug to fix, or the request to decide on.
+      if (run.probe && (verdict === 'bug' || verdict === 'feature')) {
+        void this.promote(issue, verdict, config)
+        return
+      }
       if (verdict !== 'bug') {
         this.update(issue.id, (r) => {
           r.phase = 'triaged'
@@ -860,25 +1123,133 @@ class IssueAgent {
         this.append(issue.id, entry('system', 'agent', t('验证结论：{verdict}，不自动修复，等你决定', { verdict: triageLabel[verdict] })))
         return
       }
-      const cwd = this.worktreePath(run)
-      if (!cwd) {
-        this.fail(issue.id, t('找不到 worktree：{branch}', { branch: run.branch }))
-        return
-      }
-      this.update(issue.id, (r) => {
-        r.phase = 'fixing'
-      })
-      this.append(issue.id, entry('system', 'agent', t('验证结论：确认是 bug，开始修复')))
-      this.append(issue.id, entry('user', 'agent', t('【自动修复任务】{key} {title}', { key: issue.key, title: issue.title })))
-      this.startAgent(issue, fixAfterTriagePrompt(promptTarget(issue, run.branch)), cwd, config, (next) =>
-        this.agentFinished(issue, next, config),
-      )
+      this.startFix(issue, config)
     } catch (error) {
       this.fail(issue.id, t('启动 agent 失败：{error}', { error: errorMessage(error) }))
     } finally {
       this.settle()
       this.drain(issue)
     }
+  }
+
+  /** The check confirmed the bug: on to the fix, in the same session. */
+  private startFix(issue: Issue, config: TeableConfig): void {
+    const run = this.runs[issue.id]
+    const cwd = run && this.worktreePath(run)
+    if (!run || !cwd) {
+      this.fail(issue.id, t('找不到 worktree：{branch}', { branch: run?.branch ?? issue.key }))
+      return
+    }
+    this.update(issue.id, (r) => {
+      r.phase = 'fixing'
+    })
+    this.append(issue.id, entry('system', 'agent', t('验证结论：确认是 bug，开始修复')))
+    this.append(issue.id, entry('user', 'agent', t('【自动修复任务】{key} {title}', { key: issue.key, title: issue.title })))
+    this.startAgent(issue, fixAfterTriagePrompt(promptTarget(issue, run.branch)), cwd, config, (next) =>
+      this.agentFinished(issue, next, config),
+    )
+  }
+
+  /**
+   * File a probe that found something real as an issue, with what the check found, and carry on as
+   * that issue: a bug goes on to its fix, a feature waits for you. If the table can't take it, a bug is
+   * still fixed — as the probe.
+   */
+  private async promote(probe: Issue, verdict: 'bug' | 'feature', config: TeableConfig): Promise<void> {
+    let issue = probe
+    this.filing.add(probe.id)
+    try {
+      const run = this.runs[probe.id]
+      if (!run?.probe) return
+      const pauses = this.pauses.get(probe.id) ?? 0
+      // Nothing of the check may still run while its session moves to the record: a process woken
+      // from rest would resume the session alongside the fix's, and write under the probe's id.
+      await this.quiesce(probe.id)
+      try {
+        const findings = truncate(run.triage?.text ?? '', 6000)
+        // Filed neutral, so nothing reading the table picks it up as work before its run is in place.
+        const { issue: filed } = await createIssue(run.probe.title, `${run.probe.body}\n\n---\nTeaBranch:\n${findings}`, {
+          fixStatus: false,
+        })
+        this.append(probe.id, entry('system', 'agent', t('已提 issue：{key}', { key: filed.key })))
+        if (!this.rekey(probe.id, filed)) {
+          this.fail(probe.id, t('{key} 已经有一个任务在跑，探查停在这里', { key: filed.key }))
+          return
+        }
+        issue = filed
+        if (verdict === 'bug') void markFixing(filed.id)
+      } catch (error) {
+        this.append(probe.id, entry('error', 'agent', t('提 issue 失败：{error}', { error: errorMessage(error) }), true))
+      }
+      // Paused or stopped while it was being filed: it stays filed, and goes no further.
+      const current = this.runs[issue.id]
+      if (!current || current.phase !== 'triaging' || (this.pauses.get(issue.id) ?? 0) !== pauses) return
+      if (verdict === 'feature') {
+        this.update(issue.id, (r) => {
+          r.phase = 'triaged'
+        })
+        this.append(issue.id, entry('system', 'agent', t('验证结论：是需求，不自动修复，等你决定')))
+        return
+      }
+      this.startFix(issue, config)
+    } catch (error) {
+      this.fail(issue.id, t('启动 agent 失败：{error}', { error: errorMessage(error) }))
+    } finally {
+      this.filing.delete(probe.id)
+      this.settle()
+      this.drain(issue)
+    }
+  }
+
+  /** Stop the issue's process, resting or not, and wait until it is gone. */
+  private async quiesce(recordId: string): Promise<void> {
+    const handle = this.resting.get(recordId) ?? this.handles.get(recordId)
+    if (!handle) return
+    this.resting.delete(recordId)
+    if (this.handles.get(recordId) === handle) this.handles.delete(recordId)
+    handle.cancel()
+    await handle.exited
+  }
+
+  /** A probe is being filed: the table briefly has its record without its run. */
+  isFiling = (): boolean => this.filing.size > 0
+
+  /**
+   * Everything a probe held under its id moves to its new record's: the run, its conversation, its
+   * place in the queue, the threads it answers in. Its process is gone by now (`quiesce`).
+   */
+  private rekey(from: string, issue: Issue): boolean {
+    const to = issue.id
+    const run = this.runs[from]
+    // The record already has a run of its own: two runs can't share one id.
+    if (!run || this.runs[to]) return false
+    delete this.runs[from]
+    this.runs[to] = { ...run, recordId: to, issueKey: issue.key, title: issue.title, probe: undefined, filedFrom: from }
+    const move = <V>(map: Map<string, V>): void => {
+      if (!map.has(from)) return
+      map.set(to, map.get(from) as V)
+      map.delete(from)
+    }
+    move(this.handles)
+    move(this.finishing)
+    move(this.pauses)
+    move(this.activity)
+    move(this.abandoned)
+    this.slots = this.slots.map((id) => (id === from ? to : id))
+    this.finished = this.finished.map((id) => (id === from ? to : id))
+    this.known.delete(from)
+    this.known.set(to, issue)
+    const transcript = this.transcript(from)
+    this.transcripts.delete(from)
+    this.transcripts.set(to, transcript)
+    this.dirty.delete(from)
+    saveTranscript(to, transcript)
+    saveTranscript(from, [])
+    this.scheduleSave()
+    this.changed()
+    emit('issueRekeyed', { from, to })
+    for (const listener of this.rekeyListeners) listener(from, to)
+    return true
   }
 
   /** Settle an agent turn: find the PR, write it back, maybe review. */
@@ -1029,6 +1400,8 @@ class IssueAgent {
   }
 
   private async writeBack(recordId: string, prURL: string, config: TeableConfig): Promise<void> {
+    // A probe that couldn't be filed has no record to write to.
+    if (this.runs[recordId]?.probe) return
     const cells: Record<string, unknown> = {}
     if (config.prField) cells[config.prField] = prURL
     if (config.statusField && config.doneStatus) cells[config.statusField] = config.doneStatus
@@ -1074,13 +1447,17 @@ class IssueAgent {
   private update(recordId: string, body: (run: IssueRun) => void): void {
     const run = this.runs[recordId]
     if (!run) return
+    const from = run.phase
     body(run)
     run.updatedAt = Date.now()
+    if (run.phase !== from) run.phaseAt = run.updatedAt
     this.scheduleSave()
     this.changed()
+    if (run.phase !== from) for (const listener of this.phaseListeners) listener(run, from)
   }
 
   private append(recordId: string, line: ConversationEntry): void {
+    this.activity.set(recordId, line.at)
     const list = this.transcript(recordId)
     list.push(line)
     // Bounded: the oldest of thousands of tool calls are the least interesting part.
@@ -1179,9 +1556,31 @@ async function findPR(branch: string, cwd: string): Promise<string | undefined> 
   return result.ok && result.out.startsWith('http') ? result.out : undefined
 }
 
+/** Marks a PR comment TeaBranch or its agents wrote, so autopilot doesn't hand it back to them. */
+export const OWN_COMMENT = '<!-- teabranch -->'
+
 export const isApproved = (review: string): boolean => /VERDICT:\s*APPROVE/i.test(review)
 
 function promptTarget(issue: Issue, branch: string): PromptTarget {
   const config = loadTeableConfig()
-  return { issue, link: teable.recordURL(config, issue.id), branch, base: worktrees.baseBranch, custom: config.prompts }
+  const link = isProbeId(issue.id) ? 'not filed yet' : teable.recordURL(config, issue.id)
+  return { issue, link, branch, base: worktrees.baseBranch, custom: config.prompts }
+}
+
+export const isProbeId = (id: string): boolean => id.startsWith('probe_')
+
+/** A filed bug moves to the status auto mode fixes, now that its run holds it. Best effort. */
+async function markFixing(recordId: string): Promise<void> {
+  try {
+    await setFixStatus(recordId)
+  } catch {
+    // The table shows a status; the work goes on regardless.
+  }
+}
+
+/** A probe as an issue: what it was asked is its whole record. */
+function probeIssue(run: Pick<IssueRun, 'recordId' | 'issueKey' | 'probe'>): Issue {
+  const title = run.probe?.title ?? ''
+  const body = run.probe?.body ?? ''
+  return { id: run.recordId, key: run.issueKey, title, body, record: { id: run.recordId, fields: { title, report: body } } }
 }

@@ -7,7 +7,7 @@ import { IconButton } from '@/components/kit'
 import { api } from '@/lib/api'
 import { cx } from '@/lib/format'
 import { useIssues } from '@/store/issues'
-import { type AttachmentAttrs, EditorContent, insertAttachments, serialize, useMessageEditor } from './MessageEditor'
+import { type AttachmentAttrs, EditorContent, insertAttachments, readAsBase64, serialize, useMessageEditor } from './MessageEditor'
 
 // MARK: - Composer
 
@@ -19,14 +19,6 @@ import { type AttachmentAttrs, EditorContent, insertAttachments, serialize, useM
  * While the agent works, Return queues the message for after its turn and ⌘Return steers it into
  * the turn. Queued messages sit above the text, each one steerable or removable.
  */
-const readAsBase64 = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '')
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
-
 export function Composer({
   uploadKey,
   context,

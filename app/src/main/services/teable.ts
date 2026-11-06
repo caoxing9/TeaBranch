@@ -365,3 +365,30 @@ export async function update(config: TeableConfig, token: string, recordId: stri
     },
   )
 }
+
+/** A new record from cells by field name; returns it as the list reads records, cells as text. */
+export async function create(config: TeableConfig, token: string, cells: Record<string, unknown>): Promise<TeableRecord> {
+  const result = (await request(
+    config,
+    token,
+    'POST',
+    `/api/table/${config.tableId}/record`,
+    {},
+    { fieldKeyType: 'name', typecast: true, records: [{ fields: cells }] },
+  )) as { records?: { id: string; autoNumber?: number }[] }
+  const id = result.records?.[0]?.id
+  if (!id) throw new TeaBranchError(t('Teable 没有返回新建的记录'))
+  const record = (await request(config, token, 'GET', `/api/table/${config.tableId}/record/${id}`, {
+    fieldKeyType: 'name',
+    cellFormat: 'text',
+  })) as { id: string; autoNumber?: number; fields?: Record<string, unknown> }
+  const fields: Record<string, string> = {}
+  for (const [name, value] of Object.entries(record.fields ?? {})) fields[name] = render(value)
+  return { id: record.id, autoNumber: record.autoNumber, fields }
+}
+
+/** A comment on a record, as plain paragraphs — how autopilot answers in an issue's own thread. */
+export async function addComment(config: TeableConfig, token: string, recordId: string, text: string): Promise<void> {
+  const content = text.split('\n').map((line) => ({ type: 'p', children: [{ type: 'span', value: line }] }))
+  await request(config, token, 'POST', `/api/comment/${config.tableId}/${recordId}/create`, {}, { content })
+}

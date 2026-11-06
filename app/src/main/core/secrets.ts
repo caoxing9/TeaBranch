@@ -7,7 +7,7 @@ import { configDirectory } from './settingsStore'
  * Secrets — the Teable token, a Magpie key — encrypted with the OS keychain via `safeStorage`,
  * never written in the clear next to the settings, which are easy to paste into a bug report.
  */
-export type SecretName = 'teable.token' | 'teable.oauth' | 'magpie.key'
+export type SecretName = 'teable.token' | 'teable.oauth' | 'magpie.key' | 'feishu.secret' | 'feishu.user'
 
 const path = (name: SecretName): string => join(configDirectory, 'secrets', `${name}.bin`)
 

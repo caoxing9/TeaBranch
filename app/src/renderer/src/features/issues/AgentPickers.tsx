@@ -92,7 +92,20 @@ const popupClass =
 
 // MARK: - Model
 
-export function ModelPicker({ model, onChange }: { model?: AgentModel; onChange: (next: AgentModel | null) => void }) {
+/**
+ * `down` for a picker at the top right of a page: the menu drops below it and its submenus open to the
+ * left, inside the window. By default it rises from a composer, submenus to the right.
+ */
+export function ModelPicker({
+  model,
+  onChange,
+  placement = 'up',
+}: {
+  model?: AgentModel
+  onChange: (next: AgentModel | null) => void
+  placement?: 'up' | 'down'
+}) {
+  const down = placement === 'down'
   const fixModel = useIssues((s) => s.config?.fixModel)
   const { catalog, load } = useCatalog()
   const [open, setOpen] = useState(false)
@@ -123,7 +136,7 @@ export function ModelPicker({ model, onChange }: { model?: AgentModel; onChange:
         <ChevronDown className={cn('size-3 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Positioner side="top" align="start" sideOffset={6} className="z-50">
+        <Popover.Positioner side={down ? 'bottom' : 'top'} align={down ? 'end' : 'start'} sideOffset={6} className="z-50">
           <Popover.Popup className={cn(popupClass, 'w-[250px]')}>
             <MenuRow
               active={fly === 'effort'}
@@ -157,7 +170,7 @@ export function ModelPicker({ model, onChange }: { model?: AgentModel; onChange:
             )}
 
             {fly === 'effort' && (
-              <Flyout className="w-[210px]">
+              <Flyout down={down} className="w-[210px]">
                 {effortsOf(current, catalog).map((effort) => (
                   <button
                     key={effort}
@@ -172,7 +185,7 @@ export function ModelPicker({ model, onChange }: { model?: AgentModel; onChange:
               </Flyout>
             )}
             {fly === 'model' && (
-              <Flyout className="w-[330px] p-0">
+              <Flyout down={down} className="w-[330px] p-0">
                 <ModelList
                   current={current}
                   catalog={catalog}
@@ -208,9 +221,20 @@ function MenuRow({ label, value, active, onEnter }: { label: string; value: Reac
   )
 }
 
-/** A submenu hung off the popup's right edge, bottom-aligned so it grows upward like the menu. */
-const Flyout = ({ children, className }: { children: ReactNode; className?: string }) => (
-  <div className={cn('absolute bottom-0 left-full ml-1.5 rounded-xl border bg-popover p-1 shadow-lg', className)}>{children}</div>
+/**
+ * A submenu hung off the popup's side, growing the way the menu does: off the right edge and upward
+ * from a composer; off the left edge and downward under a header.
+ */
+const Flyout = ({ children, className, down }: { children: ReactNode; className?: string; down?: boolean }) => (
+  <div
+    className={cn(
+      'absolute rounded-xl border bg-popover p-1 shadow-lg',
+      down ? 'top-0 right-full mr-1.5' : 'bottom-0 left-full ml-1.5',
+      className,
+    )}
+  >
+    {children}
+  </div>
 )
 
 type Tab = 'favorites' | 'claude' | 'magpie'

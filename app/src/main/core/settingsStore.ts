@@ -1,7 +1,16 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { AppSettings, Chat, ConversationEntry, DevCategory, IssueRun, TeableConfig } from '@shared/types'
+import type {
+  ActivityItem,
+  AppSettings,
+  AutopilotConfig,
+  Chat,
+  ConversationEntry,
+  DevCategory,
+  IssueRun,
+  TeableConfig,
+} from '@shared/types'
 import { log } from './log'
 
 /**
@@ -113,3 +122,83 @@ export const saveChatTranscript = (chatId: string, entries: ConversationEntry[])
   save(join(configDirectory, 'chat-transcripts', `${chatId}.json`), entries)
 export const deleteChatTranscript = (chatId: string): void =>
   rmSync(join(configDirectory, 'chat-transcripts', `${chatId}.json`), { force: true })
+
+// MARK: - Autopilot
+
+export const defaultAutopilotConfig: AutopilotConfig = {
+  enabled: false,
+  feishuAppId: '',
+  feishuDomain: 'feishu',
+  feishuIdentity: 'bot',
+  pollSeconds: 20,
+  // Your private conversations stay private until you say otherwise.
+  userDirectMode: 'ignore',
+  notify: { accepted: true, pr: true, question: true, approved: false, failed: true },
+  prReview: { enabled: true, approve: true, requestChanges: false },
+  chatReplyLimit: 100,
+  replyPrefix: '🤖 ',
+  replyRules: '',
+  candidatePolicy: '',
+  teableNewIssues: 'router',
+  teableReplies: true,
+  teableDoneStatuses: [],
+  teableCleanup: true,
+  chats: {},
+  // A chat the bot was added to is not a go-ahead to act in it.
+  unknownChatMode: 'ignore',
+  directMessages: true,
+  allowedUsers: [],
+  routerModel: { provider: 'claude', model: 'sonnet' },
+  sources: { teable: true, feishu: true, github: true },
+  stallMinutes: 20,
+  maxRetries: 1,
+  progressCheckMinutes: 15,
+  pollMinutes: 3,
+  keepAwake: true,
+  openAtLogin: false,
+}
+
+export function loadAutopilotConfig(): AutopilotConfig {
+  const saved = load<Partial<AutopilotConfig> & { watchGitHub?: boolean }>(file('autopilot.json'))
+  // Nested: a switch added later still gets its default in a file saved before it. GitHub's own
+  // switch was `watchGitHub` before every source had one.
+  const sources = { ...defaultAutopilotConfig.sources, github: saved?.watchGitHub ?? true, ...saved?.sources }
+  return { ...defaultAutopilotConfig, ...saved, notify: { ...defaultAutopilotConfig.notify, ...saved?.notify }, prReview: { ...defaultAutopilotConfig.prReview, ...saved?.prReview }, sources }
+}
+export const saveAutopilotConfig = (config: AutopilotConfig): void => save(file('autopilot.json'), config)
+
+/**
+ * A conversation outside the app — a Feishu topic, a PR — and the issues answering in it. Events on a
+ * thread go straight to those issues' agents; only a thread nobody holds goes to the router.
+ */
+export interface Thread {
+  id: string
+  title: string
+  recordIds: string[]
+  /** Feishu: the message replies go under, so they stay in the topic. */
+  replyTo?: string
+  /** When the router last said something here: answers to it come back without an @. */
+  repliedAt?: number
+  /** Feishu: answered as the app's bot — a direct message to it — whoever it speaks as elsewhere. */
+  asBot?: boolean
+  updatedAt: number
+}
+
+/** What outlives a relaunch: the router's session, and which issue holds which thread. */
+export interface AutopilotState {
+  routerSessionId?: string
+  /** The session has had a turn, so the next one resumes it. */
+  routerStarted?: boolean
+  /** What the router wrote for its next session before the last one ended, and when. */
+  routerMemory?: string
+  routerMemoryAt?: number
+  /** Each issue's status as last read, so the next read knows what's new and what changed. */
+  teable?: Record<string, string>
+  threads: Record<string, Thread>
+}
+
+export const loadAutopilotState = (): AutopilotState => ({ threads: {}, ...load<Partial<AutopilotState>>(file('autopilot-state.json')) })
+export const saveAutopilotState = (value: AutopilotState): void => save(file('autopilot-state.json'), value)
+
+export const loadActivity = (): ActivityItem[] => load<ActivityItem[]>(file('autopilot-activity.json')) ?? []
+export const saveActivity = (items: ActivityItem[]): void => save(file('autopilot-activity.json'), items)
